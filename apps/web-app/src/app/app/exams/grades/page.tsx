@@ -105,15 +105,28 @@ function periodSortIndex(name: string): number {
 
 /** Badge de statut d'une session (même logique que l'ancien renderStatusBadge). */
 function SessionStatusBadge({ statuses }: { statuses: string[] }) {
-  const isPlanned = statuses.every((s) => s === 'PLANNED' || s === 'DRAFT');
-  const isValidatedByTeacher = statuses.some((s) => s === 'OPEN_FOR_GRADING') && !isPlanned;
-  const isSubmitted = statuses.some((s) => s === 'SUBMITTED');
-  const isValidated = statuses.every((s) => s === 'VALIDATED' || s === 'LOCKED');
-  const status = isValidated ? 'Validée'
+  // ⭐ FIX 2026-11-19 (CP B « Planifiée » au lieu de « Validée ») — une session
+  //    peut contenir des évaluations CANCELLED (soft-cancel d'une
+  //    reprogrammation portant des notes) À CÔTÉ du jeu courant : les DEUX
+  //    jeux partagent la même clé de session (classe × type × période ×
+  //    dates). Un mixte [VALIDATED×n + CANCELLED×n] ne remplissait AUCUNE
+  //    branche (ni « tous validés », ni « tous planifiés ») et retombait sur
+  //    le libellé par défaut « Planifiée ». → On IGNORE les évaluations
+  //    annulées dans l'agrégation ; un groupe entièrement annulé affiche
+  //    « Annulée ».
+  const active = statuses.filter((s) => s !== 'CANCELLED');
+  const allCancelled = active.length === 0 && statuses.length > 0;
+  const isPlanned = active.length > 0 && active.every((s) => s === 'PLANNED' || s === 'DRAFT');
+  const isValidatedByTeacher = active.some((s) => s === 'OPEN_FOR_GRADING') && !isPlanned;
+  const isSubmitted = active.some((s) => s === 'SUBMITTED');
+  const isValidated = active.length > 0 && active.every((s) => s === 'VALIDATED' || s === 'LOCKED');
+  const status = allCancelled ? 'Annulée'
+    : isValidated ? 'Validée'
     : isSubmitted ? 'Soumise au directeur'
     : isValidatedByTeacher ? 'Validée par enseignant'
     : 'Planifiée';
-  const color = isValidated ? 'bg-emerald-100 text-emerald-700'
+  const color = allCancelled ? 'bg-red-100 text-red-700'
+    : isValidated ? 'bg-emerald-100 text-emerald-700'
     : isSubmitted ? 'bg-purple-100 text-purple-700'
     : isValidatedByTeacher ? 'bg-amber-100 text-amber-700'
     : 'bg-blue-100 text-blue-700';
@@ -270,6 +283,13 @@ export default function GradesPage() {
   const grouped = useMemo<GroupedEvaluation[]>(() => {
     const map = new Map<string, GroupedEvaluation>();
     for (const ev of evaluations) {
+      // ⭐ FIX 2026-11-19 — les évaluations CANCELLED (soft-cancel d'une
+      //    reprogrammation avec notes) n'ont pas leur place dans les sessions
+      //    de SAISIE : elles polluent le badge agrégé (cf. SessionStatusBadge)
+      //    et la fiche GradingSheet y enregistrerait des notes pour rien
+      //    (la sauvegarde itère sur group.evaluationIds). Elles restent
+      //    visibles dans l'onglet Évaluations avec leur badge « Annulée ».
+      if (ev.status === 'CANCELLED') continue;
       const classId = ev.class?.id || '_no_class';
       const evaluationTypeId = ev.evaluationType?.id || '_no_type';
       const periodId = ev.period?.id || '_no_period';

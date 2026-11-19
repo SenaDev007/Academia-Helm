@@ -406,16 +406,25 @@ export default function TeacherExamsPage() {
             //   - SUBMITTED : signée et soumise au directeur depuis l'Espace Pédagogique
             //     → badge violet "Soumise au directeur"
             //   - VALIDATED/LOCKED : validée par l'admin → badge vert "Validée"
-            const isPlanned = g.statuses.every(s => s === 'PLANNED' || s === 'DRAFT');
-            const isValidatedByTeacher = g.statuses.some(s => s === 'OPEN_FOR_GRADING') && !isPlanned;
-            const isSubmitted = g.statuses.some(s => s === 'SUBMITTED');
-            const isValidated = g.statuses.every(s => s === 'VALIDATED' || s === 'LOCKED');
-            const status = isValidated ? 'Validée' :
+            // ⭐ FIX 2026-11-19 — IGNORER les évaluations CANCELLED dans
+            //    l'agrégation : une session reprogrammée [VALIDATED×n +
+            //    CANCELLED×n] ne remplissait aucune branche et retombait sur
+            //    « Planifiée » (cf. CP B Mon Avenir Plus). Un groupe
+            //    entièrement annulé affiche « Annulée ».
+            const active = g.statuses.filter(s => s !== 'CANCELLED');
+            const allCancelled = active.length === 0 && g.statuses.length > 0;
+            const isPlanned = active.length > 0 && active.every(s => s === 'PLANNED' || s === 'DRAFT');
+            const isValidatedByTeacher = active.some(s => s === 'OPEN_FOR_GRADING') && !isPlanned;
+            const isSubmitted = active.some(s => s === 'SUBMITTED');
+            const isValidated = active.length > 0 && active.every(s => s === 'VALIDATED' || s === 'LOCKED');
+            const status = allCancelled ? 'Annulée' :
+                          isValidated ? 'Validée' :
                           isSubmitted ? 'Soumise au directeur' :
                           isValidatedByTeacher ? 'Validée par enseignant' :
-                          isPlanned ? 'Planifiée' : 'Planifiée';
+                          'Planifiée';
             // ⭐ Couleurs distinctes (cf. admin grades page)
-            const color = isValidated ? 'bg-emerald-100 text-emerald-700' :
+            const color = allCancelled ? 'bg-red-100 text-red-700' :
+                        isValidated ? 'bg-emerald-100 text-emerald-700' :
                         isSubmitted ? 'bg-purple-100 text-purple-700' :
                         isValidatedByTeacher ? 'bg-amber-100 text-amber-700' :
                         'bg-blue-100 text-blue-700';
@@ -448,8 +457,13 @@ function TeacherGradingSheet({
   // ⭐ Lecture seule si l'évaluation n'est plus en PLANNED (déjà validée, soumise,
   //    ou validée par l'admin). L'enseignant ne peut plus modifier les notes.
   //    Il peut juste consulter la fiche.
-  const isPlanned = group.statuses.every(s => s === 'PLANNED' || s === 'DRAFT');
-  const isReadOnly = !isPlanned;
+  // ⭐ FIX 2026-11-19 — IGNORER les CANCELLED : une session reprogrammée
+  //    [CANCELLED + PLANNED] doit rester SAISISSABLE (l'ancienne formule
+  //    every(PLANNED|DRAFT) la passait en lecture seule à cause des zombies
+  //    annulés de la reprogrammation).
+  const active = group.statuses.filter(s => s !== 'CANCELLED');
+  const isPlanned = active.length > 0 && active.every(s => s === 'PLANNED' || s === 'DRAFT');
+  const isReadOnly = !isPlanned || active.length === 0;
 
   // ── Charger les élèves + notes existantes ─────────────────────────────────
   useEffect(() => {
@@ -788,9 +802,9 @@ function TeacherGradingSheet({
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2 text-sm text-amber-800">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span className="font-semibold">
-            {group.statuses.every(s => s === 'VALIDATED' || s === 'LOCKED')
+            {active.every(s => s === 'VALIDATED' || s === 'LOCKED')
               ? "Cette évaluation a été validée par l'administration. Les notes sont verrouillées."
-              : group.statuses.some(s => s === 'SUBMITTED')
+              : active.some(s => s === 'SUBMITTED')
               ? "Cette évaluation a été soumise au directeur. Elle est en attente de validation."
               : "Vous avez déjà validé cette saisie. Pour modifier les notes, l'administration doit la réinitialiser."}
           </span>

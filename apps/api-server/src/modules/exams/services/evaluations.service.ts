@@ -1111,6 +1111,23 @@ export class EvaluationsService {
         data: { status: 'VALIDATED' },
       });
 
+      // ⭐ FIX 2026-11-19 — clôturer le lot de validation PENDING associé
+      //    (miroir de approveBatch) : la validation directe via
+      //    PATCH /evaluations/:id/validate (bouton « Valider toutes » de
+      //    l'onglet Validation) laissait le lot « PENDING » pour toujours
+      //    alors que l'évaluation venait d'être VALIDATED — 25 lots
+      //    orphelins constatés le 2026-11-19 (Mon Avenir Plus) après les
+      //    validations 6ème A / CP A / CP B.
+      await tx.gradeValidationBatch.updateMany({
+        where: { evaluationId: id, status: 'PENDING' },
+        data: {
+          status: 'APPROVED',
+          reviewedById: validatedBy,
+          reviewedAt: new Date(),
+          reviewComment: 'Validation directe (PATCH /evaluations/:id/validate)',
+        },
+      });
+
       return updatedEval;
     });
 

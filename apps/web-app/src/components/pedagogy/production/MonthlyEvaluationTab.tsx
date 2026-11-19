@@ -723,8 +723,12 @@ export function MonthlyEvaluationTab({
         const sortedSubjects = sortSubjects(group.subjects);
         const stats = computeStats(group, rows, sortedSubjects);
         const sig = signatures[group.key] || { teacher: null, director: null };
-        const allSubmitted = group.statuses.every(s => s === 'SUBMITTED' || s === 'VALIDATED' || s === 'LOCKED');
-        const allValidated = group.statuses.every(s => s === 'VALIDATED' || s === 'LOCKED');
+        // ⭐ FIX 2026-11-19 — ignorer les CANCELLED dans l'agrégation : une
+        //    session reprogrammée [VALIDATED + CANCELLED] doit compter comme
+        //    validée, pas retomber sur « Validée par l'enseignant ».
+        const activeStatuses = group.statuses.filter(s => s !== 'CANCELLED');
+        const allSubmitted = activeStatuses.length > 0 && activeStatuses.every(s => s === 'SUBMITTED' || s === 'VALIDATED' || s === 'LOCKED');
+        const allValidated = activeStatuses.length > 0 && activeStatuses.every(s => s === 'VALIDATED' || s === 'LOCKED');
         const startDate = group.startDate ? new Date(group.startDate) : null;
         const endDate = group.endDate ? new Date(group.endDate) : null;
         const sameDay = startDate && endDate &&

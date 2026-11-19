@@ -325,6 +325,10 @@ interface GroupedEvaluation {
   statuses: string[];
   // Référence vers la première évaluation (pour les actions)
   firstEvaluation: Evaluation;
+  // ⭐ FIX 2026-11-19 — 1ère évaluation NON annulée du groupe : le badge de
+  // la carte doit refléter le jeu courant, pas une évaluation CANCELLED
+  // (soft-cancel d'une reprogrammation avec notes) qui partage la même clé.
+  firstActiveEvaluation?: Evaluation;
   // ⭐ V10d — mapping explicite evaluationId → subjectId (robuste aux doublons)
   subjectByEvalId?: Record<string, string>;
 }
@@ -367,6 +371,11 @@ function buildEvaluationGroups(evaluations: Evaluation[], isEN?: boolean): Group
       });
     }
     const g = map.get(key)!;
+    // ⭐ FIX 2026-11-19 — mémoriser la 1ère évaluation NON annulée (cf.
+    // firstActiveEvaluation) pour le badge de statut principal de la carte.
+    if (ev.status !== 'CANCELLED' && !g.firstActiveEvaluation) {
+      g.firstActiveEvaluation = ev;
+    }
     if (ev.subject && !g.subjects.find((s) => s.id === ev.subject!.id)) {
       g.subjects.push({ id: ev.subject.id, name: ev.subject.name });
     }
@@ -468,10 +477,18 @@ function EvaluationProgramCard({
     : isEN ? 'Date not set' : 'Date non définie';
 
   // Statut agrégé — bilingue
-  const allValidated = group.statuses.every((s) => s === 'VALIDATED' || s === 'LOCKED');
-  const anyCancelled = group.statuses.some((s) => s === 'CANCELLED');
-  const allPlanned = group.statuses.every((s) => s === 'PLANNED');
-  const headerStatus = allValidated
+  // ⭐ FIX 2026-11-19 — ignorer les CANCELLED dans l'agrégation : un mixte
+  // [VALIDATED + CANCELLED] (reprogrammation avec notes) doit compter comme
+  // « Complétée », pas retomber sur « En cours »/« Partiellement annulée ».
+  // Un groupe entièrement annulé affiche « Annulée ».
+  const activeStatuses = group.statuses.filter((s) => s !== 'CANCELLED');
+  const allCancelled = activeStatuses.length === 0 && group.statuses.length > 0;
+  const allValidated = activeStatuses.length > 0 && activeStatuses.every((s) => s === 'VALIDATED' || s === 'LOCKED');
+  const anyCancelled = activeStatuses.length > 0 && group.statuses.some((s) => s === 'CANCELLED');
+  const allPlanned = activeStatuses.length > 0 && activeStatuses.every((s) => s === 'PLANNED');
+  const headerStatus = allCancelled
+    ? (isEN ? 'Cancelled' : 'Annulée')
+    : allValidated
     ? (isEN ? 'Completed' : 'Complétée')
     : anyCancelled
     ? (isEN ? 'Partially cancelled' : 'Partiellement annulée')
@@ -480,7 +497,10 @@ function EvaluationProgramCard({
     : (isEN ? 'In progress' : 'En cours');
 
   // Statut principal pour le badge (prendre le statut le plus "avancé")
-  const primaryStatus = group.firstEvaluation.status;
+  // ⭐ FIX 2026-11-19 — prendre la 1ère évaluation NON annulée du groupe : une
+  // évaluation CANCELLED (reprogrammation) ne doit pas imposer le badge
+  // « Annulée » à toute la session qui a été reprogrammée et validée.
+  const primaryStatus = group.firstActiveEvaluation?.status || group.firstEvaluation.status;
   const subjectCount = group.subjects.length;
 
   return (

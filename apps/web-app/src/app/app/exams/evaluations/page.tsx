@@ -329,6 +329,12 @@ interface GroupedEvaluation {
   // la carte doit refléter le jeu courant, pas une évaluation CANCELLED
   // (soft-cancel d'une reprogrammation avec notes) qui partage la même clé.
   firstActiveEvaluation?: Evaluation;
+  // ⭐ FIX 2026-11-19 (garde-fou reprogrammation) — TOUTES les évaluations du
+  // groupe (y compris les annulées — pour la suppression définitive et le
+  // diff d'édition). L'édition d'une session DIFFÉRE désormais : matières
+  // conservées (update des métadonnées), retirées (remove propre), ajoutées
+  // (create) — au lieu de tout supprimer/recréer en perdant les notes.
+  evaluations: Evaluation[];
   // ⭐ V10d — mapping explicite evaluationId → subjectId (robuste aux doublons)
   subjectByEvalId?: Record<string, string>;
 }
@@ -367,20 +373,31 @@ function buildEvaluationGroups(evaluations: Evaluation[], isEN?: boolean): Group
         evaluationIds: [],
         statuses: [],
         firstEvaluation: ev,
+        evaluations: [],
         subjectByEvalId: {},
       });
     }
     const g = map.get(key)!;
+    // ⭐ FIX 2026-11-19 — toutes les évaluations du groupe (annulées incluses :
+    // suppression définitive / diff d'édition).
+    g.evaluations.push(ev);
     // ⭐ FIX 2026-11-19 — mémoriser la 1ère évaluation NON annulée (cf.
     // firstActiveEvaluation) pour le badge de statut principal de la carte.
     if (ev.status !== 'CANCELLED' && !g.firstActiveEvaluation) {
       g.firstActiveEvaluation = ev;
     }
-    if (ev.subject && !g.subjects.find((s) => s.id === ev.subject!.id)) {
-      g.subjects.push({ id: ev.subject.id, name: ev.subject.name });
+    // ⭐ FIX 2026-11-19 — les matières listées sur la carte = celles de la
+    // session COURANTE uniquement (les évaluations CANCELLED — matières
+    // retirées par reprogrammation — n'ont plus rien à faire dans
+    // « matières à composer » ; elles restent visibles via le statut
+    // « Annulée »/« Partiellement annulée » de la carte).
+    if (ev.status !== 'CANCELLED') {
+      if (ev.subject && !g.subjects.find((s) => s.id === ev.subject!.id)) {
+        g.subjects.push({ id: ev.subject.id, name: ev.subject.name });
+      }
+      // ⭐ V10d — mapping explicite evaluationId → subjectId (robuste aux doublons)
+      if (ev.subject) g.subjectByEvalId![ev.id] = ev.subject.id;
     }
-    // ⭐ V10d — mapping explicite evaluationId → subjectId (robuste aux doublons)
-    if (ev.subject) g.subjectByEvalId![ev.id] = ev.subject.id;
     g.evaluationIds.push(ev.id);
     g.statuses.push(ev.status);
   }
@@ -928,9 +945,13 @@ export default function EvaluationsPage() {
   // Modal state — Évaluation
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  // ⭐ IDs de toutes les évaluations du groupe en cours d'édition
-  // (pour suppression + recréation lors de la sauvegarde)
-  const [editingGroupIds, setEditingGroupIds] = useState<string[]>([]);
+  // ⭐ FIX 2026-11-19 — remplacé par editingGroup (groupe complet, pour le
+  //    diff d'édition) ; editingGroupIds n'est plus nécessaire.
+  // ⭐ FIX 2026-11-19 (garde-fou reprogrammation) — groupe COMPLET en édition :
+  // contient toutes les évaluations (matières conservées / retirées + notes
+  // portées) pour appliquer un DIFF au lieu de « tout supprimer / tout
+  // recréer » (les notes des matières conservées ne sont plus perdues).
+  const [editingGroup, setEditingGroup] = useState<GroupedEvaluation | null>(null);
   const [form, setForm] = useState<EvaluationForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
@@ -1396,12 +1417,19 @@ export default function EvaluationsPage() {
     }
 
     const classNames = Array.from(new Set(selectedGroups.map((g) => g.className))).join(', ');
+    // ⭐ FIX 2026-11-19 — remove() est désormais propre : les évaluations avec
+    //    notes sont annulées ET leurs notes supprimées (+ lot clôturé).
+    const gradesTotal = selectedGroups.reduce(
+      (n, g) => n + (g.evaluations || []).reduce((m, ev) => m + ((ev as any)._count?.grades || 0), 0),
+      0,
+    );
     const ok = await danger(
       `Supprimer ${deletableIds.length} évaluation(s) sur ${selectedGroups.length} classe(s) ?\n\nClasses : ${classNames}` +
         (skipped > 0 ? `\n\n⚠ ${skipped} évaluation(s) verrouillée(s) seront ignorées.` : '') +
-        `\n\n⚠ Les évaluations VALIDÉES portant des notes seront ANNULÉES (conservées dans l'historique) ; les autres seront définitivement supprimées.`,
+        (gradesTotal > 0 ? `\n\n⚠ ${gradesTotal} note(s) rattachée(s) seront supprimées définitivement.` : '') +
+        `\n\n⚠ Les évaluations portant des notes seront ANNULÉES (conservées dans l'historique) avec leurs notes SUPPRIMÉES ; les autres seront définitivement supprimées.`,
       'Suppression multiple',
-      'Cette action est irréversible. Les évaluations contenant des notes seront annulées (conservées dans l\u2019historique).'
+      'Cette action est irréversible. Les notes saisies pour ces évaluations seront supprimées.'
     );
     if (!ok) return;
 
@@ -1558,7 +1586,11 @@ export default function EvaluationsPage() {
 
   const handleOpenEdit = (group: GroupedEvaluation) => {
     // Pré-remplir le formulaire avec les données du GROUP (toutes les matières)
-    const first = group.firstEvaluation;
+    // ⭐ FIX 2026-11-19 — pré-remplir depuis la 1ère évaluation NON annulée
+    //    (firstActiveEvaluation) : si le groupe contient des évaluations
+    //    CANCELLED (matières retirées par une reprogrammation antérieure),
+    //    c'est le jeu COURANT qui doit pré-remplir le formulaire.
+    const first = group.firstActiveEvaluation || group.firstEvaluation;
     // ⭐ Le frontend utilise le CODE (EM1) comme ID pour evaluationTypes
     // (chargé depuis school_academic_settings.config.assessmentTypes).
     // Mais le backend retourne l'UUID dans first.evaluationType.id.
@@ -1568,7 +1600,7 @@ export default function EvaluationsPage() {
       title: first.title || '',
       description: first.description || '',
       classIds: first.class?.id ? [first.class.id] : [],
-      subjectIds: group.subjects.map((s) => s.id), // ⭐ Toutes les matières du groupe
+      subjectIds: group.subjects.map((s) => s.id), // ⭐ matières de la session COURANTE (hors annulées)
       periodId: first.period?.id || '',
       evaluationTypeId: evaluationTypeCode, // ⭐ Utiliser le CODE, pas l'UUID
       evaluationTypeIds: [], // (édition = type unique)
@@ -1579,14 +1611,14 @@ export default function EvaluationsPage() {
       coefficient: String(first.coefficient || (isMaternelle ? 0 : 1)),
     });
     setEditingId(first.id);
-    setEditingGroupIds(group.evaluationIds); // ⭐ Tous les IDs du groupe
+    setEditingGroup(group);
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingId(null);
-    setEditingGroupIds([]);
+    setEditingGroup(null);
     setForm(EMPTY_FORM);
   };
 
@@ -1647,35 +1679,182 @@ export default function EvaluationsPage() {
       }
 
       if (editingId) {
-        // ⭐ Édition d'un GROUPE d'évaluations (1 classe × N matières).
-        // On supprime toutes les évaluations du groupe puis on recrée via bulk.
-        // Plus simple que de gérer un diff ajout/suppression par matière.
-        // editingGroupIds est setté dans handleOpenEdit.
-        if (editingGroupIds.length > 0) {
-          // 1. Supprimer toutes les évaluations du groupe
-          await Promise.all(
-            editingGroupIds.map((id) =>
-              institutionalExamsService.deleteEvaluation(id).catch((e) =>
-                console.warn(`Failed to delete eval ${id}:`, e),
-              ),
-            ),
+        // ⭐ FIX 2026-11-19 (garde-fou reprogrammation) — ÉDITION PAR DIFF :
+        //    AVANT, l'édition d'une session supprimait TOUTES ses évaluations
+        //    puis en recréait autant de neuves. Toute évaluation portant des
+        //    notes était soft-cancellée AVEC ses notes (zombies) et l'école
+        //    devait ressaisir TOUTES les notes sur les nouvelles évaluations
+        //    vierges (cf. CP B Mon Avenir Plus : badge « Planifiée » après
+        //    validation de la direction).
+        //    Désormais :
+        //      1. matières DÉCOCHÉES → deleteEvaluation — remove() PROPRE côté
+        //         serveur (notes supprimées + lot de validation clôturé +
+        //         CANCELLED pour l'historique) ;
+        //      2. matières CONSERVÉES → updateEvaluation des métadonnées
+        //         (dates, période, type, barème, coefficient, titre) — les
+        //         notes et le statut sont PRÉSERVÉS ; les VALIDATED/LOCKED
+        //         sont ignorées (protégées) ;
+        //      3. NOUVELLES matières → createBulkEvaluations pour elles
+        //         seules.
+        //    → Retirer une matière (même avec des notes déjà saisies) est
+        //      fluide, et les notes des matières conservées ne sont jamais
+        //      perdues. Garde-fou universel, valable pour tous les tenants.
+        const group = editingGroup;
+        const keptSubjectIds = new Set(form.subjectIds);
+        // Évaluations actives (non annulées) du groupe indexées par matière
+        const bySubject = new Map<string, Evaluation>();
+        for (const ev of group?.evaluations || []) {
+          if (ev.subject?.id && ev.status !== 'CANCELLED' && !bySubject.has(ev.subject.id)) {
+            bySubject.set(ev.subject.id, ev);
+          }
+        }
+        const existingSubjectIds = Array.from(bySubject.keys());
+        const removedSubjectIds = existingSubjectIds.filter((sid) => !keptSubjectIds.has(sid));
+        const keptSubjectList = existingSubjectIds.filter((sid) => keptSubjectIds.has(sid));
+        const addedSubjectIds = form.subjectIds.filter((sid) => !bySubject.has(sid));
+
+        // ┚ Garde-fou UX : confirmation EXPLICITE quand on retire des
+        //    matières — surtout si elles portent déjà des notes saisies.
+        if (removedSubjectIds.length > 0) {
+          const removedWithGrades = removedSubjectIds
+            .map((sid) => bySubject.get(sid)!)
+            .filter((ev) => (ev._count?.grades || 0) > 0);
+          const subjectNames = removedSubjectIds
+            .map((sid) => bySubject.get(sid)?.subject?.name || '—');
+          const ok = removedWithGrades.length > 0
+            ? await warning(
+                (isEN
+                  ? `Remove ${removedWithGrades.length} subject(s) whose grades are already entered?\n\n`
+                  : `Retirer ${removedWithGrades.length} matière(s) dont les notes sont déjà saisies ?\n\n`) +
+                removedWithGrades
+                  .map((ev) => `• ${ev.subject?.name} (${ev._count?.grades} ${isEN ? 'grades' : 'notes'})`)
+                  .join('\n') +
+                (isEN
+                  ? '\n\nThese grades will be permanently deleted — the subject will not be assessed. The other subjects keep their grades and status.'
+                  : '\n\nCes notes seront supprimées définitivement — la matière ne sera pas évaluée. Les autres matières conservent leurs notes et leur statut.'),
+                isEN ? 'Remove subject(s) with grades' : 'Retirer des matières avec notes',
+                isEN
+                  ? 'Irreversible — grades entered for these subjects will be deleted.'
+                  : 'Action irréversible — les notes saisies pour ces matières seront supprimées.',
+              )
+            : await warning(
+                (isEN
+                  ? `Remove ${removedSubjectIds.length} subject(s) from the session (${group?.className})?\n\n`
+                  : `Retirer ${removedSubjectIds.length} matière(s) de la session (${group?.className}) ?\n\n`) +
+                subjectNames.map((n) => `• ${n}`).join('\n'),
+                isEN ? 'Remove subject(s)' : 'Retirer des matières',
+                isEN
+                  ? 'The other subjects keep their grades and status.'
+                  : 'Les autres matières conservent leurs notes et leur statut.',
+              );
+          if (!ok) {
+            setSaving(false);
+            return;
+          }
+        }
+
+        const failures: string[] = [];
+        const errMessage = (e: any) => {
+          const msg = (e?.response?.data?.message as string) || e?.message || 'Erreur inconnue';
+          return Array.isArray(msg) ? msg.join(' · ') : msg;
+        };
+
+        // 1. Supprimer les évaluations des matières retirées (remove() propre)
+        await Promise.all(
+          removedSubjectIds.map(async (sid) => {
+            const ev = bySubject.get(sid)!;
+            try {
+              await institutionalExamsService.deleteEvaluation(ev.id);
+            } catch (e: any) {
+              console.warn(`Failed to delete eval ${ev.id}:`, e);
+              failures.push(`${ev.subject?.name}: ${errMessage(e)}`);
+            }
+          }),
+        );
+
+        // 2. Mettre à jour les métadonnées des évaluations conservées
+        //    (VALIDATED/LOCKED protégées : notes et statut préservés tels quels)
+        let skippedValidated = 0;
+        await Promise.all(
+          keptSubjectList.map(async (sid) => {
+            const ev = bySubject.get(sid)!;
+            if (['VALIDATED', 'LOCKED', 'CANCELLED'].includes(ev.status)) {
+              skippedValidated++;
+              return;
+            }
+            try {
+              await institutionalExamsService.updateEvaluation(ev.id, {
+                title: form.title || null,
+                description: form.description || null,
+                periodId: form.periodId,
+                evaluationTypeId: form.evaluationTypeId,
+                evaluationDate: new Date(form.startDate).toISOString(),
+                startDate: new Date(form.startDate).toISOString(),
+                endDate: new Date(form.endDate).toISOString(),
+                ...(!isMaternelle
+                  ? {
+                      maxScore: parseFloat(form.maxScore) || 20,
+                      coefficient: parseFloat(form.coefficient) || 1,
+                    }
+                  : {}),
+              });
+            } catch (e: any) {
+              console.warn(`Failed to update eval ${ev.id}:`, e);
+              failures.push(`${ev.subject?.name}: ${errMessage(e)}`);
+            }
+          }),
+        );
+
+        // 3. Créer les nouvelles matières ajoutées à la session
+        let created = 0;
+        if (addedSubjectIds.length > 0) {
+          const bulkPayload = {
+            ...basePayload,
+            title: form.title || null,
+            evaluationTypeId: form.evaluationTypeId,
+            classIds: form.classIds,
+            subjectIds: addedSubjectIds,
+          };
+          const result = await institutionalExamsService.createBulkEvaluations(bulkPayload);
+          created = result.created || 0;
+        }
+
+        if (failures.length > 0) {
+          toastError(
+            isEN
+              ? `Update failed — ${failures.length} evaluation(s) NOT updated`
+              : `Modification échouée — ${failures.length} évaluation(s) NON modifiée(s)`,
+            { description: failures.slice(0, 2).join(' … ') },
+          );
+        } else {
+          toastSuccess(
+            isEN ? 'Session updated' : 'Session modifiée',
+            {
+              description: [
+                removedSubjectIds.length > 0
+                  ? (isEN
+                      ? `${removedSubjectIds.length} subject(s) removed${(removedSubjectIds.some((sid) => (bySubject.get(sid)?._count?.grades || 0) > 0) ? ' (grades deleted)' : '')}`
+                      : `${removedSubjectIds.length} matière(s) retirée(s)${(removedSubjectIds.some((sid) => (bySubject.get(sid)?._count?.grades || 0) > 0) ? ' (notes supprimées)' : '')}`)
+                  : null,
+                keptSubjectList.length - skippedValidated > 0
+                  ? (isEN
+                      ? `${keptSubjectList.length - skippedValidated} updated`
+                      : `${keptSubjectList.length - skippedValidated} mise(s) à jour`)
+                  : null,
+                created > 0
+                  ? (isEN ? `${created} created` : `${created} créée(s)`)
+                  : null,
+                skippedValidated > 0
+                  ? (isEN
+                      ? `${skippedValidated} validated — kept as-is (grades protected)`
+                      : `${skippedValidated} validée(s) — conservée(s) telles quelles (notes protégées)`)
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(' · '),
+            },
           );
         }
-        // 2. Recréer via bulk create avec les nouvelles données
-        const bulkPayload = {
-          ...basePayload,
-          title: form.title || null,
-          evaluationTypeId: form.evaluationTypeId,
-          classIds: form.classIds,
-          subjectIds: form.subjectIds,
-        };
-        const result = await institutionalExamsService.createBulkEvaluations(bulkPayload);
-        toastSuccess(
-          isEN ? `${result.created} assessment(s) updated` : `${result.created} évaluation(s) modifiée(s)`,
-          {
-            description: `${form.classIds.length} ${isEN ? 'class(es)' : 'classe(s)'} × ${form.subjectIds.length} ${isEN ? 'subject(s)' : 'matière(s)'}`,
-          },
-        );
       } else {
         // ⭐ CRÉATION SIMPLIFIÉE — pour chaque type coché, une programmation
         //    par classe est créée avec les matières PROPRES à chaque classe
@@ -1689,6 +1868,10 @@ export default function EvaluationsPage() {
         }
         let created = 0;
         let teachersNotified = 0;
+        // ⭐ FIX 2026-11-19 (garde-fou anti-doublons) — combinaisons déjà
+        //    programmées ignorées par le backend (idempotence du bulk create)
+        //    → signalées à l'utilisateur dans le toast.
+        let skippedDuplicates = 0;
         const usedTypeNames: string[] = [];
         for (const typeId of form.evaluationTypeIds) {
           const t = evaluationTypes.find((et) => et.id === typeId);
@@ -1707,6 +1890,7 @@ export default function EvaluationsPage() {
           });
           created += result.created || 0;
           teachersNotified += (result as any)?.teachersAssigned || 0;
+          skippedDuplicates += (result as any)?.skippedDuplicates || 0;
           usedTypeNames.push(t.code ? `[${t.code}] ${t.name}` : t.name);
         }
 
@@ -1730,6 +1914,9 @@ export default function EvaluationsPage() {
               (isEN ? 'assigned automatically per class' : 'associées automatiquement par classe') +
               (teachersNotified > 0
                 ? ` • ${teachersNotified} ${isEN ? `teacher${teachersNotified > 1 ? 's' : ''} notified` : `enseignant${teachersNotified > 1 ? 's' : ''} notifié${teachersNotified > 1 ? 's' : ''}`}`
+                : '') +
+              (skippedDuplicates > 0
+                ? ` • ⚠ ${skippedDuplicates} ${isEN ? 'combination(s) already scheduled for the SAME dates — skipped (edit the existing session or change the dates)' : 'combinaison(s) déjà programmée(s) aux MÊMES dates — ignorée(s) (modifiez la session existante ou changez les dates)'}`
                 : ''),
             duration: 6000,
           },
@@ -1746,15 +1933,25 @@ export default function EvaluationsPage() {
 
   const handleDelete = async (group: GroupedEvaluation) => {
     // ⭐ Demander à l'utilisateur : toutes les matières ou une seule ?
+    //    ⭐ FIX 2026-11-19 — remove() côté serveur est désormais PROPRE :
+    //    une évaluation portant des notes est annulée ET ses notes supprimées
+    //    (+ son lot de validation clôturé) — le message de confirmation le dit.
     const subjectCount = group.subjects.length;
     const subjectNames = group.subjects.map((s) => s.name).join(', ');
+    const gradesTotal = (group.evaluations || []).reduce(
+      (n, ev) => n + ((ev as any)._count?.grades || 0),
+      0,
+    );
 
     if (subjectCount <= 1) {
       // Une seule matière : confirmation simple
       const ok = await danger(
-        `Supprimer l'évaluation "${group.firstEvaluation.title || 'sans titre'}" pour ${group.className} ?`,
+        `Supprimer l'évaluation "${group.firstEvaluation.title || 'sans titre'}" pour ${group.className} ?` +
+          (gradesTotal > 0 ? `\n\n⚠ ${gradesTotal} note(s) rattachée(s) seront supprimées définitivement.` : ''),
         'Supprimer l\'évaluation',
-        'Cette action est irréversible.'
+        gradesTotal > 0
+          ? 'Les notes déjà saisies pour cette évaluation seront supprimées. Cette action est irréversible.'
+          : 'Cette action est irréversible.'
       );
       if (!ok) return;
       try {
@@ -1776,9 +1973,11 @@ export default function EvaluationsPage() {
     // Plusieurs matières : demander le scope de suppression
     const ok = await danger(
       `Supprimer ${subjectCount} évaluation(s) pour la classe ${group.className} ?\n\n` +
-      `Matières : ${subjectNames}`,
+        `Matières : ${subjectNames}` +
+        (gradesTotal > 0 ? `\n\n⚠ ${gradesTotal} note(s) rattachée(s) seront supprimées définitivement.` : ''),
       'Suppression multiple',
-      'Cliquez sur "Supprimer" pour supprimer TOUTES les matières de cette session. Cette action est irréversible.'
+      'Cliquez sur "Supprimer" pour supprimer TOUTES les matières de cette session. Cette action est irréversible.' +
+        (gradesTotal > 0 ? ' Les notes déjà saisies seront également supprimées.' : '')
     );
 
     if (!ok) return;
@@ -1801,8 +2000,18 @@ export default function EvaluationsPage() {
   };
 
   const handleOpen = async (group: GroupedEvaluation) => {
+    // ⭐ FIX 2026-11-19 — ignorer les évaluations CANCELLED (matières retirées
+    //    d'une reprogrammation) : elles échoueraient en 400 « doit être en
+    //    statut PLANNED » et pollueraient le compte d'échecs.
+    const targetIds = group.evaluationIds.filter(
+      (id) => (group.evaluations.find((e) => e.id === id)?.status || 'PLANNED') !== 'CANCELLED',
+    );
+    if (targetIds.length === 0) {
+      toastWarning(isEN ? 'Nothing to open — all evaluations are cancelled.' : 'Rien à ouvrir — toutes les évaluations sont annulées.');
+      return;
+    }
     const ok = await warning(
-      `Ouvrir ${group.evaluationIds.length} évaluation(s) pour la saisie (${group.className} - ${group.subjects.length} matière(s)) ?`,
+      `Ouvrir ${targetIds.length} évaluation(s) pour la saisie (${group.className} - ${group.subjects.length} matière(s)) ?`,
       'Ouvrir pour saisie',
       'Les enseignants pourront commencer à saisir les notes.'
     );
@@ -1813,7 +2022,7 @@ export default function EvaluationsPage() {
       //    (avant : toast de succès même si TOUTES les actions échouaient).
       const failures: string[] = [];
       await Promise.all(
-        group.evaluationIds.map((id) =>
+        targetIds.map((id) =>
           institutionalExamsService.openEvaluation(id).catch((e: any) => {
             console.warn(`Failed to open eval ${id}:`, e);
             const msg =
@@ -1827,11 +2036,11 @@ export default function EvaluationsPage() {
       );
       if (failures.length > 0) {
         toastError(
-          `Ouverture échouée — ${failures.length}/${group.evaluationIds.length} évaluation(s) NON ouverte(s)`,
+          `Ouverture échouée — ${failures.length}/${targetIds.length} évaluation(s) NON ouverte(s)`,
           { description: failures.slice(0, 2).join(' … ') },
         );
       } else {
-        toastSuccess(`${group.evaluationIds.length} évaluation(s) ouverte(s) pour la saisie`);
+        toastSuccess(`${targetIds.length} évaluation(s) ouverte(s) pour la saisie`);
       }
       await loadData();
     } catch (err: any) {
@@ -1840,8 +2049,16 @@ export default function EvaluationsPage() {
   };
 
   const handleSubmit = async (group: GroupedEvaluation) => {
+    // ⭐ FIX 2026-11-19 — ignorer les évaluations CANCELLED (cf. handleOpen).
+    const targetIds = group.evaluationIds.filter(
+      (id) => (group.evaluations.find((e) => e.id === id)?.status || 'PLANNED') !== 'CANCELLED',
+    );
+    if (targetIds.length === 0) {
+      toastWarning('Rien à soumettre — toutes les évaluations sont annulées.');
+      return;
+    }
     const ok = await warning(
-      `Soumettre ${group.evaluationIds.length} évaluation(s) pour validation (${group.className}) ?`,
+      `Soumettre ${targetIds.length} évaluation(s) pour validation (${group.className}) ?`,
       'Soumettre pour validation',
       'Les évaluations seront soumises à la direction pour validation.'
     );
@@ -1850,7 +2067,7 @@ export default function EvaluationsPage() {
       // ⭐ FIX 2026-11-18 — même correction : les échecs deviennent visibles.
       const failures: string[] = [];
       await Promise.all(
-        group.evaluationIds.map((id) =>
+        targetIds.map((id) =>
           institutionalExamsService.submitEvaluation(id).catch((e: any) => {
             console.warn(`Failed to submit eval ${id}:`, e);
             const msg =
@@ -1863,11 +2080,11 @@ export default function EvaluationsPage() {
       );
       if (failures.length > 0) {
         toastError(
-          `Soumission échouée — ${failures.length}/${group.evaluationIds.length} évaluation(s) NON soumise(s)`,
+          `Soumission échouée — ${failures.length}/${targetIds.length} évaluation(s) NON soumise(s)`,
           { description: failures.slice(0, 2).join(' … ') },
         );
       } else {
-        toastSuccess(`${group.evaluationIds.length} évaluation(s) soumise(s)`);
+        toastSuccess(`${targetIds.length} évaluation(s) soumise(s)`);
       }
       await loadData();
     } catch (err: any) {
@@ -1876,8 +2093,16 @@ export default function EvaluationsPage() {
   };
 
   const handleValidate = async (group: GroupedEvaluation) => {
+    // ⭐ FIX 2026-11-19 — ignorer les évaluations CANCELLED (cf. handleOpen).
+    const targetIds = group.evaluationIds.filter(
+      (id) => (group.evaluations.find((e) => e.id === id)?.status || 'PLANNED') !== 'CANCELLED',
+    );
+    if (targetIds.length === 0) {
+      toastWarning('Rien à valider — toutes les évaluations sont annulées.');
+      return;
+    }
     const ok = await warning(
-      `Valider définitivement ${group.evaluationIds.length} évaluation(s) (${group.className}) ?\n\nLes notes seront verrouillées.`,
+      `Valider définitivement ${targetIds.length} évaluation(s) (${group.className}) ?\n\nLes notes seront verrouillées.`,
       'Valider définitivement',
       'Cette action est irréversible. Les notes seront définitivement verrouillées.'
     );
@@ -1892,7 +2117,7 @@ export default function EvaluationsPage() {
       //    Maintenant : message serveur exact + compte des échecs.
       const failures: string[] = [];
       await Promise.all(
-        group.evaluationIds.map((id) =>
+        targetIds.map((id) =>
           institutionalExamsService.validateEvaluation(id).catch((e: any) => {
             console.warn(`Failed to validate eval ${id}:`, e);
             const msg =
@@ -1906,7 +2131,7 @@ export default function EvaluationsPage() {
       );
       if (failures.length > 0) {
         toastError(
-          `Validation échouée — ${failures.length}/${group.evaluationIds.length} évaluation(s) NON validée(s)`,
+          `Validation échouée — ${failures.length}/${targetIds.length} évaluation(s) NON validée(s)`,
           {
             description:
               failures.slice(0, 2).join(' … ') +
@@ -1914,7 +2139,7 @@ export default function EvaluationsPage() {
           },
         );
       } else {
-        toastSuccess(`${group.evaluationIds.length} évaluation(s) validée(s)`, {
+        toastSuccess(`${targetIds.length} évaluation(s) validée(s)`, {
           description: 'Les notes apparaissent maintenant dans le registre des notes et les bulletins.',
         });
       }
@@ -1925,21 +2150,30 @@ export default function EvaluationsPage() {
   };
 
   const handleCancel = async (group: GroupedEvaluation) => {
+    // ⭐ FIX 2026-11-19 — ignorer les évaluations déjà CANCELLED (elles
+    //    échoueraient en 400 « déjà annulée » et pollueraient le toast).
+    const targetIds = group.evaluationIds.filter(
+      (id) => (group.evaluations.find((e) => e.id === id)?.status || 'PLANNED') !== 'CANCELLED',
+    );
+    if (targetIds.length === 0) {
+      toastWarning('Rien à annuler — toutes les évaluations sont déjà annulées.');
+      return;
+    }
     const ok = await warning(
-      `Annuler ${group.subjects.length} matière(s) pour ${group.className} ?`,
+      `Annuler ${targetIds.length} évaluation(s) pour ${group.className} ?`,
       'Annuler les évaluations',
-      'Les évaluations seront marquées comme annulées (mais non supprimées).'
+      'Les évaluations seront marquées comme annulées (mais non supprimées) — leur éventuel lot de validation en attente sera clôturé.'
     );
     if (!ok) return;
     try {
       await Promise.all(
-        group.evaluationIds.map((id) =>
+        targetIds.map((id) =>
           institutionalExamsService.cancelEvaluation(id, 'Annulation batch').catch((e) =>
             console.warn(`Failed to cancel eval ${id}:`, e),
           ),
         ),
       );
-      toastSuccess(`${group.evaluationIds.length} évaluation(s) annulée(s) pour ${group.className}`);
+      toastSuccess(`${targetIds.length} évaluation(s) annulée(s) pour ${group.className}`);
       await loadData();
     } catch (err: any) {
       toastError('Erreur', { description: err.message });

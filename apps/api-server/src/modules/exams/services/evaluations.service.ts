@@ -784,12 +784,58 @@ export class EvaluationsService {
       }
     }
 
-    // Créer toutes les évaluations en transaction
-    const result = await this.prisma.$transaction(
-      evaluationsToCreate.map((evalData) =>
-        this.prisma.evaluation.create({ data: evalData })
-      )
+    // ⭐ FIX 2026-11-19 (garde-fou universel — idempotence du bulk create) :
+    //    AVANT, re-programmer une session existante (même classe × matière ×
+    //    type × période × MÊMES dates) créait une évaluation DUPLIQUÉE à côté
+    //    de l'existante → deux jeux dans la même session (classe × type ×
+    //    période × dates) → statuts mélangés [VALIDATED + PLANNED] → badge
+    //    « Planifiée » après validation de la direction, notes en double dans
+    //    la fiche de saisie (cf. CP B Mon Avenir Plus : badge « Planifiée »
+    //    malgré validation). Désormais, toute combinaison déjà programmée
+    //    (statut non annulé) est IGNORÉE — l'école est invitée à éditer la
+    //    session existante (l'édition par diff préserve les notes) ou à
+    //    changer les dates. Le compte des ignorées est retourné.
+    const sessionStartDate: Date | null = data.startDate ? new Date(data.startDate) : null;
+    const sessionEndDate: Date | null = data.endDate ? new Date(data.endDate) : null;
+    const pairConditions = data.classIds.flatMap((classId) =>
+      subjectsForClass(classId).map((subjectId) => ({
+        classId,
+        subjectId,
+      })),
     );
+    const existingSessionEvals = pairConditions.length > 0
+      ? await this.prisma.evaluation.findMany({
+          where: {
+            tenantId,
+            academicYearId,
+            evaluationTypeId: type.id,
+            periodId: data.periodId,
+            startDate: sessionStartDate,
+            endDate: sessionEndDate,
+            status: { not: 'CANCELLED' },
+            OR: pairConditions,
+          },
+          select: { classId: true, subjectId: true },
+        })
+      : [];
+    const existingSessionKeys = new Set(
+      existingSessionEvals.map((e) => `${e.classId}|${e.subjectId}`),
+    );
+    const duplicateEvaluations = evaluationsToCreate.filter(
+      (ev) => existingSessionKeys.has(`${ev.classId}|${ev.subjectId}`),
+    );
+    const uniqueEvaluationsToCreate = evaluationsToCreate.filter(
+      (ev) => !existingSessionKeys.has(`${ev.classId}|${ev.subjectId}`),
+    );
+
+    // Créer toutes les évaluations en transaction
+    const result = uniqueEvaluationsToCreate.length > 0
+      ? await this.prisma.$transaction(
+          uniqueEvaluationsToCreate.map((evalData) =>
+            this.prisma.evaluation.create({ data: evalData })
+          )
+        )
+      : [];
 
     // ⭐ Notifier les enseignants qu'une évaluation a été programmée pour eux.
     // Fire-and-forget — ne bloque jamais la réponse au client.
@@ -838,10 +884,18 @@ export class EvaluationsService {
       created: result.length,
       evaluations: result,
       teachersAssigned: teacherMap.size,
+      // ⭐ FIX 2026-11-19 — combinaisons déjà programmées (ignorées, garde-fou
+      // anti-doublons de session — cf. idempotence du bulk create ci-dessus).
+      skippedDuplicates: duplicateEvaluations.length,
       // ⭐ RÉORGANISATION 2026-11-17 — avec subjectsByClass, le nombre de
       //    matières diffère PAR CLASSE (7 pour la 6e, 8 pour la 4e…) — on
       //    rapporte l'union des matières impliquées, pas une Croix produit.
-      message: `${result.length} évaluation(s) créée(s) pour ${data.classIds.length} classe(s) × ${allInvolvedSubjectIds.length} matière(s) (union des matières par classe). ${teacherMap.size} enseignant(s) auto-assigné(s).`,
+      message:
+        `${result.length} évaluation(s) créée(s) pour ${data.classIds.length} classe(s) × ${allInvolvedSubjectIds.length} matière(s) (union des matières par classe). ` +
+        `${teacherMap.size} enseignant(s) auto-assigné(s).` +
+        (duplicateEvaluations.length > 0
+          ? ` ⚠ ${duplicateEvaluations.length} combinaison(s) déjà programmée(s) pour les MÊMES dates ignorée(s) — modifiez la session existante (les notes sont préservées) ou changez les dates pour programmer une seconde session.`
+          : ''),
     };
   }
 
@@ -913,8 +967,28 @@ export class EvaluationsService {
 
   /**
    * Supprime une évaluation
-   * - Si l'évaluation a des notes → soft-cancel (status=CANCELLED)
+   * - Si l'évaluation a des notes → soft-cancel (status=CANCELLED) PROPRE
    * - Sinon → hard delete
+   *
+   * ⭐ FIX 2026-11-19 (garde-fou reprogrammation — CP B Mon Avenir Plus) :
+   *    l'ancien soft-cancel laissait SUR PLACE les notes de l'évaluation
+   *    annulée + son éventuel lot de validation PENDING. Résultat : après une
+   *    reprogrammation (l'école retire une matière, même avec des notes déjà
+   *    saisies), l'ancienne évaluation CANCELLED coexistait avec la nouvelle
+   *    dans la même session (classe × type × période × dates) → badge de
+   *    session « Planifiée » au lieu de « Validée » après validation de la
+   *    direction, notes zombies attachées, lots PENDING orphelins visibles
+   *    dans l'onglet Validation.
+   *    → Désormais, retirer une matière de la programmation supprime :
+   *      1. Ses notes (elles ne comptent plus nulle part — la matière ne
+   *         sera pas évaluée) ;
+   *      2. Son lot de validation PENDING (clôturé en REJECTED — plus jamais
+   *         dans la file de validation) ;
+   *      3. L'évaluation passe en CANCELLED (historique conservé — elle peut
+   *         être supprimée définitivement d'un second clic, les notes étant
+   *         parties le hard-delete s'applique).
+   *    Comportement demandé par le promoteur : le retrait d'une matière avec
+   *    notes déjà saisies doit être possible et fluide, pour tous les tenants.
    */
   async remove(id: string, tenantId: string) {
     const evaluation = await this.prisma.evaluation.findFirst({
@@ -927,11 +1001,10 @@ export class EvaluationsService {
     // ⭐ (sept. 2026 — retour promoteur « aucune évaluation supprimable dans
     //    la sélection ») : les évaluations VALIDÉES sont désormais supprimables
     //    — le workflow manuel suggéré (« Annulez-la d'abord ») est automatisé :
-    //    avec notes → CANCELLED (conservée dans l'historique, comportement
-    //    inchangé) ; sans note → suppression définitive. Seules les évaluations
-    //    LOCKED (verrouillées par délibération/conseil — acte officiel) restent
-    //    protégées : leur suppression passe par un déblocage explicite
-    //    (exam_unlock_requests).
+    //    avec notes → CANCELLED (conservée dans l'historique) ; sans note →
+    //    suppression définitive. Seules les évaluations LOCKED (verrouillées
+    //    par délibération/conseil — acte officiel) restent protégées : leur
+    //    suppression passe par un déblocage explicite (exam_unlock_requests).
     if (evaluation.status === 'LOCKED') {
       throw new BadRequestException(
         `Impossible de supprimer une évaluation verrouillée (délibération). Débloquez-la d'abord via une demande de déblocage.`
@@ -939,10 +1012,34 @@ export class EvaluationsService {
     }
 
     if (evaluation._count.grades > 0) {
-      // Soft-cancel : l'évaluation reste visible dans l'historique
-      return this.prisma.evaluation.update({
-        where: { id },
-        data: { status: 'CANCELLED' },
+      // ⭐ FIX 2026-11-19 — annulation PROPRE (transaction) : notes supprimées,
+      // lot PENDING clôturé, évaluation CANCELLED pour l'historique.
+      return this.prisma.$transaction(async (tx) => {
+        // 1. Supprimer les notes rattachées — elles ne doivent plus exister
+        //    (la matière est retirée de la session : registre, bulletins et
+        //    moyennes n'en tiendront jamais compte).
+        await tx.grade.deleteMany({ where: { evaluationId: id } });
+
+        // 2. Clôturer le lot de validation PENDING éventuel (miroir de
+        //    approveBatch/rejectBatch) — sinon il resterait dans la file de
+        //    l'onglet Validation alors que l'évaluation est annulée.
+        await tx.gradeValidationBatch.updateMany({
+          where: { evaluationId: id, status: 'PENDING' },
+          data: {
+            status: 'REJECTED',
+            reviewedAt: new Date(),
+            reviewComment:
+              'Évaluation annulée (retirée de la programmation) — notes supprimées',
+          },
+        });
+
+        // 3. Soft-cancel : l'évaluation reste visible dans l'historique
+        //    (badge « Annulée ») ; un second clic la supprime définitivement
+        //    puisque ses notes sont parties.
+        return tx.evaluation.update({
+          where: { id },
+          data: { status: 'CANCELLED' },
+        });
       });
     }
 
@@ -1144,6 +1241,12 @@ export class EvaluationsService {
    * Annule une évaluation
    * Transition : any → CANCELLED
    * L'évaluation reste visible dans l'historique.
+   *
+   * ⭐ FIX 2026-11-19 (garde-fou) : clôture aussi le lot de validation PENDING
+   *    éventuel — une évaluation annulée ne doit JAMAIS rester dans la file
+   *    de l'onglet Validation. Les notes sont conservées (archive — annulation
+   *    ≠ retrait de la programmation ; la suppression propre des notes passe
+   *    par remove()).
    */
   async cancel(id: string, tenantId: string, reason?: string) {
     const evaluation = await this.prisma.evaluation.findFirst({
@@ -1162,14 +1265,30 @@ export class EvaluationsService {
       );
     }
 
-    const updated = await this.prisma.evaluation.update({
-      where: { id },
-      data: {
-        status: 'CANCELLED',
-        // ⚠️ On conserve l'évaluation dans l'historique — elle reste visible
-        // avec le badge "Annulée". La raison peut être ajoutée dans description.
-        ...(reason ? { description: `[ANNULÉE — ${reason}] ${evaluation.description || ''}` } : {}),
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // 1. Clôturer le lot de validation PENDING éventuel (hygiène — ne doit
+      //    plus apparaître dans l'onglet Validation après annulation).
+      await tx.gradeValidationBatch.updateMany({
+        where: { evaluationId: id, status: 'PENDING' },
+        data: {
+          status: 'REJECTED',
+          reviewedAt: new Date(),
+          reviewComment: reason
+            ? `Évaluation annulée — ${reason}`
+            : 'Évaluation annulée',
+        },
+      });
+
+      // 2. Annulation (historique conservé)
+      return tx.evaluation.update({
+        where: { id },
+        data: {
+          status: 'CANCELLED',
+          // ⚠️ On conserve l'évaluation dans l'historique — elle reste visible
+          // avec le badge "Annulée". La raison peut être ajoutée dans description.
+          ...(reason ? { description: `[ANNULÉE — ${reason}] ${evaluation.description || ''}` } : {}),
+        },
+      });
     });
 
     // ⭐ V1 audit — trace l'annulation/rejet avec son motif

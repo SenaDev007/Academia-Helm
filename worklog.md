@@ -14611,3 +14611,26 @@ Stage Summary:
 - ✅✅ CP B affiche « Validée » immédiatement (données corrigées : session = 9×VALIDATED, 342 notes validées, badge « Validée » comme CP A) ; registre des notes et bulletins déjà fonctionnels (ils filtrent VALIDATED).
 - ✅✅ Correctifs de code poussés (web + api) : toute future reprogrammation d'une session avec notes ne polluera plus les badges de saisie ni ne laissera de lots PENDING orphelins.
 - ℹ️ Le portail enseignant ne subissait aucun blocage réel (fiches en lecture seule correctes), seuls les libellés pouvaient être trompeurs — corrigés également.
+
+---
+Task ID: 150-exams-garde-fou-reprogrammation-universel
+Agent: Super Z (agent principal)
+Task: Demande promoteur — éviter pour TOUS les tenants le problème constaté sur CP B : quand une école programme des évaluations puis MODIFIE la programmation (retire une matière, même avec des notes déjà saisies), tout doit rester fluide — plus jamais de matière retirée qui continue de s'afficher dans le tableau de saisie des notes ni de badge « Planifiée » alors que tout est validé. Implémenter un garde-fou solide.
+
+Work Log:
+- DIAGNOSTIC DU FLUX FAUTIF (cause des zombies de la Task 149) : l'édition d'une session (onglet Évaluations → Modifier) supprimait TOUTES les évaluations du groupe puis en recréait autant de neuves (delete-all + recreate-all) ; remove() soft-cancellait chaque évaluation portant des notes EN GARDANT ses notes et son lot PENDING → zombies + ressaisie intégrale des notes par l'école. createBulk ne vérifiait pas non plus l'existence d'une session identique → programmation en double = statuts mélangés dans la même session.
+- GARDE-FOU API (evaluations.service.ts, universel — tout tenant, tout niveau, toute piste) :
+  1. remove() = retrait PROPRE en transaction : notes de l'évaluation SUPPRIMÉES + lot de validation PENDING clôturé (REJECTED avec motif) + évaluation CANCELLED pour l'historique (un 2e clic la supprime définitivement, ses notes étant parties) → retirer une matière avec notes saisies est désormais possible et sans résidu ; LOCKED reste protégé (délibération).
+  2. cancel() = hygiène : clôture aussi son lot PENDING (une évaluation annulée ne reste jamais dans la file de l'onglet Validation) ; notes conservées en archive.
+  3. createBulk = IDEMPOTENT : toute combinaison déjà programmée (même classe × matière × type × période × MÊMES dates, statut non annulé) est IGNORÉE (skippedDuplicates retourné + message explicite) → plus de programmation en double qui mélange les statuts d'une session. Uniquement createBulk : toutes les créations de l'app passent par lui (createEvaluation single non utilisé côté frontend).
+- GARDE-FOU FRONTEND (evaluations/page.tsx) :
+  1. ÉDITION PAR DIFF (remplace delete-all + recreate-all) : matières décochées → deleteEvaluation (remove propre) ; matières conservées → updateEvaluation des métadonnées (notes et statut PRÉSERVÉS — VALIDATED/LOCKED ignorées, protégées) ; nouvelles matières → createBulk pour elles seules → l'école ne ressaie JAMAIS les notes des matières conservées.
+  2. Garde-fou UX : confirmation EXPLICITE listant les matières retirées avec leur nombre de notes (« ces notes seront supprimées définitivement ») avant d'appliquer ; toast récapitulatif détaillé (retirées/mises à jour/créées/validées conservées) ; échecs serveur rapportés individuellement.
+  3. Cartes de session : matières listées = session COURANTE uniquement (les CANCELLED n'apparaissent plus dans « matières à composer ») ; les 4 actions groupées (Ouvrir/Soumettre/Valider/Annuler) ignorent les évaluations annulées (plus de faux échecs 400 dans les comptes) ; messages de suppression (simple/multiple/groupe) annoncent la suppression des notes rattachées.
+  4. handleOpenEdit pré-remplit depuis la 1ère évaluation NON annulée du groupe ; toast de création signale les combinaisons ignorées (anti-doublons).
+- Cohérence avec la Task 149 : les agrégations de badges (grades/validation/teacher/pédagogie FR+EN) ignorent déjà CANCELLED ; la saisie des notes exclut CANCELLED du regroupement → avec ce garde-fou, une matière retirée n'a plus ni ligne de saisie, ni badge, ni notes, ni lot — elle ne reste que comme carte « Annulée » d'historique, supprimable définitivement d'un clic.
+- VALIDATION : tsc --noEmit (web + api) zéro erreur sur les deux fichiers modifiés ; relecture des flux (diff, confirmations, suppression, création idempotente, notifications conservées).
+
+Stage Summary:
+- ✅✅ Garde-fou universel en place : une école peut retirer une matière d'une évaluation programmée même après saisie (partielle ou complète) de notes — suppression propre (notes + lot), aucune ressaisie des autres matières, aucun zombie, badge de session correct (Valide = Validée). Anti-doublons de programmation (mêmes dates) côté serveur pour tous les appelants.
+- ℹ️ Déploiement Vercel automatique (push origin main) — comportement actif dès la mise en ligne.

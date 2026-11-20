@@ -14652,3 +14652,24 @@ Work Log:
 Stage Summary:
 - ✅✅ Un enseignant/admin qui repère une erreur de nom pendant la saisie clique le crayon à côté du nom → corrige Prénom/Nom → Enregistrer : le nom est persisté en base (PUT /students/:id) et immédiatement reflété dans le tableau (re-tri alphabétique), avec propagation système garantie (bulletins, registre, finance…) puisque tous les modules lisent Student en direct.
 - ℹ️ Aucun changement backend nécessaire — l'API de mise à jour élève existante (déjà utilisée par l'onglet Inscription) est réutilisée telle quelle.
+
+---
+Task ID: 152-exams-verrou-universel-saisie-sans-mode
+Agent: Super Z (agent principal)
+Task: Demande promoteur — le tableau de saisie des notes ne doit PAS être actif pour la modification tant que l'utilisateur n'a pas cliqué sur « Ajouter » ou « Modifier » (primaire, maternelle, secondaire, pistes FR et EN). Or des cellules restaient modifiables sans mode édition.
+
+Work Log:
+- DIAGNOSTIC (GradingSheet.tsx — l'UNIQUE point de saisie, portails admin + enseignant) : les inputs de notes des tables secondaire FR et broadsheet EN étaient déjà verrouillés (disabled si editMode==='readonly' || isLocked), MAIS :
+  1. Table maternelle/primaire FR : boutons qualitatifs TS/S/PS + inputs CM/CP + input Observation n'avaient QUE le verrou du mode 'add' (canAdd && hasNote) — NI readonly NI isLocked → éditables sans cliquer Ajouter/Modifier (le bug signalé).
+  2. Page 2 « Head Teacher's Report » (piste EN) : textareas de remarques par matière + champ Extra Subject + bouton « Save Remarks » explicitement TOUJOURS actifs (exception (? false :) du V10f).
+  3. Présence : boutons P/A/⚙ des tables FR + cercle de présence EN + PresenceModal actifs quel que soit le mode → un clic changeait isAbsent (données) sans mode édition.
+- CORRECTIF (verrou universel : canEdit = !isLocked && editMode !== 'readonly' :
+  1. Maternelle/primaire : disabled += !canEdit sur TS/S/PS, CM, CP, Observation (onClick gardés + styles cursor-not-allowed/gris).
+  2. Head Teacher's Report : textareas + Extra Subject gated (!canEdit), bouton Save Remarks gated (fin de l'exception), placeholder « Locked — click Modify to edit remarks », opacité-90 du conteneur en lecture seule désormais appliquée aussi à cette page.
+  3. Présence : P/A/⚙ disabled={!canEdit} dans les DEUX tables FR, cercle EN (span) gardé + estompé, bouton ⚙ EN disabled, PresenceModal reçoit readOnly={!canEdit} et désactive Tout présent/Tout absent/P/A par matière (défense en profondeur si le modal restait ouvert au moment du verrouillage).
+- Cohérence : auto-save V12 et boutons Sauvegarder/Valider étaient déjà gardés readonly/locked ; le crayon de correction du nom (Task 151) reste actif par conception (correction de la FICHE élève, pas une saisie de notes).
+- VALIDATION : esbuild TSX OK ; tsc --noEmit — zéro NOUVELLE erreur (les 9 erreurs du fichier sont préexistantes sur main, vérifiées par baseline) ; relecture exhaustive de TOUS les onChange (10) et onClick modificateurs — plus aucune voie de modification sans mode.
+
+Stage Summary:
+- ✅✅ Plus AUCUNE cellule modifiable sans « Ajouter »/« Modifier » sur aucune table (maternelle TS/S/PS, primaire CM/CP, secondaire, broadsheet EN page 1, Head Teacher's Report page 2, présence P/A/⚙) ni aucune piste/niveau — fiche verrouillée comprise.
+- ℹ️ Déploiement Vercel automatique (push origin main).

@@ -1091,8 +1091,7 @@ export function GradingSheet({
                   size="sm"
                   onClick={() => (isEN && broadsheetPage === 'report' ? saveSubjectRemarks(false) : handleSave(false))}
                   disabled={
-                    saving || loading || remarksSaving ||
-                    (isEN && broadsheetPage === 'report' ? false : (isLocked || editMode === 'readonly'))
+                    saving || loading || remarksSaving || isLocked || editMode === 'readonly'
                   }
                   className="border-blue-200 text-blue-700 hover:bg-blue-50"
                 >
@@ -1230,7 +1229,7 @@ export function GradingSheet({
                 {/* Tableau registre */}
                 <div className={cn(
                   "bg-white border-2 border-slate-800 rounded-xl overflow-x-auto",
-                  (isLocked || editMode === 'readonly') && !(isEN && broadsheetPage === 'report') && "opacity-90"
+                  (isLocked || editMode === 'readonly') && "opacity-90"
                 )}>
                   {/* ⭐ Bannière mode édition */}
                   {editMode === 'add' && (
@@ -1287,13 +1286,14 @@ export function GradingSheet({
                               <textarea
                                 value={subjectRemarks[subject.id] || ''}
                                 onChange={(e) => setSubjectRemarks((prev) => ({ ...prev, [subject.id]: e.target.value }))}
+                                disabled={!canEdit}
                                 rows={6}
-                                placeholder="Write the head teacher's remarks for this subject…"
+                                placeholder={!canEdit ? (isEN ? 'Locked — click Modify to edit remarks' : '') : "Write the head teacher's remarks for this subject…"}
                                 style={{
                                   backgroundImage: 'repeating-linear-gradient(transparent, transparent 27px, #e2e8f0 27px, #e2e8f0 28px)',
                                   backgroundAttachment: 'local',
                                 }}
-                                className="w-full border-0 px-4 py-1 text-sm text-slate-800 leading-7 resize-y focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                className="w-full border-0 px-4 py-1 text-sm text-slate-800 leading-7 resize-y focus:outline-none focus:ring-1 focus:ring-amber-300 disabled:bg-slate-50/60 disabled:text-slate-400 disabled:cursor-not-allowed"
                               />
                             </div>
                           ))}
@@ -1307,20 +1307,22 @@ export function GradingSheet({
                                 type="text"
                                 value={extraRemark.name}
                                 onChange={(e) => setExtraRemark((prev) => ({ ...prev, name: e.target.value }))}
+                                disabled={!canEdit}
                                 placeholder="Optional subject name…"
-                                className="text-xs font-semibold text-amber-800 text-right bg-transparent border-0 border-b border-amber-300/60 focus:outline-none focus:border-amber-500 px-1 py-0.5 w-56"
+                                className="text-xs font-semibold text-amber-800 text-right bg-transparent border-0 border-b border-amber-300/60 focus:outline-none focus:border-amber-500 px-1 py-0.5 w-56 disabled:bg-slate-50/60 disabled:text-slate-400 disabled:cursor-not-allowed"
                               />
                             </div>
                             <textarea
                               value={extraRemark.comment}
                               onChange={(e) => setExtraRemark((prev) => ({ ...prev, comment: e.target.value }))}
+                              disabled={!canEdit}
                               rows={6}
                               placeholder="Remarks for the extra subject…"
                               style={{
                                 backgroundImage: 'repeating-linear-gradient(transparent, transparent 27px, #e2e8f0 27px, #e2e8f0 28px)',
                                 backgroundAttachment: 'local',
                               }}
-                              className="w-full border-0 px-4 py-1 text-sm text-slate-800 leading-7 resize-y focus:outline-none focus:ring-1 focus:ring-amber-300"
+                              className="w-full border-0 px-4 py-1 text-sm text-slate-800 leading-7 resize-y focus:outline-none focus:ring-1 focus:ring-amber-300 disabled:bg-slate-50/60 disabled:text-slate-400 disabled:cursor-not-allowed"
                             />
                           </div>
                         </div>
@@ -1442,19 +1444,21 @@ export function GradingSheet({
                                     <div className="flex items-center justify-center gap-1">
                                       <span
                                         className={cn(
-                                          'inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold cursor-pointer',
+                                          'inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold',
+                                          canEdit ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
                                           allPresent ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
                                             : allAbsent ? 'bg-red-100 text-red-700 border border-red-300'
                                             : 'bg-amber-100 text-amber-700 border border-amber-300'
                                         )}
-                                        onClick={() => setPresenceModalStudent(row)}
+                                        onClick={() => canEdit && setPresenceModalStudent(row)}
                                         title={isEN ? (allPresent ? 'Present' : allAbsent ? 'Absent' : absentSubjects.length + '/' + sortedSubjects.length + ' absent') : (allPresent ? 'Présent' : allAbsent ? 'Absent' : absentSubjects.length + '/' + sortedSubjects.length + ' absent')}
                                       >
                                         {allPresent ? 'P' : allAbsent ? 'A' : (sortedSubjects.length - absentSubjects.length) + '/' + sortedSubjects.length}
                                       </span>
                                       <button
                                         onClick={() => setPresenceModalStudent(row)}
-                                        className="p-0.5 rounded hover:bg-amber-200"
+                                        disabled={!canEdit}
+                                        className="p-0.5 rounded hover:bg-amber-200 disabled:opacity-40 disabled:cursor-not-allowed"
                                         title={isEN ? 'Attendance details' : 'Détails de présence'}
                                       >
                                         <Settings className="w-3 h-3 text-slate-500" />
@@ -1590,6 +1594,7 @@ export function GradingSheet({
                                   <div className="flex gap-0.5 justify-center items-center">
                                     <button
                                       type="button"
+                                      disabled={!canEdit}
                                       onClick={() => {
                                         setRows((prev) => prev.map((r) => {
                                           if (r.studentId !== row.studentId) return r;
@@ -1603,11 +1608,13 @@ export function GradingSheet({
                                       title="Présent (toutes matières)"
                                       className={cn(
                                         'px-2 py-1 rounded text-xs font-bold transition',
-                                        allPresent ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-emerald-100'
+                                        allPresent ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-emerald-100',
+                                        !canEdit && 'opacity-40 cursor-not-allowed'
                                       )}
                                     >P</button>
                                     <button
                                       type="button"
+                                      disabled={!canEdit}
                                       onClick={() => {
                                         setRows((prev) => prev.map((r) => {
                                           if (r.studentId !== row.studentId) return r;
@@ -1621,16 +1628,19 @@ export function GradingSheet({
                                       title="Absent (toutes matières)"
                                       className={cn(
                                         'px-2 py-1 rounded text-xs font-bold transition',
-                                        allAbsent ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-red-100'
+                                        allAbsent ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-red-100',
+                                        !canEdit && 'opacity-40 cursor-not-allowed'
                                       )}
                                     >A</button>
                                     <button
                                       type="button"
+                                      disabled={!canEdit}
                                       onClick={() => setPresenceModalStudent(row)}
                                       title="Détailler la présence par matière"
                                       className={cn(
                                         'px-1.5 py-1 rounded text-xs transition',
-                                        isMixed ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-amber-100'
+                                        isMixed ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-amber-100',
+                                        !canEdit && 'opacity-40 cursor-not-allowed'
                                       )}
                                     >
                                       <Settings2 className="w-3 h-3" />
@@ -1830,6 +1840,7 @@ export function GradingSheet({
                                   <div className="flex gap-0.5 justify-center items-center">
                                     <button
                                       type="button"
+                                      disabled={!canEdit}
                                       onClick={() => {
                                         setRows((prev) => prev.map((r) => {
                                           if (r.studentId !== row.studentId) return r;
@@ -1843,11 +1854,13 @@ export function GradingSheet({
                                       title="Présent (toutes matières)"
                                       className={cn(
                                         'px-2 py-1 rounded text-xs font-bold transition',
-                                        allPresent ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-emerald-100'
+                                        allPresent ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-emerald-100',
+                                        !canEdit && 'opacity-40 cursor-not-allowed'
                                       )}
                                     >P</button>
                                     <button
                                       type="button"
+                                      disabled={!canEdit}
                                       onClick={() => {
                                         setRows((prev) => prev.map((r) => {
                                           if (r.studentId !== row.studentId) return r;
@@ -1861,16 +1874,19 @@ export function GradingSheet({
                                       title="Absent (toutes matières)"
                                       className={cn(
                                         'px-2 py-1 rounded text-xs font-bold transition',
-                                        allAbsent ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-red-100'
+                                        allAbsent ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-red-100',
+                                        !canEdit && 'opacity-40 cursor-not-allowed'
                                       )}
                                     >A</button>
                                     <button
                                       type="button"
+                                      disabled={!canEdit}
                                       onClick={() => setPresenceModalStudent(row)}
                                       title="Détailler la présence par matière"
                                       className={cn(
                                         'px-1.5 py-1 rounded text-xs transition',
-                                        isMixed ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-amber-100'
+                                        isMixed ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-amber-100',
+                                        !canEdit && 'opacity-40 cursor-not-allowed'
                                       )}
                                     >
                                       <Settings2 className="w-3 h-3" />
@@ -1897,15 +1913,15 @@ export function GradingSheet({
                                         <button
                                           key={opt}
                                           type="button"
-                                          onClick={() => !score.isAbsent && !(canAdd && hasNote) && handleScoreChange(row.studentId, subject.id, opt)}
-                                          disabled={score.isAbsent || (canAdd && hasNote)}
+                                          onClick={() => canEdit && !score.isAbsent && !(canAdd && hasNote) && handleScoreChange(row.studentId, subject.id, opt)}
+                                          disabled={score.isAbsent || !canEdit || (canAdd && hasNote)}
                                           title={opt === 'TS' ? 'Très Satisfaisant' : opt === 'S' ? 'Satisfaisant' : 'Peu Satisfaisant'}
                                           className={cn(
                                             'px-2 py-1 rounded text-xs font-bold transition',
                                             score.qualitativeCode === opt
                                               ? opt === 'TS' ? 'bg-emerald-600 text-white' : opt === 'S' ? 'bg-blue-600 text-white' : 'bg-amber-600 text-white'
                                               : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
-                                            (score.isAbsent || (canAdd && hasNote)) && 'opacity-30 cursor-not-allowed'
+                                            (score.isAbsent || !canEdit || (canAdd && hasNote)) && 'opacity-30 cursor-not-allowed'
                                           )}
                                         >{opt}</button>
                                       ))}
@@ -1929,12 +1945,14 @@ export function GradingSheet({
                                       max="18"
                                       value={score.isAbsent ? '' : (cmValue ?? '')}
                                       onChange={(e) => handleCmChange(row.studentId, subject.id, e.target.value)}
-                                      disabled={score.isAbsent || (canAdd && hasNote)}
+                                      disabled={score.isAbsent || !canEdit || (canAdd && hasNote)}
                                       placeholder="—"
                                       className={cn(
                                         'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
                                         'focus:outline-none focus:ring-1 focus:ring-blue-400',
-                                        score.isAbsent && 'opacity-30 cursor-not-allowed bg-red-50',
+                                        (score.isAbsent || !canEdit || (canAdd && hasNote)) && 'cursor-not-allowed',
+                                        !score.isAbsent && !canEdit && 'bg-slate-50 text-slate-400',
+                                        score.isAbsent && 'opacity-30 bg-red-50',
                                         !score.isAbsent && cmValue !== null && typeof cmValue === 'number' &&
                                           (Number(cmValue) < 10 ? 'text-rose-600' : Number(cmValue) >= 14 ? 'text-emerald-600' : 'text-slate-900')
                                       )}
@@ -1948,13 +1966,13 @@ export function GradingSheet({
                                       max="2"
                                       value={score.isAbsent ? '' : (cpValue ?? '')}
                                       onChange={(e) => handleCpChange(row.studentId, subject.id, e.target.value)}
-                                      disabled={score.isAbsent || !cpEnabled || (canAdd && hasNote)}
+                                      disabled={score.isAbsent || !cpEnabled || !canEdit || (canAdd && hasNote)}
                                       placeholder="—"
                                       title={cpEnabled ? 'Critère de Perfectionnement (0, 1 ou 2)' : 'CP disponible uniquement si CM ≥ 10'}
                                       className={cn(
                                         'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
                                         'focus:outline-none focus:ring-1 focus:ring-blue-400',
-                                        (score.isAbsent || !cpEnabled) && 'opacity-30 cursor-not-allowed bg-slate-50'
+                                        (score.isAbsent || !cpEnabled || !canEdit) && 'opacity-30 cursor-not-allowed bg-slate-50'
                                       )}
                                     />
                                   </td>
@@ -2028,6 +2046,7 @@ export function GradingSheet({
                             <td className="border border-slate-300 p-0">
                               <input
                                 type="text"
+                                disabled={!canEdit}
                                 value={(() => {
                                   const firstSubj = sortedSubjects[0];
                                   return firstSubj ? (row.scores[firstSubj.id]?.comment || '') : '';
@@ -2042,7 +2061,7 @@ export function GradingSheet({
                                   }));
                                 }}
                                 placeholder="—"
-                                className="w-full px-1 py-1 text-center text-xs border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                className="w-full px-1 py-1 text-center text-xs border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed"
                               />
                             </td>
                           </tr>
@@ -2151,6 +2170,7 @@ export function GradingSheet({
         student={presenceModalStudent}
         subjects={sortedSubjects}
         language={language}
+        readOnly={!canEdit}
         onClose={() => setPresenceModalStudent(null)}
         onUpdate={(studentId, subjectId, isAbsent) => {
           setRows((prev) => prev.map((r) => {
@@ -2264,6 +2284,7 @@ function PresenceModal({
   student,
   subjects,
   language,
+  readOnly = false,
   onClose,
   onUpdate,
   onAllPresent,
@@ -2272,6 +2293,8 @@ function PresenceModal({
   student: GradeRow;
   subjects: Array<{ id: string; name: string }>;
   language?: 'FR' | 'EN';
+  /** ⭐ 2026-11-20 — lecture seule : aucune modification de présence sans mode édition */
+  readOnly?: boolean;
   onClose: () => void;
   onUpdate: (studentId: string, subjectId: string, isAbsent: boolean) => void;
   onAllPresent: (studentId: string) => void;
@@ -2314,13 +2337,15 @@ function PresenceModal({
           <div className="flex gap-2">
             <button
               onClick={() => onAllPresent(student.studentId)}
-              className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
+              disabled={readOnly}
+              className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {isEN ? 'All Present' : 'Tout présent'}
             </button>
             <button
               onClick={() => onAllAbsent(student.studentId)}
-              className="px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
+              disabled={readOnly}
+              className="px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {isEN ? 'All Absent' : 'Tout absent'}
             </button>
@@ -2345,17 +2370,21 @@ function PresenceModal({
                 <div className="flex gap-1">
                   <button
                     onClick={() => onUpdate(student.studentId, subject.id, false)}
+                    disabled={readOnly}
                     className={cn(
                       'px-3 py-1.5 rounded-lg text-xs font-bold transition',
-                      !isAbsent ? 'bg-emerald-600 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-emerald-100'
+                      !isAbsent ? 'bg-emerald-600 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-emerald-100',
+                      readOnly && 'opacity-40 cursor-not-allowed'
                     )}
                   title={isEN ? 'Present' : 'Présent'}
                   >P</button>
                   <button
                     onClick={() => onUpdate(student.studentId, subject.id, true)}
+                    disabled={readOnly}
                     className={cn(
                       'px-3 py-1.5 rounded-lg text-xs font-bold transition',
-                      isAbsent ? 'bg-red-600 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-red-100'
+                      isAbsent ? 'bg-red-600 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-red-100',
+                      readOnly && 'opacity-40 cursor-not-allowed'
                     )}
                   title={isEN ? 'Absent' : 'Absent'}
                   >A</button>

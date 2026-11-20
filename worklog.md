@@ -14634,3 +14634,21 @@ Work Log:
 Stage Summary:
 - ✅✅ Garde-fou universel en place : une école peut retirer une matière d'une évaluation programmée même après saisie (partielle ou complète) de notes — suppression propre (notes + lot), aucune ressaisie des autres matières, aucun zombie, badge de session correct (Valide = Validée). Anti-doublons de programmation (mêmes dates) côté serveur pour tous les appelants.
 - ℹ️ Déploiement Vercel automatique (push origin main) — comportement actif dès la mise en ligne.
+---
+Task ID: 151-exams-correction-nom-prenom-depuis-saisie
+Agent: Super Z (agent principal)
+Task: Demande promoteur — pendant la saisie des notes (primaire/maternelle/secondaire, pistes FR et EN), on constate parfois des erreurs de noms/prénoms d'élèves. Permettre à l'utilisateur de corriger le nom/prénom DIRECTEMENT depuis la fiche de saisie : prise en compte immédiate à l'écran, persistance en base, et mise à jour du nom PARTOUT dans le système.
+
+Work Log:
+- ANALYSE DE PROPAGATION : le nom affiché partout (fiches de saisie, registre, bulletins, finance) est recalculé en DIRECT depuis Student.firstName/lastName (grades.service.ts : `${lastName} ${firstName}`) — aucune copie dénormalisée nulle part (seule exception : PaymentInitiation.studentName, métadonnée figée de transaction de paiement, pas un affichage). Une SEULE écriture sur Student suffit donc à mettre à jour partout.
+- API EXISTANTE RÉUTILISÉE (zéro backend à modifier) : GET /students/:id (valeurs exactes firstName/lastName — on ne devine pas le découpage du nom complet affiché) + PUT /students/:id { firstName, lastName } (JwtAuthGuard + TenantGuard + anti-IDOR scope rôles × pistes × niveaux, déjà en prod pour l'onglet Inscription).
+- IMPLÉMENTATION (GradingSheet.tsx — l'UNIQUE composant de saisie, partagé par le portail admin et le portail enseignant, donc maternelle/primaire/secondaire + pistes FR/EN couverts d'un seul coup) :
+  1. StudentNameCell : cellule nom + crayon ✏️ dans les 3 tableaux (broadsheet EN, secondaire FR, maternelle/primaire FR). Actif quel que soit le mode (lecture seule, Ajouter, Modifier) et même fiche verrouillée — c'est une correction de la FICHE ÉLÈVE, pas une saisie de notes.
+  2. StudentNameEditModal : charge la fiche exacte (GET), champs Prénom(s)/Nom bilingues (FR/EN selon la piste), validation champs obligatoires, PUT persistant, erreurs serveur affichées. Bandeau explicatif : « enregistrée sur la fiche de l'élève, prend effet partout ».
+  3. onSaved : prise en compte DIRECTE — ligne mise à jour immédiatement + re-tri alphabétique (comme au chargement) + resynchronisation du snapshot d'auto-save V12 pour qu'une correction de nom ne déclenche PAS un POST de notes parasite au tick de 10 s.
+- PÉRIMÈTRE VÉRIFIÉ : <GradingSheet> n'est rendu QUE par les vues de saisie (app/exams/grades + app/teacher/exams) — le portail parent, le registre, la validation et les bulletins utilisent leurs propres tableaux lecture seule (imports type/helpers uniquement) → le crayon n'apparaît pas chez les parents.
+- VALIDATION : esbuild --loader:.tsx transpile OK (syntaxe + JSX) ; imports tous présents (Pencil, X, Loader2, AlertCircle, CheckCircle2, Button, apiClient, toastSuccess) ; patterns props/hooks conformes au fichier.
+
+Stage Summary:
+- ✅✅ Un enseignant/admin qui repère une erreur de nom pendant la saisie clique le crayon à côté du nom → corrige Prénom/Nom → Enregistrer : le nom est persisté en base (PUT /students/:id) et immédiatement reflété dans le tableau (re-tri alphabétique), avec propagation système garantie (bulletins, registre, finance…) puisque tous les modules lisent Student en direct.
+- ℹ️ Aucun changement backend nécessaire — l'API de mise à jour élève existante (déjà utilisée par l'onglet Inscription) est réutilisée telle quelle.

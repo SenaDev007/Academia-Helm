@@ -276,6 +276,12 @@ export function GradingSheet({
   const [searchQuery, setSearchQuery] = useState('');
   const { academicYear } = useModuleContext();
   const [presenceModalStudent, setPresenceModalStudent] = useState<GradeRow | null>(null);
+  // ⭐ 2026-11-20 — Demande promoteur : correction du nom/prénom d'un élève
+  //    DIRECTEMENT depuis la fiche de saisie des notes (erreur repérée en
+  //    cours de saisie) → modal → PUT /students/:id → persisté en base et
+  //    propagé PARTOUT dans le système (tous les modules recalculent le nom
+  //    en direct depuis Student.firstName/lastName).
+  const [nameEditStudent, setNameEditStudent] = useState<GradeRow | null>(null);
   const { warning, dialog: confirmDialog } = useConfirmDialog();
   // ⭐ Mode d'édition : 'readonly' par défaut, 'add' pour ajouter, 'edit' pour modifier
   const [editMode, setEditMode] = useState<'readonly' | 'add' | 'edit'>('readonly');
@@ -1423,7 +1429,9 @@ export function GradingSheet({
                               )}
                             >
                               <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">{rowNo}</td>
-                              <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{row.studentName}</td>
+                              <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">
+                                <StudentNameCell row={row} isEN={isEN} onEdit={setNameEditStudent} />
+                              </td>
                               {/* ⭐ 2026-10-01 — Attendance column (moved after Names of Scholars) */}
                               <td className="border border-slate-300 px-2 py-1 text-center bg-amber-50">
                                 {(() => {
@@ -1568,7 +1576,9 @@ export function GradingSheet({
                             )}
                           >
                             <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">{rowNo}</td>
-                            <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{row.studentName}</td>
+                            <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">
+                              <StudentNameCell row={row} isEN={isEN} onEdit={setNameEditStudent} />
+                            </td>
                             {/* Colonne Présence — identique maternelle/primaire :
                                 P (présent partout) · A (absent partout) · ⚙ détail par matière */}
                             <td className="border border-slate-300 px-1 py-1 text-center">
@@ -1800,7 +1810,9 @@ export function GradingSheet({
                             )}
                           >
                             <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">{idx + 1}</td>
-                            <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900">{row.studentName}</td>
+                            <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900">
+                              <StudentNameCell row={row} isEN={isEN} onEdit={setNameEditStudent} />
+                            </td>
                             <td className="border border-slate-300 px-2 py-1 text-center">
                               {row.gender === 'M' ? (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-cyan-100 text-cyan-700">M</span>
@@ -2211,6 +2223,27 @@ export function GradingSheet({
       />
     )}
     {confirmDialog}
+    {/* ⭐ 2026-11-20 — Modal de correction Nom/Prénom d'un élève (persisté en
+        base via PUT /students/:id, propagé partout : bulletins, registre…) */}
+    {nameEditStudent && (
+      <StudentNameEditModal
+        student={nameEditStudent}
+        language={language}
+        onClose={() => setNameEditStudent(null)}
+        onSaved={(studentId, newFullName) => {
+          // ⭐ Prise en compte DIRECTE dans le tableau : ligne mise à jour
+          //    immédiatement + re-tri alphabétique (comme au chargement).
+          const next = rowsRef.current
+            .map((r) => (r.studentId === studentId ? { ...r, studentName: newFullName } : r))
+            .sort((a, b) => a.studentName.localeCompare(b.studentName, 'fr'));
+          setRows(next);
+          // ⭐ V12 — le snapshot d'auto-save inclut studentName : on le
+          //    resynchronise pour qu'une correction de nom NE déclenche PAS
+          //    un POST de notes parasite au prochain tick de 10 s.
+          savedSnapshotRef.current = snapshotOf(next, remarksRef.current);
+        }}
+      />
+    )}
     {/* ⭐ Modal de demande de déverrouillage (granulaire : élèves + matières) */}
     <UnlockRequestModal
       open={unlockModalOpen}
@@ -2338,6 +2371,221 @@ function PresenceModal({
           >
             {isEN ? 'Close' : 'Fermer'}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Cellule Nom + crayon de correction (2026-11-20) ────────────────────────
+
+/** ⭐ Nom de l'élève + bouton crayon : corriger une erreur de nom/prénom
+ *  repérée PENDANT la saisie des notes. Disponible quel que soit le mode
+ *  (lecture seule, Ajouter, Modifier) et même sur une fiche verrouillée :
+ *  c'est une correction de la FICHE ÉLÈVE, pas une saisie de notes.
+ *  Utilisé dans les 3 tableaux (broadsheet EN, secondaire FR,
+ *  maternelle/primaire FR) — donc toutes pistes et tous niveaux. */
+function StudentNameCell({
+  row, isEN, onEdit,
+}: {
+  row: GradeRow;
+  isEN: boolean;
+  onEdit: (row: GradeRow) => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span>{row.studentName}</span>
+      <button
+        type="button"
+        onClick={() => onEdit(row)}
+        title={isEN ? 'Correct pupil name' : 'Corriger le nom / prénom'}
+        className="inline-flex items-center justify-center p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-100 transition-colors shrink-0"
+      >
+        <Pencil className="w-3 h-3" />
+      </button>
+    </span>
+  );
+}
+
+// ─── Modal de correction Nom / Prénom (2026-11-20) ───────────────────────────
+
+/**
+ * ⭐ Demande promoteur : pendant la saisie des notes on constate des erreurs
+ * de noms/prénoms. Ce modal permet de corriger DIRECTEMENT depuis la fiche :
+ *   1. GET /students/:id → valeurs exactes firstName/lastName (on ne devine
+ *      PAS le découpage du nom complet affiché)
+ *   2. PUT /students/:id { firstName, lastName } → persisté en base
+ *   3. Le nom est recalculé PARTOUT en direct depuis Student.firstName/
+ *      lastName (fiches de saisie, registre des notes, bulletins, finance,
+ *      exports…) — une seule écriture, propagation système complète.
+ */
+function StudentNameEditModal({
+  student, language, onClose, onSaved,
+}: {
+  student: GradeRow;
+  language?: 'FR' | 'EN';
+  onClose: () => void;
+  onSaved: (studentId: string, newFullName: string) => void;
+}) {
+  const isEN = language === 'EN';
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ⭐ Charger les valeurs EXACTES de la fiche élève — source de vérité.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await apiClient.get(`/students/${encodeURIComponent(student.studentId)}`);
+        // Tolère l'enveloppe { data: {...} } comme le corps brut
+        const payload = res.data;
+        const s = (payload && payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) ? payload.data : payload;
+        if (cancelled) return;
+        setFirstName(s?.firstName ?? '');
+        setLastName(s?.lastName ?? '');
+      } catch {
+        if (!cancelled) setError(isEN ? 'Could not load the pupil record.' : "Impossible de charger la fiche de l'élève.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [student.studentId]);
+
+  const save = async () => {
+    const fn = firstName.trim();
+    const ln = lastName.trim();
+    if (!fn || !ln) {
+      setError(isEN ? 'First name and last name are both required.' : 'Le prénom et le nom sont tous deux obligatoires.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      // ⭐ PUT /students/:id — persisté en base de données. Anti-IDOR côté
+      //    serveur (scope rôles × pistes × niveaux) comme toute écriture élève.
+      await apiClient.put(`/students/${encodeURIComponent(student.studentId)}`, {
+        firstName: fn,
+        lastName: ln,
+      });
+      // Format d'affichage de la fiche de saisie : « NOM Prénom »
+      // (grades.service.ts : `${lastName} ${firstName}`.trim()).
+      onSaved(student.studentId, `${ln} ${fn}`.trim());
+      toastSuccess(isEN ? 'Pupil name updated — effective everywhere.' : "Nom de l'élève mis à jour — effectif partout.");
+      onClose();
+    } catch (err: any) {
+      const backendMsg = err?.response?.data?.message || err?.response?.data?.error;
+      setError(
+        Array.isArray(backendMsg) ? backendMsg.join(' • ')
+          : (typeof backendMsg === 'string' && backendMsg) || (isEN ? 'Update failed. Please try again.' : 'Échec de la mise à jour. Veuillez réessayer.')
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={saving ? undefined : onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <Pencil className="w-5 h-5" />
+              {isEN ? 'Correct Pupil Name' : 'Corriger Nom / Prénom'}
+            </h3>
+            <p className="text-xs text-blue-100 mt-0.5">
+              {student.studentName}
+              {student.matricule ? ` · ${student.matricule}` : ''}
+            </p>
+          </div>
+          <button onClick={onClose} disabled={saving} className="p-1.5 rounded-lg hover:bg-white/20 transition-colors disabled:opacity-40">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Bandeau : portée de la correction */}
+          <div className="flex items-start gap-2 text-xs bg-blue-50 border border-blue-100 text-blue-800 rounded-lg px-3 py-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+            <span>
+              {isEN
+                ? 'The correction is saved to the pupil record and takes effect everywhere in the system (grade sheets, report cards, register, finance…).'
+                : "La correction est enregistrée sur la fiche de l'élève et prend effet partout dans le système (fiches de saisie, bulletins, registre, finance…)."}
+            </span>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-slate-500">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span className="text-sm">{isEN ? 'Loading pupil record…' : 'Chargement de la fiche…'}</span>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  {isEN ? 'First name(s)' : 'Prénom(s)'}
+                </label>
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  disabled={saving}
+                  autoFocus
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  {isEN ? 'Last name' : 'Nom'}
+                </label>
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  disabled={saving}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-slate-50"
+                />
+              </div>
+            </>
+          )}
+
+          {error && (
+            <div className="flex items-start gap-2 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose} disabled={saving || loading}>
+            {isEN ? 'Cancel' : 'Annuler'}
+          </Button>
+          <Button onClick={save} disabled={saving || loading}>
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {isEN ? 'Saving…' : 'Enregistrement…'}
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-4 h-4" />
+                {isEN ? 'Save' : 'Enregistrer'}
+              </>
+            )}
+          </Button>
         </div>
       </div>
     </div>

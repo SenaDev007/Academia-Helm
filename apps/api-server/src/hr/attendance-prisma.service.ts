@@ -16,6 +16,9 @@ import { EmailService } from '../communication/services/email.service';
 import { RecruitmentNotificationService } from './recruitment-notification.service';
 import { renderOvertimeDecisionEmail } from './hr-email-templates';
 import { GeolocationService } from './geolocation.service';
+// ⭐ 2026-11-21 — Notifications in-app (cloche) : heures supp. déclarées → RH,
+// décision de validation → personnel. NotificationModule est @Global.
+import { NotificationService } from '../notifications/notification.service';
 
 @Injectable()
 export class AttendancePrismaService {
@@ -26,6 +29,8 @@ export class AttendancePrismaService {
     private readonly emailService: EmailService,
     private readonly notificationService: RecruitmentNotificationService,
     private readonly geolocationService: GeolocationService,
+    // ⭐ In-app notifications (cloche) — RH self-service
+    private readonly inAppNotifications: NotificationService,
   ) {}
 
   // ============================================================================
@@ -317,6 +322,7 @@ export class AttendancePrismaService {
             firstName: true,
             lastName: true,
             email: true,
+            roleType: true,
           },
         },
       },
@@ -327,7 +333,68 @@ export class AttendancePrismaService {
       this.logger.error(`Failed to send overtime decision email: ${err.message}`);
     });
 
+    // ─── ⭐ 2026-11-21 — Notification IN-APP (cloche) au personnel —
+    //    validation/rejet de SES heures supplémentaires (en plus de l'email).
+    this.notifyStaffOvertimeDecisionInApp(updated, tenantId, action).catch((err) => {
+      this.logger.error(`notifyStaffOvertimeDecisionInApp failed (non-blocking): ${err.message}`);
+    });
+
     return updated;
+  }
+
+  /**
+   * ⭐ 2026-11-21 — Notification in-app (cloche) au personnel concerné quand
+   * le RH valide ou refuse ses heures supplémentaires. Fire-and-forget.
+   */
+  private async notifyStaffOvertimeDecisionInApp(
+    overtime: any,
+    tenantId: string,
+    action: 'VALIDATE' | 'REJECT',
+  ): Promise<void> {
+    const staff = overtime?.staff;
+    if (!staff?.email) {
+      this.logger.warn(`notifyStaffOvertimeDecisionInApp: pas d'email staff — ignoré`);
+      return;
+    }
+    try {
+      const user = await this.prisma.user.findFirst({
+        where: {
+          tenantId,
+          status: 'active',
+          email: { equals: staff.email, mode: 'insensitive' },
+        },
+        select: { id: true },
+      });
+      if (!user) {
+        this.logger.warn(
+          `notifyStaffOvertimeDecisionInApp: aucun User actif pour ${staff.email} — ignoré`,
+        );
+        return;
+      }
+
+      // ⭐ URL self-service du personnel (enseignant → /app/teacher/presence,
+      // autre personnel → /app/my-presence)
+      const url = staff.roleType === 'TEACHER' ? '/app/teacher/presence' : '/app/my-presence';
+
+      const hours = Number(overtime.hours);
+      const fmt = new Date(overtime.date).toLocaleDateString('fr-FR');
+      await this.inAppNotifications.create({
+        tenantId,
+        recipientId: user.id,
+        type: action === 'VALIDATE' ? 'OVERTIME_VALIDATED' : 'OVERTIME_REJECTED',
+        title: action === 'VALIDATE' ? 'Heures supplémentaires validées' : 'Heures supplémentaires refusées',
+        body:
+          action === 'VALIDATE'
+            ? `Vos ${hours} h du ${fmt} ont été validées par la direction — elles seront prises en compte dans la paie.`
+            : `Vos ${hours} h du ${fmt} ont été refusées par la direction.`,
+        priority: 'LOW',
+        data: { url },
+        relatedEntityType: 'OvertimeRecord',
+        relatedEntityId: overtime.id,
+      });
+    } catch (err: any) {
+      this.logger.error(`notifyStaffOvertimeDecisionInApp failed: ${err.message}`, err.stack);
+    }
   }
 
   /**
@@ -1054,7 +1121,7 @@ export class AttendancePrismaService {
     if (!data.hours || data.hours <= 0) {
       throw new BadRequestException('Le nombre d\'heures doit être supérieur à 0.');
     }
-    return this.recordOvertime({
+    const created = await this.recordOvertime({
       tenantId,
       academicYearId: data.academicYearId,
       schoolLevelId: staff.schoolLevelId || undefined,
@@ -1063,6 +1130,24 @@ export class AttendancePrismaService {
       hours: data.hours,
       reason: data.reason,
     });
+
+    // ─── ⭐ 2026-11-21 — Notification in-app aux gestionnaires RH —
+    //    le personnel a déclaré des heures supp. depuis SON interface ;
+    //    le RH est alerté (cloche) qu'une validation est en attente.
+    this.inAppNotifications
+      .notifyHrOvertimeSubmitted({
+        tenantId,
+        overtimeId: created.id,
+        staff: { firstName: staff.firstName, lastName: staff.lastName },
+        date: created.date,
+        hours: Number(created.hours),
+        reason: created.notes ?? data.reason ?? null,
+      })
+      .catch((err) =>
+        this.logger.error(`notifyHrOvertimeSubmitted failed (non-blocking): ${err.message}`),
+      );
+
+    return created;
   }
 }
 

@@ -2,11 +2,17 @@
 
 /**
  * ============================================================================
- * TeacherPresenceWorkspace — Module « Présence & Absences » du portail enseignant
+ * TeacherPresenceWorkspace — Module « Présence & Absences » self-service
  * ============================================================================
  *
  * ⭐ 2026-09-15 — INTÉGRATION CAHIER DE SEMAINE ↔ RH :
- * Ce module donne à CHAQUE enseignant les mêmes capacités de pointage que
+ * ⭐ 2026-11-21 — PARTAGÉ PAR TOUT LE PERSONNEL : ce workspace est rendu
+ * aussi bien par le portail enseignant (/app/teacher/presence) que par la
+ * page partagée /app/my-presence (directeurs, secrétaires, comptables,
+ * surveillants, censeurs…) — le staff est résolu serveur par l'email, la
+ * même page marche pour tous les métiers.
+ *
+ * Il donne à CHAQUE membre du personnel les mêmes capacités de pointage que
  * l'onglet Présences du module Personnel RH (réservé à la direction) :
  *
  *   Onglet 1 « Ma présence » :
@@ -23,8 +29,12 @@
  *   Onglet 3 « Congés & Absences » :
  *     - Solde de congés (GET /api/hr/leaves/my-balance)
  *     - Créer ses demandes de congé/absence (POST /api/hr/leaves/my-requests)
- *       — approuvées par la direction dans le module RH (Congés & Absences) ;
+ *       — congé annuel, maladie, maternité, paternité, sans solde,
+ *       exceptionnel, ou ABSENCE justifiée (motif libre) ;
+ *       approuvées par la direction dans le module RH (Congés & Absences) ;
  *       à l'approbation, les présences ABSENT sont générées automatiquement.
+ *       Le RH est notifié à la soumission ; le personnel est notifié (cloche)
+ *       quand le RH approuve ou refuse.
  *     - Annuler une demande en attente (PUT /api/hr/leaves/my-requests/:id/cancel)
  *
  * Le Staff est résolu CÔTÉ SERVEUR par l'email de l'utilisateur connecté :
@@ -87,6 +97,10 @@ const LEAVE_TYPES = [
   { value: "PATERNITY", label: "Paternité", labelEn: "Paternity leave" },
   { value: "UNPAID", label: "Sans solde", labelEn: "Unpaid leave" },
   { value: "EXCEPTIONAL", label: "Exceptionnel", labelEn: "Exceptional" },
+  // ⭐ 2026-11-21 — Demande d'ABSENCE justifiée (motif libre) : le personnel
+  //    peut demander une absence sans que ce soit un congé (ex: problème
+  //    personnel, convocation). Ne consomme PAS le solde de congés annuels.
+  { value: "ABSENCE", label: "Absence justifiée", labelEn: "Justified absence" },
 ];
 
 const LEAVE_STATUS: Record<string, { label: string; labelEn: string; className: string }> = {

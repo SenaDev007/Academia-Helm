@@ -84,7 +84,10 @@ export type AdminPortalIcon =
   | 'NotebookPen'
   // ⭐ 2026-09-27 — module Patronats fédérés (validation des rattachements
   //    patronat côté école — Academia Federis)
-  | 'Network';
+  | 'Network'
+  // ⭐ 2026-11-21 — module self-service « Ma Présence & Congés » du personnel
+  //    (présence GPS, heures supp., demandes de congé/absence)
+  | 'CalendarCheck';
 
 export interface AdminPortalModule {
   /** Route cible (routes métier partagées ou home du portail) */
@@ -183,6 +186,26 @@ const ADMIN_FULL_ACCESS_ROLES = [
   'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_ADMIN',
 ];
 
+/**
+ * ⭐ 2026-11-21 — Module self-service « Ma Présence & Congés » du personnel.
+ *
+ * Partagé par TOUS les portails administratifs (directeur, secrétaire,
+ * secrétaire-comptable, comptable, surveillant, censeur) : chaque membre du
+ * personnel pointe SA présence, déclare ses heures supp. et soumet SES
+ * demandes de congé/absence — le RH reçoit, approuve/refuse, et le personnel
+ * est notifié (cloche). Tout est synchronisé avec le module RH (Présences /
+ * Congés & Absences — les présences alimentent la paie).
+ * Les enseignants ont l'équivalent dans leur portail (/app/teacher/presence).
+ */
+const MY_PRESENCE_MODULE: AdminPortalModule = {
+  path: '/app/my-presence',
+  label: 'Ma Présence & Congés',
+  labelEn: 'My Attendance & Leaves',
+  icon: 'CalendarCheck',
+  desc: 'Pointer ma présence, heures supp., demandes de congé/absence',
+  descEn: 'Check in, overtime, leave & absence requests',
+};
+
 // ─── Définition des portails ────────────────────────────────────────────────
 
 export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
@@ -199,6 +222,8 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     roles: DIRECTOR_ROLES,
     modules: [
       { path: '/app/director', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: "Pilotage global de l'établissement", descEn: "School-wide overview and steering" },
+      // ⭐ Self-service personnel : présence, heures supp., congés/absences
+      MY_PRESENCE_MODULE,
       { path: '/app/director/oversight', label: 'Espace Directeur', labelEn: 'Director Space', icon: 'Brain', desc: 'Score de risque croisé + décrochage (Secondaire)', descEn: 'Cross risk score + dropout (Secondary)', requiresSecondary: true },
       { path: '/app/pedagogy', label: 'Organisation Pédagogique', labelEn: 'Pedagogical Organisation', icon: 'School', desc: 'Planification, cahiers, validation des documents', descEn: 'Planning, notebooks, document approval', featureCode: 'PEDAGOGY' },
       { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', descEn: 'Admissions, records, headcount', featureCode: 'STUDENTS' },
@@ -230,6 +255,8 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
       // pas l'outil métier directement. Le quotidien « Élèves & Scolarité »
       // reste le module n°2, à un clic.
       { path: '/app/secretaire', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: 'KPIs effectifs, finances, alertes', descEn: 'Headcount, finance KPIs, alerts' },
+      // ⭐ Self-service personnel : présence, heures supp., congés/absences
+      MY_PRESENCE_MODULE,
       { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', descEn: 'Admissions, records, headcount', featureCode: 'STUDENTS' },
       // ⭐ 2026-09-21 — MODULE PRÉPARATION D'EXAMEN : réception des épreuves
       //    d'évaluation envoyées par les enseignants après validation direction.
@@ -261,6 +288,8 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
       // Encaissements directement. L'outil Encaissements reste le module n°2,
       // à un clic.
       { path: '/app/secretaire-comptable', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: 'KPIs effectifs, finances, alertes', descEn: 'Headcount, finance KPIs, alerts' },
+      // ⭐ Self-service personnel : présence, heures supp., congés/absences
+      MY_PRESENCE_MODULE,
       // UNION DES DEUX MÉTIERS (validation utilisateur) : le secrétaire-
       // comptable a TOUT ce que le secrétaire a ET TOUT ce que le comptable
       // a. Outil quotidien : Encaissements (TransactionsContent partagé —
@@ -300,6 +329,8 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     roles: COMPTABLE_ROLES,
     modules: [
       { path: '/app/comptable', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: "Vue financière de l'établissement", descEn: "School's financial view" },
+      // ⭐ Self-service personnel : présence, heures supp., congés/absences
+      MY_PRESENCE_MODULE,
       { path: '/app/finance', label: 'Finances & Économat', labelEn: 'Finance & Store', icon: 'Wallet', desc: 'Frais, encaissements, trésorerie, audit', descEn: 'Fees, collections, treasury, audit', featureCode: 'FINANCE' },
       { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Effectifs, dossiers', descEn: 'Headcount, records', featureCode: 'STUDENTS' },
       { path: '/app/exams', label: 'Examens, Notes & Bulletins', labelEn: 'Exams, Grades & Report Cards', icon: 'GraduationCap', desc: 'Bulletins, impressions', descEn: 'Report cards, printing', featureCode: 'EXAMS' },
@@ -320,6 +351,8 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     roles: SURVEILLANT_ROLES,
     modules: [
       { path: '/app/surveillant', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: 'Vue vie scolaire', descEn: 'School life overview' },
+      // ⭐ Self-service personnel : présence, heures supp., congés/absences
+      MY_PRESENCE_MODULE,
       { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Effectifs, dossiers', descEn: 'Headcount, records', featureCode: 'STUDENTS' },
       { path: '/app/discipline', label: 'Vie Scolaire', labelEn: 'School Life', icon: 'Shield', desc: 'Sanctions, conduite, assiduité (Secondaire)', descEn: 'Sanctions, conduct, attendance (Secondary)', requiresSecondary: true },
       // ⭐ Parité d'accès : le surveillant général accède à l'Espace Censeur
@@ -345,6 +378,8 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
       // ⭐ La home du portail est l'Espace Censeur (workspace dédié existant :
       //    visites de classes, conseils de classe, fraudes aux examens).
       { path: '/app/censeur', label: 'Espace Censeur', labelEn: 'Censor Space', icon: 'ClipboardCheck', desc: 'Visites de classes, conseils de classe, fraudes', descEn: 'Class visits, class councils, exam fraud' },
+      // ⭐ Self-service personnel : présence, heures supp., congés/absences
+      MY_PRESENCE_MODULE,
       { path: '/app/pedagogy', label: 'Organisation Pédagogique', labelEn: 'Pedagogical Organisation', icon: 'School', desc: 'Planification, cahiers, contrôle', descEn: 'Planning, notebooks, oversight', featureCode: 'PEDAGOGY' },
       { path: '/app/exams', label: 'Examens, Notes & Bulletins', labelEn: 'Exams, Grades & Report Cards', icon: 'GraduationCap', desc: 'Évaluations, fraudes, validation', descEn: 'Assessments, fraud, validation', featureCode: 'EXAMS' },
       { path: '/app/discipline', label: 'Vie Scolaire', labelEn: 'School Life', icon: 'Shield', desc: 'Conduite, sanctions (Secondaire)', descEn: 'Conduct, sanctions (Secondary)', requiresSecondary: true },

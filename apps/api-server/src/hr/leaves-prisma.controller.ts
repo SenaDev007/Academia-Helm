@@ -36,6 +36,9 @@ export class LeavesPrismaController {
     return this.leavesService.createLeaveRequest({
       ...data,
       tenantId: tid,
+      // ⭐ 2026-11-21 — Demande déposée PAR le RH pour un membre du
+      //    personnel → le personnel concerné est notifié in-app.
+      origin: 'RH',
     });
   }
 
@@ -70,6 +73,7 @@ export class LeavesPrismaController {
   @Put('requests/:id/process')
   async processLeaveRequest(
     @GetTenant() tenant: any,
+    @CurrentUser() user: any,
     @Param('id') id: string,
     @Body() body: ProcessLeaveRequestDto,
     @Query('tenantId') tenantIdFallback?: string,
@@ -78,8 +82,12 @@ export class LeavesPrismaController {
     if (!tid) {
       throw new BadRequestException('Tenant ID requis pour cette opération');
     }
+    // ⭐ 2026-11-21 — Traçabilité de l'approbation : si le frontend ne fournit
+    //    pas d'approvedBy, c'est l'utilisateur RH CONNECTÉ qui approuve/refuse
+    //    (son id vient du JWT) — plus de décisions non attribuées.
+    const approvedBy = body.approvedBy ?? user?.id;
     return this.leavesService.processLeaveRequest(
-      id, tid, body.status, body.approvedBy, body.rejectedReason,
+      id, tid, body.status, approvedBy, body.rejectedReason,
     );
   }
 

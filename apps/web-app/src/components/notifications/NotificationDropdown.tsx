@@ -19,7 +19,7 @@ import { useRef, useEffect } from 'react';
 import {
   Bell, Check, CheckCheck, Trash2, X, FileText, UserPlus, AlertCircle, Info,
   CalendarX, CalendarCheck, GraduationCap, Award, ShieldAlert,
-  ClipboardList, BookOpen, MessageSquare, Heart, NotebookPen,
+  ClipboardList, BookOpen, MessageSquare, Heart, NotebookPen, CalendarDays, Clock,
 } from 'lucide-react';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useRouter } from 'next/navigation';
@@ -78,6 +78,20 @@ function getNotifIcon(type: string) {
       return <MessageSquare className="w-4 h-4 text-emerald-600" />;
     case 'PARENT_ACKNOWLEDGMENT':
       return <Heart className="w-4 h-4 text-rose-600" />;
+    // ⭐ 2026-11-21 — RH self-service : congés/absences & heures supp.
+    //    (demande du personnel → RH ; décision du RH → personnel)
+    case 'LEAVE_REQUEST_SUBMITTED':
+      return <CalendarDays className="w-4 h-4 text-amber-600" />;
+    case 'LEAVE_REQUEST_APPROVED':
+      return <CalendarCheck className="w-4 h-4 text-emerald-600" />;
+    case 'LEAVE_REQUEST_REJECTED':
+      return <CalendarX className="w-4 h-4 text-red-600" />;
+    case 'OVERTIME_PENDING':
+      return <Clock className="w-4 h-4 text-indigo-600" />;
+    case 'OVERTIME_VALIDATED':
+      return <Clock className="w-4 h-4 text-emerald-600" />;
+    case 'OVERTIME_REJECTED':
+      return <Clock className="w-4 h-4 text-red-600" />;
     default:
       return <FileText className="w-4 h-4 text-slate-500" />;
   }

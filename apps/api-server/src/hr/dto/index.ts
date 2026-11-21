@@ -365,7 +365,10 @@ export class CreateLeaveRequestDto {
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   @IsUUID() staffId: string;
-  @IsIn(['ANNUAL', 'SICK', 'MATERNITY', 'PATERNITY', 'UNPAID', 'EXCEPTIONAL']) type: string;
+  // ⭐ 2026-11-21 — ABSENCE : demande d'absence justifiée (motif libre) —
+  //    le personnel peut demander une ABSENCE (ex: problème personnel)
+  //    en plus des congés classiques.
+  @IsIn(['ANNUAL', 'SICK', 'MATERNITY', 'PATERNITY', 'UNPAID', 'EXCEPTIONAL', 'ABSENCE']) type: string;
   @IsDateString() startDate: string;
   @IsDateString() endDate: string;
   @IsOptional() @IsString() reason?: string;
@@ -552,7 +555,8 @@ export class SelfOvertimeDto {
  *    Le staffId est résolu côté serveur par email — jamais fourni par le client.
  */
 export class SelfCreateLeaveRequestDto {
-  @IsIn(['ANNUAL', 'SICK', 'MATERNITY', 'PATERNITY', 'UNPAID', 'EXCEPTIONAL']) type: string;
+  // ⭐ ABSENCE : demande d'absence justifiée — libre pour tout personnel
+  @IsIn(['ANNUAL', 'SICK', 'MATERNITY', 'PATERNITY', 'UNPAID', 'EXCEPTIONAL', 'ABSENCE']) type: string;
   @IsDateString() startDate: string;
   @IsDateString() endDate: string;
   @IsOptional() @IsString() reason?: string;

@@ -36,7 +36,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Brain, School, Users, GraduationCap, Shield,
   Wallet, UserCog, MessageSquare, CalendarDays, ClipboardCheck, Receipt,
-  Building2, LogOut, Menu, X, Lock, NotebookPen, Network,
+  Building2, LogOut, Menu, X, Lock, NotebookPen, Network, CalendarCheck,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -87,6 +87,8 @@ export const ICON_REGISTRY: Record<AdminPortalIcon, LucideIcon> = {
   NotebookPen,
   // ⭐ 2026-09-27 — Patronats fédérés (validation rattachements Academia Federis)
   Network,
+  // ⭐ 2026-11-21 — Self-service « Ma Présence & Congés » du personnel
+  CalendarCheck,
 };
 
 // ─── Thèmes par accent (un métier = une couleur) ────────────────────────────

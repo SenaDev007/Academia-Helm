@@ -27,6 +27,9 @@ import { EmailService } from '../communication/services/email.service';
 import { RecruitmentNotificationService } from './recruitment-notification.service';
 import { StorageService } from '../common/services/storage.service';
 import { renderLeaveDecisionEmail } from './hr-email-templates';
+// ⭐ 2026-11-21 — Notifications in-app (cloche) : décision de congé → personnel,
+//    nouvelle demande → gestionnaires RH. NotificationModule est @Global.
+import { NotificationService } from '../notifications/notification.service';
 
 const LEAVE_TYPE_LABELS: Record<string, string> = {
   ANNUAL: 'Congé annuel',
@@ -35,6 +38,9 @@ const LEAVE_TYPE_LABELS: Record<string, string> = {
   PATERNITY: 'Congé paternité',
   UNPAID: 'Congé sans solde',
   EXCEPTIONAL: 'Congé exceptionnel',
+  // ⭐ Demande d'ABSENCE justifiée (motif libre) — le personnel peut demander
+  //    une absence sans que ce soit un congé (ex: problème personnel, convocation).
+  ABSENCE: 'Absence justifiée',
 };
 
 @Injectable()
@@ -46,6 +52,8 @@ export class LeavesPrismaService {
     private readonly emailService: EmailService,
     private readonly notificationService: RecruitmentNotificationService,
     private readonly storageService: StorageService,
+    // ⭐ In-app notifications (cloche) — RH self-service
+    private readonly inAppNotifications: NotificationService,
   ) {}
 
   // ============================================================================
@@ -60,6 +68,13 @@ export class LeavesPrismaService {
    *  - Start date is before end date
    *  - No overlapping approved leave exists for the same period
    *
+   * ⭐ 2026-11-21 — `origin` : 
+   *  - 'SELF' → demande créée par le personnel lui-même (self-service) →
+   *    notification in-app aux gestionnaires RH (cloche + push)
+   *  - 'RH' → demande déposée par le RH POUR un membre du personnel →
+   *    notification in-app AU personnel concerné ("une demande a été
+   *    déposée en votre nom")
+   *
    * @param data - Leave request creation payload
    * @returns The created LeaveRequest record
    */
@@ -72,6 +87,7 @@ export class LeavesPrismaService {
     startDate: string | Date;
     endDate: string | Date;
     reason?: string;
+    origin?: 'SELF' | 'RH';
   }) {
     // Convert date strings to Date objects (DTO sends strings via @IsDateString)
     const startDate = data.startDate instanceof Date ? data.startDate : new Date(data.startDate);
@@ -134,7 +150,7 @@ export class LeavesPrismaService {
       );
     }
 
-    return this.prisma.leaveRequest.create({
+    const created = await this.prisma.leaveRequest.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId: data.tenantId,
@@ -154,12 +170,137 @@ export class LeavesPrismaService {
             employeeNumber: true,
             firstName: true,
             lastName: true,
+            email: true,
             position: true,
             roleType: true,
           },
         },
       },
     });
+
+    // ─── ⭐ 2026-11-21 — Notifications in-app (cloche), fire-and-forget ───
+    //    SELF  → le RH est alerté qu'une demande attend son traitement
+    //    RH    → le personnel est alerté qu'une demande a été déposée en son nom
+    this.dispatchLeaveCreationNotifications(created, data.tenantId, data.origin ?? 'RH').catch(
+      (err) => this.logger.error(`dispatchLeaveCreationNotifications failed (non-blocking): ${err.message}`),
+    );
+
+    return created;
+  }
+
+  /**
+   * ⭐ 2026-11-21 — Notifications in-app émises à la création d'une demande :
+   *    - origin 'SELF' : le personnel a soumis SA demande → alerte aux
+   *      gestionnaires RH (cloche, push, FCM — voir NotificationService)
+   *    - origin 'RH'   : le RH a déposé une demande POUR un membre du
+   *      personnel → alerte au personnel concerné
+   *    Fire-and-forget — jamais bloquant.
+   */
+  private async dispatchLeaveCreationNotifications(
+    leaveRequest: any,
+    tenantId: string,
+    origin: 'SELF' | 'RH',
+  ): Promise<void> {
+    const staff = leaveRequest?.staff;
+    if (!staff) return;
+
+    const startDate = new Date(leaveRequest.startDate);
+    const endDate = new Date(leaveRequest.endDate);
+    const daysCount =
+      Math.ceil(Math.abs(endDate.getTime() - startDate.getTime()) / 86400000) + 1;
+    const typeLabel = LEAVE_TYPE_LABELS[leaveRequest.type] || leaveRequest.type;
+
+    if (origin === 'SELF') {
+      // → Notifier les gestionnaires RH (demande en attente dans leur interface)
+      await this.inAppNotifications.notifyHrLeaveRequestSubmitted({
+        tenantId,
+        requestId: leaveRequest.id,
+        staff: {
+          firstName: staff.firstName,
+          lastName: staff.lastName,
+          position: staff.position,
+        },
+        leaveTypeLabel: typeLabel,
+        startDate: leaveRequest.startDate,
+        endDate: leaveRequest.endDate,
+        daysCount,
+        reason: leaveRequest.reason,
+      });
+    } else {
+      // → Notifier le personnel concerné (demande déposée en son nom par le RH)
+      const fmt = (d: Date) => d.toLocaleDateString('fr-FR');
+      await this.notifyStaffUser({
+        tenantId,
+        staffEmail: staff.email ?? null,
+        staffRoleType: staff.roleType,
+        type: 'LEAVE_REQUEST_SUBMITTED',
+        title: 'Demande de congé / absence déposée en votre nom',
+        body: `${typeLabel} : ${fmt(startDate)} → ${fmt(endDate)} (${daysCount} j) — en attente de traitement par le RH.`,
+        relatedEntityType: 'LeaveRequest',
+        relatedEntityId: leaveRequest.id,
+      });
+    }
+  }
+
+  /**
+   * ⭐ 2026-11-21 — Crée une notification in-app pour le User lié à un membre
+   * du personnel (rapprochement par email, insensible à la casse — le compte
+   * User est créé avec l'email du staff en minuscules).
+   * Fire-and-forget — jamais bloquant.
+   */
+  private async notifyStaffUser(params: {
+    tenantId: string;
+    staffEmail: string | null | undefined;
+    staffRoleType?: string | null;
+    type: string;
+    title: string;
+    body: string;
+    priority?: 'LOW' | 'MEDIUM' | 'HIGH';
+    relatedEntityType?: string;
+    relatedEntityId?: string;
+  }): Promise<void> {
+    try {
+      if (!params.staffEmail) {
+        this.logger.warn(`notifyStaffUser: pas d'email staff — notification ignorée`);
+        return;
+      }
+      const user = await this.prisma.user.findFirst({
+        where: {
+          tenantId: params.tenantId,
+          status: 'active',
+          email: { equals: params.staffEmail, mode: 'insensitive' },
+        },
+        select: { id: true },
+      });
+      if (!user) {
+        this.logger.warn(
+          `notifyStaffUser: aucun User actif pour l'email ${params.staffEmail} — notification ignorée`,
+        );
+        return;
+      }
+
+      // ⭐ URL de destination : la page self-service du personnel —
+      //    /app/teacher/presence pour les enseignants, /app/my-presence pour
+      //    les autres membres du personnel (directeur, comptable…).
+      const url =
+        params.staffRoleType === 'TEACHER'
+          ? '/app/teacher/presence'
+          : '/app/my-presence';
+
+      await this.inAppNotifications.create({
+        tenantId: params.tenantId,
+        recipientId: user.id,
+        type: params.type,
+        title: params.title,
+        body: params.body,
+        priority: params.priority ?? 'MEDIUM',
+        data: { url },
+        relatedEntityType: params.relatedEntityType ?? null,
+        relatedEntityId: params.relatedEntityId ?? null,
+      });
+    } catch (err: any) {
+      this.logger.error(`notifyStaffUser failed: ${err.message}`, err.stack);
+    }
   }
 
   /**
@@ -224,6 +365,7 @@ export class LeavesPrismaService {
             firstName: true,
             lastName: true,
             email: true,
+            roleType: true,
           },
         },
         approver: {
@@ -241,6 +383,13 @@ export class LeavesPrismaService {
       this.sendLeaveDecisionEmail(updated, tenantId, status, rejectedReason).catch((err) => {
         this.logger.error(`Failed to send leave decision email: ${err.message}`);
       });
+
+      // ─── ⭐ 2026-11-21 — Notification IN-APP (cloche) au personnel ──
+      //    le personnel est notifié DANS SON INTERFACE dès que le RH
+      //    approuve ou refuse sa demande (en plus de l'email).
+      this.notifyStaffLeaveDecisionInApp(updated, tenantId, status, rejectedReason).catch(
+        (err) => this.logger.error(`notifyStaffLeaveDecisionInApp failed (non-blocking): ${err.message}`),
+      );
     }
 
     // ─── Fusion #3 : auto-créer des lignes ABSENT dans staff_attendances ──
@@ -368,6 +517,61 @@ export class LeavesPrismaService {
     this.logger.log(
       `[generateAttendanceForApprovedLeave] leave=${leaveRequest.id} staff=${leaveRequest.staffId} — ${createdCount} attendance rows created, ${skippedCount} already existing`,
     );
+  }
+
+  /**
+   * ⭐ 2026-11-21 — Notification in-app (cloche) au personnel concerné quand
+   * le RH a traité sa demande : APPROVED → "demande approuvée", REJECTED →
+   * "demande refusée" (+ motif). Le clic sur la notification ouvre SA page
+   * self-service présence/congés. Fire-and-forget — jamais bloquant.
+   */
+  private async notifyStaffLeaveDecisionInApp(
+    leaveRequest: any,
+    tenantId: string,
+    decision: 'APPROVED' | 'REJECTED',
+    rejectedReason?: string,
+  ): Promise<void> {
+    const staff = leaveRequest?.staff;
+    if (!staff?.email) {
+      this.logger.warn(`notifyStaffLeaveDecisionInApp: pas d'email staff — ignoré`);
+      return;
+    }
+
+    const fmt = (d: string | Date) => new Date(d).toLocaleDateString('fr-FR');
+    const typeLabel = LEAVE_TYPE_LABELS[leaveRequest.type] || leaveRequest.type;
+
+    const approver = leaveRequest.approver;
+    const approverName = approver
+      ? `${approver.firstName || ''} ${approver.lastName || ''}`.trim()
+      : undefined;
+
+    if (decision === 'APPROVED') {
+      await this.notifyStaffUser({
+        tenantId,
+        staffEmail: staff.email,
+        staffRoleType: staff.roleType,
+        type: 'LEAVE_REQUEST_APPROVED',
+        title: 'Demande approuvée',
+        body:
+          `Votre ${typeLabel.toLowerCase()} (${fmt(leaveRequest.startDate)} → ${fmt(leaveRequest.endDate)}) ` +
+          `a été approuvée par ${approverName || 'la direction'}.`,
+        relatedEntityType: 'LeaveRequest',
+        relatedEntityId: leaveRequest.id,
+      });
+    } else {
+      await this.notifyStaffUser({
+        tenantId,
+        staffEmail: staff.email,
+        staffRoleType: staff.roleType,
+        type: 'LEAVE_REQUEST_REJECTED',
+        title: 'Demande refusée',
+        body:
+          `Votre ${typeLabel.toLowerCase()} (${fmt(leaveRequest.startDate)} → ${fmt(leaveRequest.endDate)}) ` +
+          `a été refusée${rejectedReason ? ` : ${rejectedReason}` : '.'}`,
+        relatedEntityType: 'LeaveRequest',
+        relatedEntityId: leaveRequest.id,
+      });
+    }
   }
 
   /**
@@ -531,9 +735,16 @@ export class LeavesPrismaService {
    *  - Pending: total days from PENDING leave requests
    *  - Balance: earned - taken
    *
+   * ⭐ 2026-11-21 — PRÉCISION SÉMANTIQUE : le solde affiché est le solde de
+   * CONGÉS ANNUELS (acquisition 2,5 j/mois). Seules les demandes de type
+   * ANNUAL consomment/reservent ce solde — les autres types (maladie,
+   * maternité, paternité, sans solde, exceptionnel, ABSENCE justifiée)
+   * ne déduisent PAS les congés annuels acquis. `byType` expose la
+   * répartition des jours APPROUVÉS par type (pour affichage RH/paie).
+   *
    * @param staffId - Staff member ID
    * @param tenantId - Tenant ID for scoping
-   * @returns Object with earned, taken, pending, and balance figures
+   * @returns Object with earned, taken, pending, balance and byType figures
    */
   async calculateLeaveBalance(staffId: string, tenantId: string) {
     const staff = await this.prisma.staff.findFirst({
@@ -561,11 +772,19 @@ export class LeavesPrismaService {
 
     const totalEarned = monthsWorked * 2.5;
 
-    const totalTaken = approvedLeaves.reduce((acc, req) => {
-      const diffMs = Math.abs(req.endDate.getTime() - req.startDate.getTime());
-      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24)) + 1;
-      return acc + diffDays;
-    }, 0);
+    // ⭐ Seuls les congés ANNUAL consomment le solde annuel
+    const daysOf = (req: { startDate: Date; endDate: Date }) =>
+      Math.ceil(Math.abs(req.endDate.getTime() - req.startDate.getTime()) / 86400000) + 1;
+
+    const totalTaken = approvedLeaves
+      .filter((req) => req.type === 'ANNUAL')
+      .reduce((acc, req) => acc + daysOf(req), 0);
+
+    // Répartition des jours APPROUVÉS par type (transparence RH/paie)
+    const byType: Record<string, number> = {};
+    for (const req of approvedLeaves) {
+      byType[req.type] = (byType[req.type] || 0) + daysOf(req);
+    }
 
     // Calculate days from pending leave requests
     const pendingLeaves = await this.prisma.leaveRequest.findMany({
@@ -576,17 +795,17 @@ export class LeavesPrismaService {
       },
     });
 
-    const totalPending = pendingLeaves.reduce((acc, req) => {
-      const diffMs = Math.abs(req.endDate.getTime() - req.startDate.getTime());
-      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24)) + 1;
-      return acc + diffDays;
-    }, 0);
+    // ⭐ Idem : seules les demandes ANNUAL en attente réservent le solde
+    const totalPending = pendingLeaves
+      .filter((req) => req.type === 'ANNUAL')
+      .reduce((acc, req) => acc + daysOf(req), 0);
 
     return {
       earned: totalEarned,
       taken: totalTaken,
       pending: totalPending,
       balance: totalEarned - totalTaken,
+      byType,
     };
   }
 
@@ -705,6 +924,8 @@ export class LeavesPrismaService {
       startDate: data.startDate,
       endDate: data.endDate,
       reason: data.reason,
+      // ⭐ Demande créée par le personnel lui-même → le RH est notifié
+      origin: 'SELF',
     });
   }
 

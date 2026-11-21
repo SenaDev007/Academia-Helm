@@ -24,6 +24,10 @@ const LEAVE_TYPES = [
   { value: 'PATERNITY', label: 'Paternité' },
   { value: 'UNPAID', label: 'Sans solde' },
   { value: 'EXCEPTIONAL', label: 'Exceptionnel' },
+  // ⭐ 2026-11-21 — Demande d'ABSENCE justifiée (motif libre) : le personnel
+  //    peut demander une absence sans que ce soit un congé. Ne consomme
+  //    PAS le solde de congés annuels.
+  { value: 'ABSENCE', label: 'Absence justifiée' },
 ];
 
 function calculateDays(start: string, end: string) {
@@ -160,7 +164,7 @@ export function LeavesWorkspace() {
                 </select>
               </div>
               <div>
-                <label className={labelClass}>Type de congé</label>
+                <label className={labelClass}>Type de congé / absence</label>
                 <select className={inputClass} value={modalForm.type} onChange={(e) => setModalForm({ ...modalForm, type: e.target.value })}>
                   {LEAVE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>

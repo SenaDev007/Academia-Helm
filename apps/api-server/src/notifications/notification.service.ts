@@ -351,6 +351,119 @@ export class NotificationService {
     }
   }
 
+  // ═══ ⭐ 2026-11-21 — RH self-service : congés/absences & heures supp. ═══
+  //
+  // Le personnel (enseignant, directeur, comptable… — tout membre avec une
+  // fiche Staff ACTIVE) crée SES demandes depuis son interface ; le RH les
+  // reçoit dans la sienne. Ces helpers notifient le RH d'une nouvelle demande
+  // en attente (cloche in-app + push + FCM). La notification de DÉCISION au
+  // personnel est créée directement par LeavesPrismaService (il résout déjà
+  // le User par l'email du staff).
+
+  /**
+   * ⭐ Notifie le RH qu'un membre du personnel a soumis une demande de
+   * congé/d'absence depuis son interface (en attente d'approbation).
+   * Destinataires : PROMOTER, SUPER_DIRECTOR, DIRECTOR, ADMIN, HR_MANAGER.
+   * Fire-and-forget.
+   */
+  async notifyHrLeaveRequestSubmitted(params: {
+    tenantId: string;
+    requestId: string;
+    staff: { firstName: string; lastName: string; position?: string | null };
+    leaveTypeLabel: string;
+    startDate: string | Date;
+    endDate: string | Date;
+    daysCount: number;
+    reason?: string | null;
+  }) {
+    try {
+      const recipients = await this.resolveHrManagers(params.tenantId);
+      if (recipients.length === 0) {
+        this.logger.warn(`notifyHrLeaveRequestSubmitted: aucun destinataire RH pour tenant ${params.tenantId}`);
+        return;
+      }
+
+      const fmt = (d: string | Date) => new Date(d).toLocaleDateString('fr-FR');
+      const { firstName, lastName } = params.staff;
+      const title = 'Nouvelle demande de congé / absence';
+      const body = `${firstName} ${lastName} — ${params.leaveTypeLabel} : ${fmt(params.startDate)} → ${fmt(params.endDate)} (${params.daysCount} j)${params.reason ? ` — « ${params.reason} »` : ''}`;
+
+      const notifications = await Promise.all(
+        recipients.map((userId) =>
+          this.create({
+            tenantId: params.tenantId,
+            recipientId: userId,
+            type: 'LEAVE_REQUEST_SUBMITTED',
+            title,
+            body,
+            priority: 'MEDIUM',
+            data: { url: '/app/hr/leaves' },
+            relatedEntityType: 'LeaveRequest',
+            relatedEntityId: params.requestId,
+          }).catch((e) => {
+            this.logger.error(`create notif failed for user ${userId}: ${e.message}`);
+            return null;
+          }),
+        ),
+      );
+      this.logger.log(
+        `notifyHrLeaveRequestSubmitted: ${notifications.filter(Boolean).length} notification(s) pour demande ${params.requestId}`,
+      );
+    } catch (err: any) {
+      this.logger.error(`notifyHrLeaveRequestSubmitted failed: ${err.message}`, err.stack);
+    }
+  }
+
+  /**
+   * ⭐ Notifie le RH qu'un membre du personnel a déclaré des heures
+   * supplémentaires (en attente de validation).
+   * Fire-and-forget.
+   */
+  async notifyHrOvertimeSubmitted(params: {
+    tenantId: string;
+    overtimeId: string;
+    staff: { firstName: string; lastName: string };
+    date: string | Date;
+    hours: number;
+    reason?: string | null;
+  }) {
+    try {
+      const recipients = await this.resolveHrManagers(params.tenantId);
+      if (recipients.length === 0) {
+        this.logger.warn(`notifyHrOvertimeSubmitted: aucun destinataire RH pour tenant ${params.tenantId}`);
+        return;
+      }
+
+      const { firstName, lastName } = params.staff;
+      const title = 'Heures supplémentaires à valider';
+      const body = `${firstName} ${lastName} — ${new Date(params.date).toLocaleDateString('fr-FR')} : ${params.hours} h${params.reason ? ` — « ${params.reason} »` : ''}`;
+
+      const notifications = await Promise.all(
+        recipients.map((userId) =>
+          this.create({
+            tenantId: params.tenantId,
+            recipientId: userId,
+            type: 'OVERTIME_PENDING',
+            title,
+            body,
+            priority: 'LOW',
+            data: { url: '/app/hr/attendance' },
+            relatedEntityType: 'OvertimeRecord',
+            relatedEntityId: params.overtimeId,
+          }).catch((e) => {
+            this.logger.error(`create notif failed for user ${userId}: ${e.message}`);
+            return null;
+          }),
+        ),
+      );
+      this.logger.log(
+        `notifyHrOvertimeSubmitted: ${notifications.filter(Boolean).length} notification(s) pour heures sup ${params.overtimeId}`,
+      );
+    } catch (err: any) {
+      this.logger.error(`notifyHrOvertimeSubmitted failed: ${err.message}`, err.stack);
+    }
+  }
+
   // ═══ Résolution des destinataires ═══
 
   /**
@@ -428,6 +541,29 @@ export class NotificationService {
       return Array.from(userIds);
     } catch (err: any) {
       this.logger.warn(`resolveRecruitmentStaff failed: ${err.message}`);
+      return [];
+    }
+  }
+
+  /**
+   * ⭐ 2026-11-21 — Résout les userId des gestionnaires RH d'un tenant.
+   * Rôles ciblés : PROMOTER (propriétaire), SUPER_DIRECTOR, DIRECTOR, ADMIN,
+   * HR_MANAGER — ceux qui traitent les demandes de congé/absence/heures supp.
+   * du personnel dans le module RH.
+   */
+  private async resolveHrManagers(tenantId: string): Promise<string[]> {
+    try {
+      const users = await this.prisma.user.findMany({
+        where: {
+          tenantId,
+          role: { in: ['PROMOTER', 'SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'HR_MANAGER'] },
+          status: 'active',
+        },
+        select: { id: true },
+      });
+      return users.map((u) => u.id);
+    } catch (err: any) {
+      this.logger.warn(`resolveHrManagers failed: ${err.message}`);
       return [];
     }
   }

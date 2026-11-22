@@ -15,8 +15,19 @@ import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.servi
 import { StorageService } from '../../common/services/storage.service';
 // ⭐ 22/11/2026 — identité de l'école (onglet Identité ; overlay secondaire)
 import { resolveLevelIdentityOverlay } from '../../common/context/resolve-level-identity';
+// ⭐ 161 — helpers d'échappement/formatage partagés avec les gabarits FP/EP
+import { esc, fmtMoney } from './payroll-document-templates';
 import * as fs from 'fs';
 import * as path from 'path';
+
+/** ⭐ 161 — Libellé de période du bulletin (« Novembre 2026 ») partagé par le
+ *  HTML et les gabarits d'en-tête/pied de page du PDF. */
+function periodLabelOf(payroll: any): string {
+  if (payroll?.startDate) {
+    return new Date(payroll.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  }
+  return payroll?.month || 'N/A';
+}
 
 @Injectable()
 export class PayrollPdfService {
@@ -91,14 +102,27 @@ export class PayrollPdfService {
 
     // 1. Résoudre l'identité COMPLÈTE de l'école (onglet Identité du module
     //    Paramètres — maternelle/primaire, ou niveau secondaire via overlay)
-    //    + logo en data-URL (filigrane + en-tête du bulletin).
+    //    + logo en data-URL (filigrane diagonal + en-tête du bulletin).
     const school = await this.resolveSchoolIdentity(tenantId, payrollItem.staff);
 
+    // ⭐ 161 — QR CODE de vérification (retour promoteur) : l'identifiant ne
+    //    doit PAS figurer en clair sur le document — il est encodé dans un QR
+    //    code discret en pied de page (scan = référence, période, net, sceau).
+    const qrDataUrl = await this.buildQrDataUrl(
+      payrollItem.id,
+      payrollItem.salarySlip?.receiptNumber || null,
+      periodLabelOf(payroll),
+      Number(payrollItem.netSalary),
+    );
+
     // 2. Générer le HTML du bulletin
-    const html = this.generatePaySlipHtml(payrollItem, labels, school);
+    const html = this.generatePaySlipHtml(payrollItem, labels, school, qrDataUrl);
 
     // 3. Convertir en PDF (PuppeteerPoolService handles browser availability)
-    const pdfBuffer = await this.renderPdfFromHtml(html);
+    const pdfBuffer = await this.renderPdfFromHtml(html, {
+      schoolName: school?.name || tenant?.name || 'Établissement',
+      periodLabel: periodLabelOf(payroll),
+    });
 
     // 4. Sauvegarder le PDF
     const pdfUrl = await this.savePdf(
@@ -251,9 +275,24 @@ export class PayrollPdfService {
   }
 
   /**
-   * Génère le HTML du bulletin de paie avec labels régionaux
+   * Génère le HTML du bulletin de paie avec labels régionaux.
+   *
+   * ⭐ 161 — refonte du gabarit (retour promoteur) :
+   *   · filigrane logo PENCHÉ EN DIAGONALE (45°) ;
+   *   · plus AUCUN identifiant en clair — la référence est encodée dans un
+   *     QR code discret en pied de page ;
+   *   · identité visuelle alignée sur les gabarits FP/EP (bandeau école,
+   *     strip de coordonnées, tables gains/retenues séparées) ;
+   *   · pagination maîtrisée : en-tête de table répété, lignes insécables,
+   *     signatures/pied insécables (les marges répétées sont posées par le
+   *     rendu PDF displayHeaderFooter).
    */
-  private generatePaySlipHtml(payrollItem: any, labels: any, school: any): string {
+  private generatePaySlipHtml(
+    payrollItem: any,
+    labels: any,
+    school: any,
+    qrDataUrl: string | null,
+  ): string {
     const { staff, payroll } = payrollItem;
     const tenant = payroll?.tenant;
     const academicYear = payroll?.academicYear;
@@ -264,11 +303,10 @@ export class PayrollPdfService {
       return d.toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' });
     };
 
-    const periodName = payroll?.startDate
-      ? new Date(payroll.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
-      : payroll?.month || 'N/A';
+    const periodName = periodLabelOf(payroll);
+    const schoolName = school?.name || tenant?.name || 'N/A';
 
-    const cnssNumber = staff.employeeCNSS?.cnssNumber || 'N/A';
+    const cnssNumber = staff.employeeCNSS?.cnssNumber || staff.cnssNumber || 'N/A';
 
     // ⭐ 22/11/2026 — proration par présences (mode « présences » de la période)
     const att = (payrollItem as any)?.attendanceDetail;
@@ -277,25 +315,41 @@ export class PayrollPdfService {
       ? String(Math.round(Number(presences.ratio ?? 1) * 1000) / 10).replace('.', ',')
       : null;
     const baseLabel = presences && Number(presences.ratio) < 1 && !presences.noRecords
-      ? `Salaire de Base (proraté présences ${presencePct} %)`
-      : 'Salaire de Base';
+      ? `Salaire de base (proraté présences ${presencePct} %)`
+      : 'Salaire de base';
+
     // Filigrane + en-tête logo (onglet Identité — maternelle/primaire ou
     // niveau secondaire selon le personnel).
+    // ⭐ 161 — DIAGONALE VRAIE : rotate(-45deg) (le promoteur exige un logo
+    // penché en diagonale, pas droit à la verticale).
     const watermark = school?.logoUrl
-      ? `<div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); z-index: 0; opacity: 0.055; pointer-events: none;"><img src="${school.logoUrl}" alt="logo" style="width: 330px; height: auto;" /></div>`
+      ? `<div class="watermark"><img src="${school.logoUrl}" alt="logo" /></div>`
       : '';
     const logoHeader = school?.logoUrl
-      ? `<img src="${school.logoUrl}" alt="logo" style="width: 58px; height: 58px; object-fit: contain; border-radius: 8px; margin-right: 14px;" />`
+      ? `<img class="logo-head" src="${school.logoUrl}" alt="logo" />`
       : '';
-    const schoolAddr = [school?.address, school?.city].filter(Boolean).join(', ');
-    const schoolContactBits = [
-      school?.phone ? `Tél. ${school.phone}` : null,
-      school?.phone2 ? `Tél. 2 ${school.phone2}` : null,
-      school?.whatsapp ? `WhatsApp ${school.whatsapp}` : null,
-      school?.email,
-      school?.website,
-      school?.autorisation ? `Autorisation N° ${school.autorisation}` : null,
-    ].filter(Boolean).join(' · ');
+    const schoolAddr = [school?.address, school?.city].filter(Boolean).map(esc).join(', ');
+    const contactSpans = [
+      school?.phone ? `<span>Tél. ${esc(school.phone)}</span>` : null,
+      school?.phone2 ? `<span>Tél. 2 ${esc(school.phone2)}</span>` : null,
+      school?.whatsapp ? `<span>WhatsApp ${esc(school.whatsapp)}</span>` : null,
+      school?.email ? `<span>${esc(school.email)}</span>` : null,
+      school?.website ? `<span>${esc(school.website)}</span>` : null,
+      school?.autorisation ? `<span>Autorisation N° ${esc(school.autorisation)}</span>` : null,
+      school?.slogan ? `<span class="slogan">« ${esc(school.slogan)} »</span>` : null,
+    ].filter(Boolean).join('');
+    const contactsStrip = contactSpans
+      ? `<div class="school-contacts">${contactSpans}</div>`
+      : '';
+
+    const num = (v: any) => fmtMoney(Number(v ?? 0));
+    // ⭐ 161 — affichage monétaire aligné sur les gabarits FP/EP : le franc
+    //    CFA (XOF/XAF) s'affiche « FCFA », les autres devises gardent leur code.
+    const currencyLabel = ['XOF', 'XAF'].includes(String(labels.currency || '').toUpperCase())
+      ? 'FCFA'
+      : String(labels.currency || '');
+    const hasOtherDeductions = Number(payrollItem.otherDeductions) > 0;
+    const totalDeductionsRow = Number(payrollItem.totalDeductions);
 
     return `
 <!DOCTYPE html>
@@ -303,147 +357,133 @@ export class PayrollPdfService {
 <head>
   <meta charset="UTF-8">
   <style>
-    body { font-family: 'Helvetica', sans-serif; padding: 40px; color: #333; line-height: 1.5; }
-    .header { border-bottom: 2px solid #2563eb; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; }
-    .company-info h1 { color: #2563eb; margin: 0; font-size: 24px; }
-    .bulletin-title { text-align: center; margin-bottom: 30px; }
-    .bulletin-title h2 { text-transform: uppercase; border: 1px solid #333; display: inline-block; padding: 10px 40px; }
-    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 40px; }
-    .info-box { border: 1px solid #ddd; padding: 15px; border-radius: 8px; }
-    .info-box h3 { margin-top: 0; font-size: 14px; color: #666; text-transform: uppercase; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-    th { background: #f8fafc; text-align: left; padding: 12px; border-bottom: 2px solid #e2e8f0; font-size: 13px; }
-    td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
-    .amount { text-align: right; }
-    .total-row { background: #f1f5f9; font-weight: bold; }
-    .net-pay { background: #2563eb; color: white; font-size: 18px; }
-    .footer { margin-top: 50px; font-size: 12px; text-align: center; color: #64748b; }
-    .signature-area { margin-top: 40px; display: flex; justify-content: space-between; }
-    .signature-box { border: 1px dashed #cbd5e1; width: 200px; height: 100px; padding: 10px; text-align: center; font-size: 10px; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1f2937; font-size: 11px; line-height: 1.45; }
+    /* ⭐ 161 — logo en FILIGRANE DIAGONAL (45°) : traverse la feuille de coin,
+       très léger, sans gêner la lecture — sur CHAQUE page du bulletin. */
+    .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); z-index: 0; opacity: .06; pointer-events: none; }
+    .watermark img { width: 330px; height: auto; }
+    .band { background: #1e3a5f; color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px 4px 0 0; }
+    .band .org-wrap { display: flex; gap: 12px; align-items: center; max-width: 66%; }
+    .band .logo-head { width: 50px; height: 50px; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px; flex-shrink: 0; }
+    .band .org { font-size: 15px; font-weight: 800; letter-spacing: .2px; }
+    .band .org .sigle { font-size: 10px; font-weight: 600; opacity: .85; }
+    .band .org-sub { font-size: 8.5px; opacity: .85; margin-top: 2px; }
+    .band .doc { text-align: right; }
+    .band .doc .type { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; }
+    .band .doc .num { font-size: 10px; opacity: .9; margin-top: 2px; font-weight: 600; }
+    .school-contacts { display: flex; flex-wrap: wrap; gap: 3px 14px; font-size: 8px; color: #4b5563; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 4px 4px; padding: 5px 10px; background: #f9fafb; }
+    .school-contacts .slogan { font-style: italic; color: #6b7280; }
+    .identity { border: 1px solid #d1d5db; border-radius: 4px; display: flex; margin-top: 10px; }
+    .identity > div { flex: 1; padding: 8px 12px; }
+    .identity > div + div { border-left: 1px solid #d1d5db; }
+    .identity h4 { font-size: 8px; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; margin-bottom: 4px; }
+    .identity p { margin: 1px 0; }
+    .identity .hl { font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    caption { text-align: left; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px; padding: 5px 10px; border-radius: 3px 3px 0 0; color: #fff; background: #1e3a5f; }
+    th { font-size: 8px; text-transform: uppercase; letter-spacing: .8px; color: #6b7280; text-align: left; padding: 5px 10px; border-bottom: 1.5px solid #d1d5db; background: #f9fafb; }
+    th.r, td.r { text-align: right; }
+    td { padding: 4.5px 10px; border-bottom: 1px solid #e5e7eb; }
+    tr.total td { font-weight: 800; background: #f3f4f6; border-top: 1.5px solid #9ca3af; }
+    .net-box { margin-top: 14px; border-radius: 4px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; color: #fff; background: #1e3a5f; page-break-inside: avoid; }
+    .net-box .lbl { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; opacity: .92; }
+    .net-box .val { font-size: 19px; font-weight: 900; }
+    .signature-area { display: flex; gap: 30px; margin-top: 26px; page-break-inside: avoid; }
+    .signature-area > div { flex: 1; text-align: center; }
+    .signature-area .who { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: #374151; }
+    .signature-area .box { border: 1px dashed #9ca3af; border-radius: 3px; height: 58px; margin-top: 5px; }
+    .doc-footer { margin-top: 16px; border-top: 1px solid #d1d5db; padding-top: 7px; display: flex; justify-content: space-between; align-items: flex-end; page-break-inside: avoid; }
+    .doc-footer .mention { font-size: 7.8px; color: #6b7280; max-width: 70%; }
+    .qr-wrap { display: flex; align-items: center; gap: 8px; text-align: right; }
+    .qr-wrap img { width: 64px; height: 64px; }
+    .qr-wrap .cap { font-size: 7.5px; color: #6b7280; }
+    /* ⭐ 161 — pagination : l'en-tête de table se répète à chaque page et
+       AUCUNE ligne n'est coupée en deux (le tableau ne descend jamais dans
+       le pied de page ni ne remonte dans l'en-tête de la page suivante). */
+    thead { display: table-header-group; }
+    tr { page-break-inside: avoid; }
   </style>
 </head>
 <body>${watermark}
-  <div class="header">
-    <div class="company-info" style="display: flex; align-items: center;">
+  <div class="band">
+    <div class="org-wrap">
       ${logoHeader}
       <div>
-        <h1>${school?.name || tenant?.name || 'N/A'}${school?.sigle ? ` <span style="font-size: 14px; color: #64748b;">(${school.sigle})</span>` : ''}</h1>
-        ${schoolAddr ? `<p>${schoolAddr}</p>` : ''}
-        ${schoolContactBits ? `<p style="font-size: 11px; color: #64748b;">${schoolContactBits}</p>` : ''}
-        ${school?.slogan ? `<p style="font-size: 11px; font-style: italic; color: #64748b;">« ${school.slogan} »</p>` : ''}
-        <p>Année Scolaire: ${academicYear?.name || 'N/A'}</p>
+        <div class="org">${esc(schoolName)}${school?.sigle ? ` <span class="sigle">(${esc(school.sigle)})</span>` : ''}</div>
+        ${schoolAddr ? `<div class="org-sub">${schoolAddr}</div>` : ''}
+        <div class="org-sub">Année scolaire ${esc(academicYear?.name || 'N/A')}</div>
       </div>
     </div>
-    <div class="period-info">
-      <p><strong>Période:</strong> ${periodName}</p>
-      <p><strong>Date:</strong> ${formatDate(new Date())}</p>
+    <div class="doc">
+      <div class="type">Bulletin de paie</div>
+      <div class="num">Période : ${esc(periodName)}</div>
+      <div class="num">Émis le ${formatDate(new Date())}</div>
     </div>
   </div>
+  ${contactsStrip}
 
-  <div class="bulletin-title">
-    <h2>Bulletin de Paie</h2>
-  </div>
-
-  <div class="info-grid">
-    <div class="info-box">
-      <h3>Employeur</h3>
-      <p><strong>${school?.name || tenant?.name || 'N/A'}</strong></p>
+  <div class="identity">
+    <div>
+      <h4>Salarié</h4>
+      <p class="hl">${esc(staff.firstName)} ${esc(staff.lastName)}</p>
+      <p>Matricule : <span class="hl">${esc(staff.tenantMatricule || staff.employeeNumber || 'N/A')}</span></p>
+      <p>Catégorie : ${esc(staff.roleType || 'N/A')}</p>
+      <p>Fonction : ${esc(staff.position || 'Personnel')}</p>
+      <p>N° ${esc(labels.social)} : ${esc(cnssNumber)}</p>
+    </div>
+    <div>
+      <h4>Établissement employeur</h4>
+      <p class="hl">${esc(schoolName)}</p>
       ${schoolAddr ? `<p>${schoolAddr}</p>` : ''}
-      ${school?.phone ? `<p>Tél. ${school.phone}${school?.phone2 ? ` · ${school.phone2}` : ''}</p>` : ''}
-      ${school?.email ? `<p>${school.email}</p>` : ''}
-      ${school?.autorisation ? `<p>Autorisation N° ${school.autorisation}</p>` : ''}
-    </div>
-    <div class="info-box">
-      <h3>Salarié</h3>
-      <p><strong>${staff.firstName} ${staff.lastName}</strong></p>
-      <p>Matricule: ${staff.employeeNumber || 'N/A'}</p>
-      <p>Catégorie: ${staff.roleType || 'N/A'}</p>
-      <p>Fonction: ${staff.position || 'Personnel'}</p>
-      <p>N° ${labels.social}: ${cnssNumber}</p>
-      ${presences ? `<p>Présences pointées: <strong>${presences.daysPresent}/${presences.daysExpected} j</strong> · taux ${presencePct} %${presences.noRecords ? ' · aucun pointage sur la période' : ''}</p>` : ''}
+      ${school?.phone ? `<p>Tél. ${esc(school.phone)}${school?.phone2 ? ` · ${esc(school.phone2)}` : ''}</p>` : ''}
+      ${school?.email ? `<p>${esc(school.email)}</p>` : ''}
+      ${presences ? `<p>Présences pointées : <span class="hl">${presences.daysPresent}/${presences.daysExpected} j</span> · taux ${presencePct} %${presences.noRecords ? ' · aucun pointage sur la période' : ''}</p>` : ''}
     </div>
   </div>
 
   <table>
-    <thead>
-      <tr>
-        <th>Désignation</th>
-        <th class="amount">Base</th>
-        <th class="amount">Retenue</th>
-        <th class="amount">Gain</th>
-      </tr>
-    </thead>
+    <caption>Gains</caption>
+    <thead><tr><th>Rubrique</th><th class="r">Montant (${esc(currencyLabel)})</th></tr></thead>
     <tbody>
-      <tr>
-        <td>${baseLabel}</td>
-        <td class="amount">${Number(payrollItem.baseSalary).toLocaleString()}</td>
-        <td class="amount"></td>
-        <td class="amount">${Number(payrollItem.baseSalary).toLocaleString()}</td>
-      </tr>
-      <tr>
-        <td>Heures Supplémentaires</td>
-        <td class="amount"></td>
-        <td class="amount"></td>
-        <td class="amount">${Number(payrollItem.overtimeAmount).toLocaleString()}</td>
-      </tr>
-      <tr>
-        <td>Indemnités et Primes</td>
-        <td class="amount"></td>
-        <td class="amount"></td>
-        <td class="amount">${Number(payrollItem.bonuses).toLocaleString()}</td>
-      </tr>
-      <tr class="total-row">
-        <td>SALAIRE BRUT</td>
-        <td class="amount"></td>
-        <td class="amount"></td>
-        <td class="amount">${Number(payrollItem.grossSalary).toLocaleString()}</td>
-      </tr>
-      <tr>
-        <td>Cotisation ${labels.social} (Salarié)</td>
-        <td class="amount"></td>
-        <td class="amount">${Number(payrollItem.cnssEmployee).toLocaleString()}</td>
-        <td class="amount"></td>
-      </tr>
-      <tr>
-        <td>Cotisation ${labels.social} (Employeur)</td>
-        <td class="amount"></td>
-        <td class="amount">${Number(payrollItem.cnssEmployer).toLocaleString()}</td>
-        <td class="amount"></td>
-      </tr>
-      <tr>
-        <td>${labels.tax}</td>
-        <td class="amount"></td>
-        <td class="amount">${Number(payrollItem.irppAmount).toLocaleString()}</td>
-        <td class="amount"></td>
-      </tr>
-      ${Number(payrollItem.otherDeductions) > 0 ? `
-      <tr>
-        <td>Autres Déductions</td>
-        <td class="amount"></td>
-        <td class="amount">${Number(payrollItem.otherDeductions).toLocaleString()}</td>
-        <td class="amount"></td>
-      </tr>` : ''}
-      <tr class="total-row">
-        <td>TOTAL DÉDUCTIONS</td>
-        <td class="amount"></td>
-        <td class="amount">${Number(payrollItem.totalDeductions).toLocaleString()}</td>
-        <td class="amount"></td>
-      </tr>
-      <tr class="total-row net-pay">
-        <td colspan="3">NET À PAYER (${labels.currency})</td>
-        <td class="amount">${Number(payrollItem.netSalary).toLocaleString()}</td>
-      </tr>
+      <tr><td>${esc(baseLabel)}</td><td class="r">${num(payrollItem.baseSalary)}</td></tr>
+      <tr><td>Heures supplémentaires</td><td class="r">${num(payrollItem.overtimeAmount)}</td></tr>
+      <tr><td>Indemnités et primes</td><td class="r">${num(payrollItem.bonuses)}</td></tr>
+      <tr class="total"><td>SALAIRE BRUT</td><td class="r">${num(payrollItem.grossSalary)}</td></tr>
     </tbody>
   </table>
 
-  <div class="signature-area">
-    <div class="signature-box">Signature du Salarié</div>
-    <div class="signature-box">Cachet de l'Employeur</div>
+  <table>
+    <caption>Retenues</caption>
+    <thead><tr><th>Rubrique</th><th class="r">Montant (${esc(currencyLabel)})</th></tr></thead>
+    <tbody>
+      <tr><td>Cotisation ${esc(labels.social)} (salariale)</td><td class="r">${num(payrollItem.cnssEmployee)}</td></tr>
+      <tr><td>Cotisation ${esc(labels.social)} (patronale — informative)</td><td class="r">${num(payrollItem.cnssEmployer)}</td></tr>
+      <tr><td>${esc(labels.tax)}</td><td class="r">${num(payrollItem.irppAmount)}</td></tr>
+      ${hasOtherDeductions ? `<tr><td>Autres retenues</td><td class="r">${num(payrollItem.otherDeductions)}</td></tr>` : ''}
+      <tr class="total"><td>TOTAL RETENUES (salariales)</td><td class="r">${num(totalDeductionsRow)}</td></tr>
+    </tbody>
+  </table>
+
+  <div class="net-box">
+    <span class="lbl">Net à payer</span>
+    <span class="val">${num(payrollItem.netSalary)} ${esc(currencyLabel)}</span>
   </div>
 
-  <div class="footer">
-    <p>Ce bulletin de paie est généré par Academia Helm. Pour votre sécurité, conservez-le précieusement.</p>
-    <p>ID Bulletin: ${payrollItem.id}</p>
+  <div class="signature-area">
+    <div>
+      <div class="who">Le salarié</div>
+      <div class="box"></div>
+    </div>
+    <div>
+      <div class="who">Cachet de l'employeur</div>
+      <div class="box"></div>
+    </div>
+  </div>
+
+  <div class="doc-footer">
+    <div class="mention">Ce bulletin de paie est généré par Academia Helm — document à conserver sans limitation de durée. Pour votre sécurité, conservez-le précieusement.</div>
+    ${qrDataUrl ? `<div class="qr-wrap"><span class="cap">Vérification d'authenticité<br/>(scan du code)</span><img src="${qrDataUrl}" alt="vérification" /></div>` : ''}
   </div>
 </body>
 </html>
@@ -451,13 +491,72 @@ export class PayrollPdfService {
   }
 
   /**
-   * Convertit le HTML en PDF
+   * ⭐ 161 — QR code de vérification du bulletin : la référence (ID interne /
+   * n° de quittance) reste LISIBLE UNIQUEMENT au scan — jamais affichée en
+   * clair sur le document (exigence promoteur). Best-effort : null si la
+   * librairie qrcode est indisponible (le bulletin reste complet sans QR).
    */
-  private async renderPdfFromHtml(html: string): Promise<Buffer> {
+  private async buildQrDataUrl(
+    payrollItemId: string,
+    receiptNumber: string | null,
+    periodLabel: string,
+    net: number,
+  ): Promise<string | null> {
+    try {
+      const QRCode: any = await import('qrcode');
+      const payload = JSON.stringify({
+        app: 'academia-helm',
+        doc: 'BULLETIN_DE_PAIE',
+        ref: receiptNumber || payrollItemId,
+        periode: periodLabel,
+        net,
+      });
+      return await QRCode.toDataURL(payload, {
+        margin: 1,
+        width: 132,
+        errorCorrectionLevel: 'M',
+        color: { dark: '#1f2937', light: '#ffffff' },
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Convertit le HTML en PDF
+   *
+   * ⭐ 161 — respect strict des limites d'en-tête/pied de page (retour
+   * promoteur) : le PDF est émis avec des MARGES réservées et des gabarits
+   * d'en-tête/pied répétés sur CHAQUE page — le contenu ne descend jamais
+   * dans le pied de page et ne remonte jamais dans l'en-tête de la page
+   * suivante ; les lignes de tableau ne sont jamais coupées en deux.
+   */
+  private async renderPdfFromHtml(html: string, pageOpts: {
+    schoolName: string;
+    periodLabel: string;
+  }): Promise<Buffer> {
     const { page } = await this.puppeteerPool.acquirePage();
     try {
       await page.setContent(html, { waitUntil: 'networkidle0' });
-      const pdf = await page.pdf({ format: 'A4', printBackground: true });
+      const pdf = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        displayHeaderFooter: true,
+        headerTemplate: [
+          `<div style="width:100%;padding:6px 14px 0;display:flex;justify-content:space-between;align-items:flex-end;">`,
+          `<span style="font-size:7.5px;color:#475569;font-weight:700;">${esc(pageOpts.schoolName)}</span>`,
+          `<span style="font-size:7.5px;color:#94a3b8;">Bulletin de paie · ${esc(pageOpts.periodLabel)}</span>`,
+          `</div>`,
+          `<div style="width:100%;border-bottom:1px solid #e2e8f0;margin-top:3px;"></div>`,
+        ].join(''),
+        footerTemplate: [
+          `<div style="width:100%;padding:0 14px 6px;display:flex;justify-content:space-between;">`,
+          `<span style="font-size:7.5px;color:#94a3b8;">Ce bulletin est généré par Academia Helm — conservez-le précieusement.</span>`,
+          `<span style="font-size:7.5px;color:#94a3b8;">Page <span class="pageNumber"></span> / <span class="totalPages"></span></span>`,
+          `</div>`,
+        ].join(''),
+        margin: { top: '20mm', bottom: '16mm', left: '12mm', right: '12mm' },
+      });
       return Buffer.from(pdf);
     } finally {
       await this.puppeteerPool.releasePage(page);

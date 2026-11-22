@@ -328,8 +328,11 @@ export function computeConges(opts: {
 // ─── Gabarits HTML — deux identités visuelles DISTINCTES ───────────────────
 
 /**
- * ⭐ 22/11/2026 — FILIGRANE logo : centré, incliné, très léger — traverse
- * le document (fiche de paie ET état de paiement) sans gêner la lecture.
+ * ⭐ 22/11/2026 — FILIGRANE logo : centré, très léger — traverse le document
+ * (fiche de paie ET état de paiement) sans gêner la lecture.
+ * ⭐ 161 — 22/11/2026 — retour promoteur : le logo doit être PENCHÉ EN
+ * DIAGONALE (45°) — pas droit à la verticale, pas « à moitié incliné » :
+ * c'est le vrai filigrane diagonal classique des documents officiels.
  */
 function schoolWatermarkHtml(e: EmployerIdentity): string {
   return e.logoUrl
@@ -397,9 +400,11 @@ const BASE_CSS = `
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1f2937; font-size: 11px; line-height: 1.45; }
   .sheet { padding: 28px 34px 22px; }
-  /* ⭐ 22/11/2026 — logo en FILIGRANE (demande promoteur) : centré, incliné,
-     très léger — il traverse tout le document sans gêner la lecture. */
-  .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); z-index: 0; opacity: .055; pointer-events: none; }
+  /* ⭐ 22/11/2026 — logo en FILIGRANE (demande promoteur) : centré, très léger
+     — il traverse tout le document sans gêner la lecture.
+     ⭐ 161 — DIAGONALE VRAIE (45°) exigée par le promoteur : ni vertical, ni
+     penché d'un angle intermédiaire — le logo traverse la feuille de coin. */
+  .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); z-index: 0; opacity: .06; pointer-events: none; }
   .watermark img { width: 330px; height: auto; }
   .band { color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px 4px 0 0; }
   .band .org-wrap { display: flex; gap: 12px; align-items: center; max-width: 68%; }
@@ -442,6 +447,13 @@ const BASE_CSS = `
   .sign .date { font-size: 8px; color: #6b7280; margin-top: 4px; }
   .footer { margin-top: 16px; border-top: 1px solid #d1d5db; padding-top: 7px; font-size: 7.8px; color: #6b7280; display: flex; justify-content: space-between; }
   .draft { position: fixed; top: 42%; left: 50%; transform: translate(-50%, -50%) rotate(-24deg); font-size: 42px; font-weight: 900; color: rgba(107, 114, 128, .16); letter-spacing: 8px; text-transform: uppercase; }
+  /* ⭐ 161 — respect des limites en impression multi-pages : l'en-tête de
+     tableau se RÉPÈTE sur chaque page (table-header-group), aucune ligne
+     n'est coupée en deux (tr insécable), les blocs signatures / footer /
+     deux colonnes ne débordent jamais dans la marge basse. */
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+  .sign, .footer, .two-col, .net-box, .warn-box { page-break-inside: avoid; }
   @page { size: A4; margin: 0; }
 `;
 

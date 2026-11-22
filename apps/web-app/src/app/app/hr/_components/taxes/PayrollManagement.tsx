@@ -61,9 +61,15 @@ export function PayrollManagement() {
     try {
       const res = await fetch(hrUrl(`taxes/payslips/${id}/pdf`, { tenantId: tenant?.id }));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // ⭐ 161 — nom de fichier fourni par le module Paie (Fiche de paie FP /
+      // État de paiement EP) — l'ancien nom « Fiche_paie_… » était faux pour
+      // les vacataires (prestataires → état de paiement).
+      const cd = res.headers.get('Content-Disposition') || '';
+      const m = cd.match(/filename\*=UTF-8''([^;\r\n]+)/i);
+      const serverName = m ? decodeURIComponent(m[1]).replace(/\.pdf$/i, '') : null;
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = `Fiche_paie_${name}.pdf`; a.click();
+      const a = document.createElement('a'); a.href = url; a.download = `${serverName || `Fiche_paie_${name}`}.pdf`; a.click();
       URL.revokeObjectURL(url);
     } catch (e: any) { toast({ variant: 'error', title: 'Erreur PDF', description: e.message }); }
   };

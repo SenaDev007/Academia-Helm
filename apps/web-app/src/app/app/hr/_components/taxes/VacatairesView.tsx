@@ -65,6 +65,8 @@ export function VacatairesView() {
   }
 
   function viewPdf(payslipId: string) {
+    // ⭐ 161 — vacataires = prestataires/non déclarés → le module Paie sert
+    // l'ÉTAT DE PAIEMENT (gabarit EP) conforme au modèle établi.
     window.open(hrUrl(`taxes/payslips/${payslipId}/pdf`, { tenantId: tenant?.id }), '_blank');
   }
 
@@ -127,17 +129,21 @@ export function VacatairesView() {
             <table className="w-full text-xs sm:text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th className="px-3 py-3 text-left font-semibold text-slate-600">Nom</th>
-                  <th className="px-3 py-3 text-left font-semibold text-slate-600 hidden sm:table-cell">Sit. Matrim.</th>
-                  <th className="px-3 py-3 text-right font-semibold text-slate-600">Salaire base</th>
-                  <th className="px-3 py-3 text-right font-semibold text-slate-600 hidden md:table-cell">Avantages</th>
-                  <th className="px-3 py-3 text-right font-semibold text-slate-600 hidden md:table-cell">Gratific.</th>
-                  <th className="px-3 py-3 text-right font-semibold text-slate-600">Brut</th>
-                  <th className="px-3 py-3 text-right font-semibold text-slate-600 hidden lg:table-cell">Avance</th>
-                  <th className="px-3 py-3 text-right font-semibold text-slate-600 hidden lg:table-cell">Oppos.</th>
-                  <th className="px-3 py-3 text-right font-semibold text-slate-600 hidden lg:table-cell">Taxes R/T</th>
-                  <th className="px-3 py-3 text-right font-semibold text-slate-600">Net à payer</th>
-                  <th className="px-3 py-3 text-center font-semibold text-slate-600">Actions</th>
+                  {/* ⭐ 161 — libellés de colonnes STRICTEMENT sur UNE ligne
+                      (retour promoteur) : whitespace-nowrap partout — la
+                      table défile horizontalement dans son conteneur au
+                      lieu de casser les intitulés en deux lignes. */}
+                  <th className="px-3 py-3 text-left font-semibold text-slate-600 whitespace-nowrap">Nom</th>
+                  <th className="px-3 py-3 text-left font-semibold text-slate-600 whitespace-nowrap hidden sm:table-cell">Situation matrimoniale</th>
+                  <th className="px-3 py-3 text-right font-semibold text-slate-600 whitespace-nowrap">Salaire de base</th>
+                  <th className="px-3 py-3 text-right font-semibold text-slate-600 whitespace-nowrap hidden md:table-cell">Avantages</th>
+                  <th className="px-3 py-3 text-right font-semibold text-slate-600 whitespace-nowrap hidden md:table-cell">Gratifications</th>
+                  <th className="px-3 py-3 text-right font-semibold text-slate-600 whitespace-nowrap">Salaire brut</th>
+                  <th className="px-3 py-3 text-right font-semibold text-slate-600 whitespace-nowrap hidden lg:table-cell">Avance / salaire</th>
+                  <th className="px-3 py-3 text-right font-semibold text-slate-600 whitespace-nowrap hidden lg:table-cell">Opposition</th>
+                  <th className="px-3 py-3 text-right font-semibold text-slate-600 whitespace-nowrap hidden lg:table-cell">Taxes Radio/Télé</th>
+                  <th className="px-3 py-3 text-right font-semibold text-slate-600 whitespace-nowrap">Net à payer</th>
+                  <th className="px-3 py-3 text-center font-semibold text-slate-600 whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -156,7 +162,7 @@ export function VacatairesView() {
                     <td className="px-3 py-3 text-right text-rose-600 hidden lg:table-cell">{formatCurrency(p.taxesRadioTele || 0)}</td>
                     <td className="px-3 py-3 text-right font-bold text-emerald-600">{formatCurrency(p.netAPayer || 0)}</td>
                     <td className="px-3 py-3 text-center">
-                      <button onClick={() => viewPdf(p.id)} className="p-1.5 rounded-lg text-rose-600 bg-rose-50 hover:bg-rose-100 transition" title="Fiche PDF">
+                      <button onClick={() => viewPdf(p.id)} className="p-1.5 rounded-lg text-rose-600 bg-rose-50 hover:bg-rose-100 transition" title="État de paiement PDF">
                         <FileText className="h-3.5 w-3.5" />
                       </button>
                     </td>

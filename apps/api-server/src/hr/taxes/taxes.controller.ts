@@ -425,9 +425,17 @@ export class TaxesController {
     @Param('id') id: string,
     @Res() res: any,
   ) {
-    const pdf = await this.taxPdfService.generatePayslipPdf(id);
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="fiche_paie.pdf"`, 'Content-Length': pdf.length });
-    return res.send(pdf);
+    // ⭐ 161 — le module Paie produit le document CONFORME AU MODÈLE : fiche
+    // de paie FP pour les salariés, ÉTAT DE PAIEMENT EP pour les vacataires
+    // (prestataires) — le nom du fichier suit la nature du document.
+    const result = await this.taxPdfService.generatePayslipPdf(id);
+    const asciiName = result.documentType === 'ETAT_DE_PAIEMENT' ? 'etat_paiement.pdf' : 'fiche_paie.pdf';
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(`${result.fileName}.pdf`)}`,
+      'Content-Length': result.buffer.length,
+    });
+    return res.send(result.buffer);
   }
 
   @Get('financial-statements-pdf')

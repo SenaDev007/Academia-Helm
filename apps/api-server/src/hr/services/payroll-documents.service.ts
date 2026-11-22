@@ -28,6 +28,9 @@
 import {
   Injectable, Logger, NotFoundException, BadRequestException, ConflictException, ForbiddenException,
 } from '@nestjs/common';
+// ⭐ 161 — règle fiscale Permanent/Vacataire (onglet CNSS) : la vue
+//    « Vacataires » = prestataires + non déclarés CNSS.
+import { fiscalStaffType } from '../taxes/services/payroll.service';
 import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -361,6 +364,265 @@ export class PayrollDocumentsService {
       );
     }
     return { buffer, document: doc };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ⭐ 161 — 22/11/2026 — ONGLET CNSS (module Impôts) : PDF CONFORME AU MODÈLE
+  //
+  // Le bouton PDF des sous-onglets CNSS (« Vacataires » / « États de
+  // paiement ») générait une « fiche de paie » maison sans rapport avec
+  // l'affiche modèle établie. Désormais chaque ligne fiscale produit le
+  // VRAI document du module Paie :
+  //   · ligne de paie réelle du mois (PayrollItem) → snapshot EXACT de la
+  //     prévisualisation/émission (mêmes gabarits FP bleu nuit / EP vert,
+  //     filigrane diagonal, identité complète de l'école) ;
+  //   · sinon (mois sans paie générée) → snapshot reconstruit depuis la
+  //     fiche fiscale (tax_payslips) sur les MÊMES gabarits.
+  // Le type reste TOUJOURS dérivé du statut contractuel : prestataire →
+  // ÉTAT DE PAIEMENT (retour promoteur : les vacataires téléchargent un état
+  // de paiement, PAS une fiche de paie) ; salarié (déclaré ou non) → FICHE
+  // DE PAIE.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async renderTaxPayslipPdf(
+    taxPayslipId: string,
+  ): Promise<{ buffer: Buffer; documentType: 'FICHE_DE_PAIE' | 'ETAT_DE_PAIEMENT'; fileName: string }> {
+    const payslip: any = await this.prisma.taxPayslip.findUnique({
+      where: { id: taxPayslipId },
+      include: {
+        staff: {
+          include: {
+            employeeCNSS: true,
+            contracts: {
+              where: { status: { in: ['ACTIVE', 'PENDING'] } },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+    if (!payslip) throw new NotFoundException(`Fiche fiscale ${taxPayslipId} introuvable.`);
+    const staff: any = payslip.staff;
+    const contract: any = staff?.contracts?.[0] ?? null;
+
+    // ── 1. PRIORITÉ : ligne de paie réelle du mois → snapshot exact du module Paie ──
+    const item = await this.prisma.payrollItem.findFirst({
+      where: {
+        tenantId: payslip.tenantId,
+        staffId: payslip.staffId,
+        payroll: { month: payslip.period },
+      },
+    });
+    if (item && item.status !== 'PENDING') {
+      const preview = await this.previewDocument(item.id, payslip.tenantId);
+      const buffer = await this.renderPdf(preview.html);
+      return {
+        buffer,
+        documentType: preview.snapshot.kind,
+        fileName: this.prettyTaxDocumentFileName(preview.snapshot.kind, staff, preview.snapshot.period?.label),
+      };
+    }
+
+    // ── 2. Repli : snapshot reconstruit depuis la fiche fiscale (tax_payslips) ──
+    const snapshot = await this.buildSnapshotFromTaxPayslip(payslip, staff, contract);
+    const html =
+      snapshot.kind === 'FICHE_DE_PAIE'
+        ? renderFicheDePaieHtml(snapshot)
+        : renderEtatDePaiementHtml(snapshot);
+    const buffer = await this.renderPdf(html);
+    return {
+      buffer,
+      documentType: snapshot.kind,
+      fileName: this.prettyTaxDocumentFileName(snapshot.kind, staff, snapshot.period.label),
+    };
+  }
+
+  /** Nom de fichier professionnel : « Fiche de paie / État de paiement <Prénom(s) NOM> <Période>.pdf ». */
+  private prettyTaxDocumentFileName(
+    kind: 'FICHE_DE_PAIE' | 'ETAT_DE_PAIEMENT',
+    staff: any,
+    periodLabel?: string,
+  ): string {
+    const typeLabel = kind === 'ETAT_DE_PAIEMENT' ? 'État de paiement' : 'Fiche de paie';
+    const staffName = `${staff?.firstName ?? ''} ${staff?.lastName ?? ''}`.replace(/\s+/g, ' ').trim() || 'personnel';
+    const period = String(periodLabel || '').replace(/\s+/g, ' ').trim();
+    return [typeLabel, staffName, period].filter(Boolean).join(' ');
+  }
+
+  /**
+   * ⭐ 161 — snapshot FP/EP reconstruit depuis une fiche fiscale du module
+   * Impôts (mois sans ligne de paie générée) : mêmes gabarits, mêmes
+   * mentions légales, mêmes cumuls — aucune donnée inventée (les rubriques
+   * vides de la fiche fiscale restent vides sur le document).
+   */
+  private async buildSnapshotFromTaxPayslip(payslip: any, staff: any, contract: any): Promise<PayrollDocumentSnapshot> {
+    const monthKey = String(payslip.period || '');
+    const periodStart = /^\d{4}-\d{2}$/.test(monthKey)
+      ? new Date(`${monthKey}-01T00:00:00Z`)
+      : new Date();
+    const periodEnd = new Date(Date.UTC(periodStart.getUTCFullYear(), periodStart.getUTCMonth() + 1, 0));
+    const year = periodStart.getUTCFullYear();
+    const month = periodStart.getUTCMonth() + 1;
+    const period = {
+      year,
+      month,
+      label: monthLabel(year, month),
+      startDate: periodStart.toISOString(),
+      endDate: periodEnd.toISOString(),
+      joursOuvres: joursOuvres(year, month),
+    };
+    const fiscalYear = year;
+
+    // Barème fiscal réel (jamais de taux codé en dur) — best-effort.
+    let rates: any = null;
+    try {
+      rates = await this.payrollEngine.getFiscalRates('BJ', periodEnd);
+    } catch (err: any) {
+      this.logger.warn(`Barème fiscal indisponible (fiche CNSS ${payslip.id}) : ${err?.message}`);
+    }
+
+    const employeur = await this.resolveEmployer(payslip.tenantId, contract, staff);
+    const statut = staff?.statutContractuel || contract?.statutContractuel || null;
+
+    // Type de document TOUJOURS dérivé du statut contractuel ; dossier
+    // hérité sans statut → la règle fiscale CNSS tranche (vacataire = état).
+    let documentType = statut ? deriveDocumentPaieType(statut) : null;
+    if (!documentType) {
+      documentType = fiscalStaffType(staff) === 'VACATAIRE' ? 'ETAT_DE_PAIEMENT' : 'FICHE_DE_PAIE';
+    }
+
+    // Cumuls annuels depuis les fiches fiscales de l'exercice (recalculés).
+    const yearPayslips: any[] = await this.prisma.taxPayslip.findMany({
+      where: { tenantId: payslip.tenantId, staffId: payslip.staffId, period: { startsWith: `${fiscalYear}-` } },
+    }).catch(() => []);
+    const cumuls = {
+      brut: yearPayslips.reduce((acc, p) => acc + Number(p.salaireBrut || 0), 0),
+      impot: yearPayslips.reduce((acc, p) => acc + Number(p.totalRetenues || 0), 0),
+      cnss: yearPayslips.reduce((acc, p) => acc + Number(p.cnssOuvriere || 0), 0),
+      net: yearPayslips.reduce((acc, p) => acc + Number(p.netAPayer || 0), 0),
+      documents: yearPayslips.length,
+    };
+
+    // Rubriques d'indemnités non vides (aucune ligne à zéro sur le document).
+    const indemnites = [
+      Number(payslip.gratificationsEtrennes) > 0
+        ? { label: 'Gratifications et étrennes', amount: Number(payslip.gratificationsEtrennes) } : null,
+      Number(payslip.indemnites) > 0
+        ? { label: 'Indemnités', amount: Number(payslip.indemnites) } : null,
+      Number(payslip.primeSalissures) > 0
+        ? { label: 'Prime de salissures', amount: Number(payslip.primeSalissures) } : null,
+      Number(payslip.moinsPercesArriere) > 0
+        ? { label: 'Moins perçus / arriéré', amount: Number(payslip.moinsPercesArriere) } : null,
+    ].filter(Boolean) as Array<{ label: string; amount: number }>;
+
+    if (documentType === 'ETAT_DE_PAIEMENT') {
+      const brut = Number(payslip.salaireBrut);
+      const autresRetenues =
+        Number(payslip.avanceAcompte || 0) + Number(payslip.opposition || 0) + Number(payslip.taxesRadioTele || 0);
+      // Retenues fiscales/sociales du relevé = tout ce qui n'est ni avance,
+      // ni opposition, ni taxes radio/télé (AIB des prestataires, CNSS/ITS
+      // sinon) — jamais inventée : vient de la fiche fiscale elle-même.
+      const aib = Math.max(0, Number(payslip.totalRetenues || 0) - autresRetenues);
+      const ifu = staff?.ifuNumber || null;
+      const tauxAib = rates
+        ? (ifu ? rates.aibAvecIfu : rates.aibSansIfu)
+        : brut > 0
+          ? Math.round((aib / brut) * 1000) / 10
+          : 0;
+
+      const snapshot: EtatPaiementSnapshot = {
+        kind: 'ETAT_DE_PAIEMENT',
+        statutContractuel: 'PRESTATAIRE_SERVICE',
+        documentNumber: null,
+        period,
+        fiscalYear,
+        employeur,
+        prestataire: {
+          nom: staff?.lastName || BLANK,
+          prenoms: staff?.firstName || BLANK,
+          ifu,
+          contratReference: contract?.id ? `CT-${String(contract.id).slice(0, 8).toUpperCase()}` : null,
+          description:
+            (contract?.terms as any)?.prestation?.description ||
+            (contract?.terms as any)?.description ||
+            staff?.position ||
+            null,
+          mode: staff?.prestationPaymentMode || contract?.prestationPaymentMode || null,
+          heures: null,
+          tauxHoraire:
+            (staff?.prestationPaymentMode || contract?.prestationPaymentMode) === 'HORAIRE'
+              ? Number(staff?.prestationAmount ?? contract?.prestationAmount ?? 0)
+              : null,
+        },
+        decompte: { brut, tauxAib, aib, net: Number(payslip.netAPayer), indemnites },
+        presences: null,
+        cumuls,
+        rates: { fiscalYear: rates?.fiscalYear ?? fiscalYear, aibPct: tauxAib, sourceNotes: rates?.sourceNotes ?? null },
+        mention: MENTION_ETAT_PAIEMENT,
+      };
+      return snapshot;
+    }
+
+    // ── FICHE DE PAIE (salarié déclaré / non déclaré) ──
+    // Statut affiché : le statut réel du dossier ; dossier hérité sans statut
+    // → dérivé de la déclaration CNSS (n° actif = déclaré).
+    const cnssNumber = staff?.employeeCNSS?.cnssNumber || staff?.cnssNumber || null;
+    const effectiveStatut = statut === 'SALARIE_DECLARE' || statut === 'SALARIE_NON_DECLARE'
+      ? statut
+      : (cnssNumber ? 'SALARIE_DECLARE' : 'SALARIE_NON_DECLARE');
+    const cnssDeclare = effectiveStatut === 'SALARIE_DECLARE';
+    const conges = computeConges({
+      joursCongesParMois: rates?.joursCongesParMois ?? 0,
+      hireDate: staff?.hireDate || contract?.startDate || null,
+      periodEnd,
+      joursPris: 0,
+    });
+
+    const snapshot: FichePaieSnapshot = {
+      kind: 'FICHE_DE_PAIE',
+      statutContractuel: effectiveStatut,
+      cnssDeclare,
+      documentNumber: null,
+      period,
+      fiscalYear,
+      employeur,
+      salarie: {
+        matricule: staff?.tenantMatricule || staff?.employeeNumber || BLANK,
+        nom: staff?.lastName || BLANK,
+        prenoms: staff?.firstName || BLANK,
+        poste: staff?.position || staff?.roleType || BLANK,
+        categorie: CATEGORY_LABELS[categoryKeyFromRoleType(staff?.roleType)] || staff?.roleType || BLANK,
+        cnssNumber: cnssDeclare ? cnssNumber : null,
+        anciennete: ancienneteLabel(staff?.hireDate || contract?.startDate || null, periodEnd),
+        ancienneteDepuis: staff?.hireDate || contract?.startDate || null,
+        joursTravailles: period.joursOuvres,
+      },
+      gains: {
+        base: Number(payslip.salaireBase),
+        heuresSup: 0,
+        primes: 0,
+        indemnites,
+        brut: Number(payslip.salaireBrut),
+      },
+      retenues: {
+        cnss: Number(payslip.cnssOuvriere || 0),
+        its: Number(payslip.itsNet || 0),
+        autres:
+          Number(payslip.avanceAcompte || 0) +
+          Number(payslip.opposition || 0) +
+          Number(payslip.taxesRadioTele || 0),
+        total: Number(payslip.totalRetenues || 0),
+      },
+      net: Number(payslip.netAPayer),
+      chargesPatronales: null,
+      presences: null,
+      cumuls,
+      conges,
+      rates: { fiscalYear: rates?.fiscalYear ?? fiscalYear, cnssSalarialPct: rates?.cnssSalarial, sourceNotes: rates?.sourceNotes ?? null },
+      mention: MENTION_FICHE_CONSERVATION,
+    };
+    return snapshot;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

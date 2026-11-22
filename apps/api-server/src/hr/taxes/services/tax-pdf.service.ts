@@ -8,10 +8,15 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../../../database/prisma.service';
 import { PuppeteerPoolService } from '../../../common/services/puppeteer-pool.service';
 import { StorageService } from '../../../common/services/storage.service';
 import { TaxSettingsService } from './tax-settings.service';
+// ⭐ 161 — les fiches/états du module Paie (HR) sont les seuls gabarits
+//    conformes au modèle établi — résolution via ModuleRef (strict:false)
+//    car HrModule importe TaxesModule (pas d'import inverse : pas de cycle).
+import { PayrollDocumentsService } from '../../services/payroll-documents.service';
 
 @Injectable()
 export class TaxPdfService {
@@ -23,6 +28,7 @@ export class TaxPdfService {
     private puppeteerPool: PuppeteerPoolService,
     private storageService: StorageService,
     private taxSettingsService: TaxSettingsService,
+    private moduleRef: ModuleRef,
   ) {}
 
   /**
@@ -113,7 +119,26 @@ export class TaxPdfService {
   /**
    * Génère le PDF d'une fiche de paie individuelle.
    */
-  async generatePayslipPdf(payslipId: string): Promise<Buffer> {
+  async generatePayslipPdf(payslipId: string): Promise<{
+    buffer: Buffer;
+    fileName: string;
+    documentType: 'FICHE_DE_PAIE' | 'ETAT_DE_PAIEMENT';
+  }> {
+    // ⭐ 161 — 22/11/2026 — DÉLÉGATION au module Paie (retour promoteur) :
+    // le bouton PDF de l'onglet CNSS doit produire le document CONFORME AU
+    // MODÈLE ÉTABLI (fiche FP bleu nuit / état de paiement EP vert, filigrane
+    // diagonal, identité complète de l'école) — et pour les VACATAIRES un
+    // ÉTAT DE PAIEMENT, pas une « fiche de paie » maison.
+    try {
+      const documentsService = this.moduleRef.get(PayrollDocumentsService, { strict: false });
+      if (documentsService?.renderTaxPayslipPdf) {
+        return await documentsService.renderTaxPayslipPdf(payslipId);
+      }
+    } catch (err: any) {
+      this.logger.warn(`Module Paie indisponible pour la fiche ${payslipId} — repli gabarit fiscal : ${err?.message}`);
+    }
+
+    // ── Repli historique (module Paie injoignable) — ancien gabarit fiscal ──
     const payslip = await this.prisma.taxPayslip.findUnique({
       where: { id: payslipId },
       include: {
@@ -156,7 +181,13 @@ export class TaxPdfService {
       },
     });
 
-    return this.renderPdf(html);
+    const buffer = await this.renderPdf(html);
+    return {
+      buffer,
+      fileName: `Fiche de paie ${payslip.staff.firstName ?? ''} ${payslip.staff.lastName ?? ''} ${payslip.period ?? ''}`
+        .replace(/\s+/g, ' ').trim(),
+      documentType: 'FICHE_DE_PAIE' as const,
+    };
   }
 
   /**

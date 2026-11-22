@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { PenTool, CheckCircle, Loader2, AlertTriangle, Shield, Mail, UserCheck } from 'lucide-react';
+import { PenTool, CheckCircle, Loader2, AlertTriangle, Shield, Mail, UserCheck, FileSignature } from 'lucide-react';
 import { SignatureCanvas } from '../components/SignatureCanvas';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
@@ -10,8 +10,10 @@ interface StepSignaturesProps {
   contractId: string | null;
   tenantId: string;
   staffFullName: string;
-  signatureMode: 'presentiel' | 'differe';
-  onSignatureModeChange: (mode: 'presentiel' | 'differe') => void;
+  // ⭐ 160 — mode 'manuel' : contrat déjà signé SUR PAPIER (déclaré par le RH,
+  //    aucune signature électronique exigée — retour promoteur).
+  signatureMode: 'presentiel' | 'differe' | 'manuel';
+  onSignatureModeChange: (mode: 'presentiel' | 'differe' | 'manuel') => void;
   employerSigned: boolean;
   employeeSigned: boolean;
   onEmployerSigned: (signatureData: string) => void;
@@ -108,10 +110,13 @@ export function StepSignatures({
         <span>Ces signatures électroniques ont valeur légale conformément aux dispositions applicables. La date, l&apos;heure et l&apos;adresse IP seront enregistrées à des fins probatoires.</span>
       </div>
 
-      {/* ⭐ Mode de signature — Toggle */}
+      {/* ⭐ Mode de signature — 3 options : présentiel / à distance / MANUEL
+          (sur papier — retour promoteur : « si le RH sélectionne déjà signé
+          manuellement, le système considère que c'est déjà signé et on
+          continue »). */}
       <div className="border border-slate-200 rounded-xl p-4 bg-white">
-        <h5 className="text-sm font-bold text-slate-800 mb-2">Mode de signature de l&apos;employé(e)</h5>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <h5 className="text-sm font-bold text-slate-800 mb-2">Mode de signature</h5>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <button
             type="button"
             onClick={() => onSignatureModeChange('presentiel')}
@@ -152,6 +157,29 @@ export function StepSignatures({
               </div>
             </div>
           </button>
+          {/* ⭐ 160 — SIGNATURE MANUELLE (sur papier) : aucune signature en ligne
+              exigée — le RH déclare le contrat déjà signé, le système l
+              considère signé et poursuit. Aucune restriction. */}
+          <button
+            type="button"
+            onClick={() => onSignatureModeChange('manuel')}
+            disabled={employerSigned}
+            className={`text-left p-3 rounded-lg border-2 transition-all ${
+              signatureMode === 'manuel'
+                ? 'border-emerald-600 bg-emerald-50'
+                : 'border-slate-200 bg-white hover:border-slate-300'
+            } ${employerSigned ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <div className="flex items-start gap-2">
+              <FileSignature className="h-4 w-4 text-emerald-700 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-slate-800">Signé manuellement (sur papier)</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Le contrat a déjà été signé sur papier — le système l&apos;enregistre comme signé et poursuit. Aucune signature en ligne requise.
+                </p>
+              </div>
+            </div>
+          </button>
         </div>
         {employerSigned && (
           <p className="text-[11px] text-amber-600 mt-2 flex items-center gap-1">
@@ -161,7 +189,42 @@ export function StepSignatures({
         )}
       </div>
 
-      {/* ─── EMPLOYER SIGNATURE ─────────────────────────────── */}
+      {/* ─── MODE MANUEL : déclaration de signature sur papier — AUCUNE
+          signature électronique exigée (retour promoteur : « pas trop de
+          restrictions »). Le clic sur Suivant enregistre le contrat comme
+          signé (mention MANUSCRITE_PAPIER) et poursuit l'embauche. ─── */}
+      {signatureMode === 'manuel' ? (
+        <div className="border border-emerald-200 bg-emerald-50/40 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h5 className="text-sm font-bold text-emerald-800 flex items-center gap-2">
+              <FileSignature className="h-4 w-4" /> Contrat signé manuellement (sur papier)
+            </h5>
+            <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
+              <CheckCircle className="h-4 w-4" /> Déclaré signé
+            </span>
+          </div>
+          <div className="space-y-3">
+            <div className="p-3 bg-white rounded-lg text-[12px] text-slate-600 leading-relaxed border border-emerald-100">
+              Le contrat de <strong>{staffFullName}</strong> a été signé sur papier par les deux parties.
+              Aucune signature électronique n&apos;est requise : en cliquant sur <strong>Suivant</strong>, le
+              système enregistre le contrat comme signé (mention « signature manuscrite sur papier »
+              tracée avec la date), active l&apos;embauche et crée le compte de connexion du personnel.
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="p-2.5 bg-slate-50 rounded-lg text-sm">
+                <span className="text-xs font-semibold text-slate-500">Employeur :</span>{' '}
+                <span className="font-bold text-slate-800">Représentant de l&apos;établissement</span>
+                <span className="text-xs text-slate-400 ml-1">(mention manuscrite)</span>
+              </div>
+              <div className="p-2.5 bg-slate-50 rounded-lg text-sm">
+                <span className="text-xs font-semibold text-slate-500">Employé(e) :</span>{' '}
+                <span className="font-bold text-slate-800">{staffFullName}</span>
+                <span className="text-xs text-slate-400 ml-1">(mention manuscrite)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className={`border rounded-xl p-4 transition-all ${
         employerSigned ? 'border-emerald-200 bg-emerald-50/30' : 'border-slate-200 bg-white'
       }`}>
@@ -238,6 +301,7 @@ export function StepSignatures({
           </div>
         )}
       </div>
+      )}
 
       {/* ─── EMPLOYEE SIGNATURE ─────────────────────────────── */}
       {signatureMode === 'presentiel' ? (
@@ -307,10 +371,12 @@ export function StepSignatures({
             </div>
           )}
         </div>
-      ) : (
+      ) : signatureMode === 'differe' ? (
         // ⭐ Mode "differe" — on n'affiche pas la section signature employé ici.
         //    L'employé signera à distance via le lien envoyé par email après
         //    finalisation (completeOnboarding avec asyncSign=true).
+        // ⭐ Mode "manuel" → null : la carte de déclaration ci-dessus couvre
+        //    déjà les deux parties (aucune signature électronique).
         <div className={`border rounded-xl p-4 transition-all ${
           !employerSigned
             ? 'border-slate-200 bg-slate-50/50 opacity-60'
@@ -346,7 +412,7 @@ export function StepSignatures({
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

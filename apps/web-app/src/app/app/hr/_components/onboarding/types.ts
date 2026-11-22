@@ -108,6 +108,12 @@ export interface OnboardingState {
   /** Garde-fou anti-doublon : assignations d'indemnités déjà créées en base */
   allowancesSaved: boolean;
 
+  // ⭐ 160 — Garde-fou anti-doublon : HrCandidate (ÉLIGIBLE) déjà créé pour ce
+  //    recrutement — créé désormais à l'étape 4 (contrat), PAS à l'étape 1 :
+  //    un brouillon interrompu avant le contrat ne laisse AUCUNE trace dans
+  //    l'onglet Embauche.
+  candidateSaved: boolean;
+
   // ⭐ Test d'aide à la qualification (CDC §5 — non bloquant, configurable)
   qualificationTest: {
     enabled: boolean;
@@ -130,7 +136,11 @@ export interface OnboardingState {
   //   - 'differe' : seul l'employeur signe dans le wizard (contrat → PENDING),
   //     puis un email avec lien de signature est envoyé à l'employé qui signe
   //     à distance. Identique au flux de recrutement public.
-  signatureMode: 'presentiel' | 'differe';
+  //   - 'manuel' (⭐ 22/11/2026 — retour promoteur) : le contrat a DÉJÀ été signé
+  //     SUR PAPIER — le RH le déclare, le système l'enregistre comme signé
+  //     (mention MANUSCRITE_PAPIER) et continue, SANS aucune signature
+  //     électronique exigée.
+  signatureMode: 'presentiel' | 'differe' | 'manuel';
   employerSigned: boolean;
   employeeSigned: boolean;
   employerSignatureData: string | null;
@@ -216,6 +226,7 @@ export const INITIAL_STATE: OnboardingState = {
 
   allowances: [],
   allowancesSaved: false,
+  candidateSaved: false,
 
   qualificationTest: {
     enabled: true,

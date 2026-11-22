@@ -13,7 +13,8 @@ interface StepSummaryProps {
   identity: any;
   employment: any;
   contract: any;
-  signatureMode: 'presentiel' | 'differe';
+  // ⭐ 160 — + mode 'manuel' (contrat déjà signé sur papier, déclaré par le RH)
+  signatureMode: 'presentiel' | 'differe' | 'manuel';
   employerSigned: boolean;
   employeeSigned: boolean;
   sendEmail: boolean;

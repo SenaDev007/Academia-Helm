@@ -930,11 +930,12 @@ export class ContractPdfService {
     // ⭐ Élargi pour inclure PENDING_HIRE (statut par défaut depuis la
     //    refonte du flux d'embauche directe) en plus de PENDING_SIGNATURE
     //    (statut historique encore présent dans le flux public ÉLIGIBLE).
+    // ⭐ 22/11/2026 — + ONBOARDING_DRAFT (brouillon du wizard repris puis signé).
     const staffId = updatedContract.staffId;
     if (staffId) {
       try {
         const currentStaff = await this.prisma.staff.findFirst({ where: { id: staffId } });
-        if (currentStaff && ['PENDING_HIRE', 'PENDING_SIGNATURE'].includes(currentStaff.status)) {
+        if (currentStaff && ['ONBOARDING_DRAFT', 'PENDING_HIRE', 'PENDING_SIGNATURE'].includes(currentStaff.status)) {
           await this.prisma.staff.update({
             where: { id: staffId },
             data: { status: 'ACTIVE' },
@@ -1042,6 +1043,225 @@ export class ContractPdfService {
   }
 
   // ─── Onboarding Completion ─────────────────────────────────────────────────
+
+  /**
+   * ⭐ 22/11/2026 — SIGNATURE MANUELLE (retour promoteur) : « il faut qu'il y ait
+   * l'option signer à main pour qu'on ne soit pas forcément obligé de faire la
+   * signature en ligne… si le RH sélectionne déjà signé manuellement, le système
+   * considère que c'est déjà signé et on continue. »
+   *
+   * Enregistre le contrat comme signé SUR PAPIER par les deux parties (aucune
+   * signature électronique requise) : mention MANUSCRITE_PAPIER tracée, contrat
+   * → ACTIVE, staff → ACTIVE, credentials créés — puis le wizard continue vers
+   * la finalisation normale (completeOnboarding). Aucune restriction bloquante
+   * au-delà des gardes légales de base (contrat non déjà signé ; CNSS présente
+   * pour un salarié déclaré — déjà exigée à l'étape 4).
+   */
+  async signContractManual(
+    contractId: string,
+    tenantId: string,
+    data: { signerName?: string; employeeName?: string; ipAddress?: string } = {},
+  ) {
+    const contract = await this.prisma.contract.findFirst({
+      where: { id: contractId, tenantId },
+    });
+    if (!contract) throw new NotFoundException('Contrat introuvable');
+
+    if (contract.signedAt) {
+      throw new BadRequestException('Ce contrat a déjà été signé.');
+    }
+    if (['TERMINATED', 'DELETED', 'EXPIRED'].includes(contract.status)) {
+      throw new BadRequestException(
+        `Impossible d'enregistrer une signature sur un contrat avec le statut "${contract.status}".`,
+      );
+    }
+
+    const terms = (contract.terms as any) || {};
+
+    // Garde légale miroir de la signature électronique : un salarié déclaré
+    // doit avoir son numéro CNSS avant toute signature.
+    if (contract.statutContractuel === 'SALARIE_DECLARE') {
+      const staffRow: any = await this.prisma.staff.findUnique({ where: { id: contract.staffId } }).catch(() => null);
+      const employeeCNSS: any = await this.prisma.employeeCNSS.findUnique({ where: { staffId: contract.staffId } }).catch(() => null);
+      const cnssNumber = staffRow?.cnssNumber || employeeCNSS?.cnssNumber;
+      if (!cnssNumber) {
+        throw new BadRequestException(
+          "Impossible d'enregistrer la signature : ce salarié est déclaré à la CNSS mais aucun numéro CNSS n'est renseigné sur sa fiche.",
+        );
+      }
+    }
+
+    const signedAt = new Date();
+    const manualAt = signedAt.toISOString();
+    const staffSnapshot: any = await this.prisma.staff.findFirst({
+      where: { id: contract.staffId },
+      select: { firstName: true, lastName: true, position: true },
+    });
+    const employeeName = data.employeeName?.trim() ||
+      `${staffSnapshot?.firstName ?? ''} ${staffSnapshot?.lastName ?? ''}`.trim() || 'Employé(e)';
+    const signerName = data.signerName?.trim() || 'Représentant de l\u2019employeur';
+
+    const updatedContract = await this.prisma.contract.update({
+      where: { id: contractId },
+      data: {
+        signedAt,
+        signedBy: signerName,
+        status: 'ACTIVE',
+        terms: {
+          ...terms,
+          // Partie employeur — manuscrite
+          employerSignerName: signerName,
+          employerSignedAt: manualAt,
+          employerIpAddress: data.ipAddress || null,
+          employerSignatureMethod: 'MANUSCRITE_PAPIER',
+          // Partie employé — manuscrite
+          signerName: employeeName,
+          signerRole: 'EMPLOYE',
+          signedAt: manualAt,
+          ipAddress: data.ipAddress || null,
+          signatureMethod: 'MANUSCRITE_PAPIER',
+          signatureMode: 'MANUEL',
+          signatureNote:
+            'Contrat signé manuellement sur papier par les deux parties — enregistrement déclaré par le service RH.',
+        },
+      },
+      include: { staff: true },
+    });
+
+    // Re-générer le PDF avec la mention de signature manuscrite
+    try {
+      await this.generateContractPdf(contractId, tenantId);
+    } catch (err: any) {
+      this.logger.warn(`[signContractManual] PDF regeneration skipped (non-blocking): ${err?.message}`);
+    }
+
+    // Statut du personnel → ACTIVE + credentials (miroir de la signature électronique)
+    if (contract.staffId) {
+      try {
+        const currentStaff = await this.prisma.staff.findFirst({ where: { id: contract.staffId } });
+        if (currentStaff && ['ONBOARDING_DRAFT', 'PENDING_HIRE', 'PENDING_SIGNATURE'].includes(currentStaff.status)) {
+          await this.prisma.staff.update({
+            where: { id: contract.staffId },
+            data: { status: 'ACTIVE' },
+          });
+          this.logger.log(`Staff ${contract.staffId} → ACTIVE (signature manuelle)`);
+          try {
+            const credResult = await this.credentialService.createCredentialsForStaff(contract.staffId, tenantId);
+            if (credResult?.created) {
+              this.logger.log(`Credentials created for staff ${contract.staffId} (signature manuelle)`);
+            } else if (credResult?.error) {
+              this.logger.warn(`Credential creation skipped: ${credResult.error}`);
+            }
+          } catch (credErr: any) {
+            this.logger.error(`Credential creation failed (non-blocking): ${credErr?.message}`);
+          }
+        }
+      } catch (staffErr: any) {
+        this.logger.error(`[signContractManual] staff activation failed: ${staffErr?.message}`);
+      }
+    }
+
+    this.logger.log(`Contrat ${contractId} enregistré comme signé MANUELLEMENT (papier) par ${signerName}`);
+    return {
+      ...updatedContract,
+      _signResult: { signed: true, signatureMethod: 'MANUSCRITE_PAPIER', contractStatus: 'ACTIVE' },
+    };
+  }
+
+  /**
+   * ⭐ 22/11/2026 — ABANDON D'EMBAUCHE (retour promoteur) : « lorsqu'on clique
+   * sur annuler, ça ne doit rien enregistrer » — purge INTÉGRALE du brouillon :
+   * fiche personnel, contrat(s) non signé(s), pièces justificatives téléversées,
+   * indemnités, candidature liée. Après l'appel, il ne reste AUCUNE trace de
+   * l'embauche abandonnée (rien « en attente », rien dans les listes).
+   *
+   * Gardes :
+   *   - refuse un staff déjà ACTIF / INACTIVE (embauche finalisée ou historique) ;
+   *   - refuse si un contrat SIGNÉ existe (le contrat signé est immuable —
+   *     une annulation passe par la procédure de débauche).
+   */
+  async abortOnboarding(staffId: string, tenantId: string) {
+    const staff = await this.prisma.staff.findFirst({ where: { id: staffId, tenantId } });
+    if (!staff) throw new NotFoundException('Personnel introuvable');
+
+    if (['ACTIVE', 'INACTIVE', 'SUSPENDED'].includes(staff.status)) {
+      throw new BadRequestException(
+        `Ce personnel est « ${staff.status} » (embauche déjà finalisée ou historique) — ` +
+        'l\u2019abandon ne concerne qu\u2019un processus d\u2019embauche en cours. ' +
+        'Utilisez la procédure de débauche pour un personnel en poste.',
+      );
+    }
+
+    // Contrat signé/actif → immuable : on refuse l'abandon (l'embauche est
+    // déjà juridiquement conclue, il faut la dénoncer via la débauche).
+    const signedContract = await this.prisma.contract.findFirst({
+      where: { staffId, tenantId, OR: [{ signedAt: { not: null } }, { status: 'ACTIVE' }] },
+      select: { id: true, documentNumber: true },
+    });
+    if (signedContract) {
+      throw new BadRequestException(
+        'Un contrat signé (ou déjà en vigueur) existe pour ce personnel — ' +
+        'l\u2019embauche ne peut plus être abandonnée : utilisez la procédure de débauche.',
+      );
+    }
+
+    // ── Purge (best-effort, chaque étape protégée) ──────────────────────────
+    const purged: Record<string, number> = {};
+
+    // 1. Candidature liée (HrCandidate a onDelete:SetNull sur staff → il faut
+    //    la supprimer EXPLICITEMENT sinon elle survivrait en orphelin « ÉLIGIBLE »
+    //    dans l'onglet Embauche ; ses HrApplication cascaden avec elle).
+    try {
+      const candidates = await this.prisma.hrCandidate.findMany({
+        where: { staffId, tenantId },
+        select: { id: true },
+      });
+      if (candidates.length > 0) {
+        await this.prisma.hrCandidate.deleteMany({ where: { staffId, tenantId } });
+      }
+      purged.candidates = candidates.length;
+    } catch (err: any) {
+      this.logger.warn(`[abortOnboarding] purge candidature ignorée : ${err?.message}`);
+    }
+
+    // 2. Indemnités (StaffAllowance cascade avec le staff, mais on les compte
+    //    pour le retour à l'utilisateur).
+    try {
+      purged.allowances = await this.prisma.staffAllowance.count({ where: { staffId, tenantId } });
+    } catch { purged.allowances = 0; }
+
+    // 3. Documents téléversés (cascade avec le staff — comptés pour le retour).
+    try {
+      purged.documents = await this.prisma.staffDocument.count({ where: { staffId, tenantId } });
+    } catch { purged.documents = 0; }
+
+    // 4. Contrats brouillons (cascade avec le staff — comptés pour le retour).
+    try {
+      purged.contracts = await this.prisma.contract.count({ where: { staffId, tenantId } });
+    } catch { purged.contracts = 0; }
+
+    // 5. Fiche personnel — suppression DURE : TOUT le reste (contrats,
+    //    documents, indemnités, presences, paies éventuelles) cascade.
+    await this.prisma.staff.delete({ where: { id: staffId } });
+
+    this.logger.log(
+      `🗑️ Embauche abandonnée et purgée (staff ${staffId}) : ` +
+      `${purged.contracts ?? 0} contrat(s), ${purged.documents ?? 0} document(s), ` +
+      `${purged.allowances ?? 0} indemnité(s), ${purged.candidates ?? 0} candidature(s)`,
+    );
+
+    return {
+      success: true,
+      staffId,
+      purged: {
+        staff: 1,
+        contracts: purged.contracts ?? 0,
+        documents: purged.documents ?? 0,
+        allowances: purged.allowances ?? 0,
+        candidates: purged.candidates ?? 0,
+      },
+    };
+  }
 
   /**
    * Finalise le processus d'embauche d'un employé.

@@ -322,7 +322,18 @@ export class StaffPrismaService {
     }
 
     if (filters?.academicYearId) where.academicYearId = filters.academicYearId;
-    if (filters?.status && filters.status !== 'ALL') where.status = filters.status;
+    // ⭐ 22/11/2026 — BROUILLONS D'EMBAUCHE (retour promoteur) : les staff créés
+    //    par le wizard interrompu (ONBOARDING_DRAFT) ne sont PAS des
+    //    collaborateurs « en attente » — ils n'apparaissent JAMAIS dans la
+    //    liste/grille par défaut ni dans les KPIs. Ils sont visibles
+    //    uniquement via le filtre explicite status=ONBOARDING_DRAFT (section
+    //    « Embauches en cours » de l'onglet Collaborateurs), où ils peuvent
+    //    être repris ou abandonnés.
+    if (filters?.status && filters.status !== 'ALL') {
+      where.status = filters.status;
+    } else {
+      where.status = { not: 'ONBOARDING_DRAFT' };
+    }
     if (filters?.category) {
       // Mapper category UI → roleType
       const role = CATEGORY_TO_ROLE[filters.category];

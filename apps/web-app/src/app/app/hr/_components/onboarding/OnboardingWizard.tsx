@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { X, User, ArrowLeft, ArrowRight, Loader2, CheckCircle } from 'lucide-react';
+import { X, User, ArrowLeft, ArrowRight, Loader2, CheckCircle, AlertTriangle, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { compressImageFileToDataUrl } from '@/lib/media';
@@ -21,6 +21,11 @@ interface OnboardingWizardProps {
   onClose: () => void;
   onSuccess: () => void;
   tenantId: string;
+  /** ⭐ 160 — Reprendre un BROUILLON d'embauche interrompu (staff
+   *    ONBOARDING_DRAFT de la section « Embauches en cours ») : le wizard
+   *    s'ouvre HYDRATÉ depuis la fiche + le contrat existant, à l'étape
+   *    pertinente du processus. */
+  resumeStaffId?: string | null;
 }
 
 const NAVY = '#0b2f73';
@@ -59,7 +64,7 @@ async function loadHrContractSettings(tenantId: string): Promise<any | null> {
   }
 }
 
-export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: OnboardingWizardProps) {
+export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId, resumeStaffId }: OnboardingWizardProps) {
   const [state, setState] = useState<OnboardingState>({ ...INITIAL_STATE });
   const [savingStep, setSavingStep] = useState(false);
   const [fiscalHints, setFiscalHints] = useState<any | null>(null);
@@ -68,6 +73,11 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
   // ⭐ Catalogue complet des types d'indemnité (auto-provisionné par le serveur) —
   //    sert à l'étape 4 (Contrat) pour lier les indemnités au recrutement
   const [allowanceTypes, setAllowanceTypes] = useState<any[]>([]);
+  // ⭐ 160 — Confirmation d'abandon (croix / fermeture) : purge du brouillon
+  const [confirmAbandon, setConfirmAbandon] = useState(false);
+  const [abandoning, setAbandoning] = useState(false);
+  // ⭐ 160 — Garde anti double-hydratation (resume)
+  const [resumedFor, setResumedFor] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -93,6 +103,122 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
       });
     }
   }, [isOpen, tenantId]);
+
+  // ⭐ 160 — REPRENDRE UN BROUILLON : hydrate le wizard depuis la fiche du
+  //    personnel + son contrat éventuel + ses indemnités, et positionne à
+  //    l'étape pertinente du processus :
+  //      - pas de statut contractuel → étape 2 (Classification)
+  //      - contrat déjà signé par l'employeur → étape 6 (signature)
+  //      - sinon → étape 4 (Contrat — recréé proprement au Suivant)
+  useEffect(() => {
+    if (!isOpen || !resumeStaffId || resumedFor === resumeStaffId) return;
+    setResumedFor(resumeStaffId);
+    (async () => {
+      try {
+        const [staff]: any[] = await Promise.all([
+          hrFetch<any>(hrUrl(`staff/${resumeStaffId}`, { tenantId })),
+        ]);
+        if (!staff) return;
+
+        const contract: any = (staff.contracts || [])[0] || null;
+        const terms: any = (contract?.terms as any) || {};
+        const prestation: any = terms?.prestation || {};
+        const bank: any = (staff.bankDetails as any) || {};
+        const isoDate = (d?: string | Date | null) =>
+          d ? new Date(d).toISOString().split('T')[0] : '';
+
+        // Indemnités actives du personnel (repli de l'hydratation)
+        let allowanceRows: Array<{ allowanceTypeId: string; amount: string }> = [];
+        try {
+          const assignments = await hrFetch<any[]>(hrUrl(`allowances/staff/${resumeStaffId}`, { tenantId }));
+          allowanceRows = (Array.isArray(assignments) ? assignments : [])
+            .filter((a: any) => a.status === 'ACTIVE')
+            .map((a: any) => ({ allowanceTypeId: String(a.allowanceTypeId), amount: String(Number(a.amount ?? 0)) }));
+        } catch { /* best-effort */ }
+
+        const employerSignedAt = !!terms?.employerSignedAt;
+        const currentStep = !staff.statutContractuel
+          ? 2
+          : employerSignedAt
+            ? 6
+            : 4;
+
+        setState((prev) => ({
+          ...prev,
+          staffId: staff.id,
+          contractId: contract?.id ?? null,
+          currentStep,
+          candidateSaved: currentStep >= 4, // un contrat existe → la candidature a été créée
+          allowancesSaved: allowanceRows.length > 0,
+          employerSigned: employerSignedAt,
+          employeeSigned: !!contract?.signedAt,
+          identity: {
+            ...prev.identity,
+            firstName: staff.firstName ?? '',
+            lastName: staff.lastName ?? '',
+            gender: staff.gender ?? 'MALE',
+            birthDate: isoDate(staff.birthDate ?? staff.dateOfBirth),
+            nationality: staff.nationality ?? '',
+            maritalStatus: staff.maritalStatus ?? 'SINGLE',
+            numberOfChildren: Number(staff.numberOfChildren ?? 0) || 0,
+            nationalId: staff.nationalId ?? '',
+            email: staff.email ?? '',
+            phone: staff.phone ?? '',
+            address: staff.address ?? '',
+          },
+          employment: {
+            ...prev.employment,
+            position: staff.position ?? '',
+            department: staff.department ?? '',
+            roleType: staff.roleType ?? 'TEACHER',
+            hireDate: isoDate(staff.hireDate),
+            qualifications: staff.qualifications ?? '',
+            statutContractuel: staff.statutContractuel ?? '',
+          },
+          uploadedDocuments: Object.fromEntries(
+            (staff.documents || []).map((d: any) => [d.documentType, true]),
+          ),
+          contract: {
+            ...prev.contract,
+            contractType: contract?.contractType && !['PRESTATION'].includes(contract.contractType)
+              ? contract.contractType
+              : contract?.contractType === 'PRESTATION' ? 'CDD' : prev.contract.contractType,
+            startDate: isoDate(contract?.startDate) || isoDate(staff.hireDate),
+            endDate: isoDate(contract?.endDate),
+            baseSalary: contract?.baseSalary != null ? String(Number(contract.baseSalary)) : '',
+            paymentMode: contract?.paymentMode ?? 'BANK',
+            bankName: bank.bankName ?? '',
+            accountNumber: bank.accountNumber ?? '',
+            accountHolder: bank.accountName ?? '',
+            mobileMoneyNumber: bank.mobileMoneyNumber ?? '',
+            mobileMoneyOperator: bank.mobileMoneyOperator ?? '',
+            cnssNumber: staff.cnssNumber ?? '',
+            ifuNumber: staff.ifuNumber ?? '',
+            prestationPaymentMode: (staff.prestationPaymentMode ?? contract?.prestationPaymentMode ?? 'FORFAIT') as 'FORFAIT' | 'HORAIRE',
+            prestationAmount: (staff.prestationAmount ?? contract?.prestationAmount) != null
+              ? String(Number((staff.prestationAmount ?? contract?.prestationAmount)))
+              : '',
+            prestationDescription: prestation.description ?? '',
+            prestationCalendrier: prestation.calendrier ?? '',
+            prestationRenouvelable: prestation.renouvelable ?? false,
+            prestationConfidentialite: prestation.confidentialite ?? true,
+            prestationPropriete: prestation.proprieteContenus ?? true,
+            cddMotif: contract?.cddMotif ?? '',
+            periodeEssaiMois: contract?.periodeEssaiMois != null ? String(contract.periodeEssaiMois) : '',
+            justificationStatut: contract?.justificationStatut ?? '',
+          },
+          allowances: allowanceRows.length > 0 ? allowanceRows : prev.allowances,
+        }));
+        toast({
+          variant: 'info',
+          title: 'Embauche reprise',
+          description: `Le processus de ${staff.firstName} ${staff.lastName} a été repris à l'étape ${currentStep} — continuez là où vous étiez.`,
+        });
+      } catch (err: any) {
+        toast({ variant: 'error', title: 'Reprise impossible', description: err?.message });
+      }
+    })();
+  }, [isOpen, resumeStaffId, resumedFor, tenantId]);
 
   // ⭐ CDC §4.3 — chaîne CDD du personnel (compteur + durée cumulée) chargée
   //    à l'entrée à l'étape 4 pour un statut salarié
@@ -168,6 +294,12 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
         // En mode présentiel : les deux signatures doivent être présentes.
         // En mode différé : seule la signature employeur est requise
         // (l'employé signera à distance via l'email envoyé à l'étape 7).
+        // ⭐ 160 — Mode MANUEL : le contrat est déjà signé sur papier — le RH le
+        //    déclare, aucune signature électronique exigée (aucune restriction,
+        //    retour promoteur : « le système considère que c'est déjà signé »).
+        if (state.signatureMode === 'manuel') {
+          return true;
+        }
         if (state.signatureMode === 'differe') {
           return state.employerSigned;
         }
@@ -201,6 +333,12 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
       });
     } else {
       // Create new staff
+      // ⭐ 160 — BROUILLON, PAS « EN ATTENTE » (retour promoteur) : la fiche est
+      //    créée au statut ONBOARDING_DRAFT — invisible de la grille
+      //    Collaborateurs/KPIs, visible uniquement dans la section « Embauches
+      //    en cours » (reprendre/abandonner). AUCUNE candidature n'est créée à
+      //    cette étape (elle le sera à l'étape 4, contrat) : un brouillon
+      //    interrompu tôt ne laisse AUCUNE trace dans l'onglet Embauche.
       const staffResponse = await hrFetch<any>(hrUrl('staff', { tenantId }), {
         method: 'POST',
         body: {
@@ -215,30 +353,10 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
           numberOfChildren: state.identity.numberOfChildren || undefined,
           nationalId: state.identity.nationalId || undefined,
           address: state.identity.address || undefined,
-          status: 'PENDING_HIRE', // Harmonisé avec le pipeline de recrutement
+          status: 'ONBOARDING_DRAFT', // ⭐ brouillon d'embauche (plus jamais PENDING_HIRE « en attente »)
         },
       });
       setState((prev) => ({ ...prev, staffId: staffResponse.id }));
-
-      // Créer également un HrCandidate + HrApplication au statut ÉLIGIBLE
-      // pour que le staff apparaisse dans l'onglet Embauche (section candidats à déclarer éligible)
-      try {
-        await hrFetch(hrUrl('recruitment/candidates', { tenantId }), {
-          method: 'POST',
-          body: {
-            firstName: state.identity.firstName,
-            lastName: state.identity.lastName,
-            email: state.identity.email,
-            phone: state.identity.phone,
-            staffId: staffResponse.id, // Lier le staff créé
-            status: 'ÉLIGIBLE',
-            source: 'INTERNAL_HIRE', // Le backend crée automatiquement un HrJob "Interne" + une application ÉLIGIBLE
-          },
-        });
-      } catch (err) {
-        // Non bloquant — le staff est créé, le candidat est optionnel
-        console.warn('[OnboardingWizard] Failed to create HrCandidate:', err);
-      }
     }
   };
 
@@ -498,6 +616,32 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
       }));
     }
 
+    // ⭐ 160 — CANDIDATURE créée ICI (étape 4 — contrat créé = intention ferme),
+    //    plus à l'étape 1 : un brouillon interrompu avant le contrat ne laisse
+    //    AUCUNE trace dans l'onglet Embauche (l'abandon purge tout au cas où).
+    //    Garde-fou candidateSaved : anti-doublon aux re-passages (et la reprise
+    //    d'un brouillon avec contrat la considère déjà créée). Non bloquant.
+    if (!state.candidateSaved && state.staffId) {
+      try {
+        await hrFetch(hrUrl('recruitment/candidates', { tenantId }), {
+          method: 'POST',
+          body: {
+            firstName: state.identity.firstName,
+            lastName: state.identity.lastName,
+            email: state.identity.email,
+            phone: state.identity.phone,
+            staffId: state.staffId,
+            status: 'ÉLIGIBLE',
+            source: 'INTERNAL_HIRE', // Le backend crée automatiquement un HrJob "Interne" + une application ÉLIGIBLE
+          },
+        });
+      } catch (err) {
+        // Non bloquant — le contrat est créé, le candidat est optionnel
+        console.warn('[OnboardingWizard] Failed to create HrCandidate:', err);
+      }
+      setState((prev) => ({ ...prev, candidateSaved: true }));
+    }
+
     // ⭐ Onglet Indemnités ↔ workflow d'embauche — création des assignations
     //    d'indemnité saisies à l'étape 4 (types du catalogue + montants).
     //    Garde-fou allowancesSaved : anti-doublon si l'utilisateur revient
@@ -553,10 +697,36 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
           break;
         // Steps 5-6-7 handle their own persistence
         case 6:
+          // ⭐ 160 — MODE MANUEL (retour promoteur) : le contrat a déjà été signé
+          //    SUR PAPIER — le RH le déclare et le système l'enregistre comme
+          //    signé (mention MANUSCRITE_PAPIER) : contrat → ACTIVE, staff →
+          //    ACTIVE, credentials créés. Aucune signature électronique exigée,
+          //    aucune restriction — on continue vers le récapitulatif.
+          if (state.signatureMode === 'manuel' && state.staffId && state.contractId) {
+            try {
+              await hrFetch(hrUrl(`contracts/${state.contractId}/sign-manual`, { tenantId }), {
+                method: 'POST',
+                body: {
+                  signerName: undefined, // « Représentant de l'employeur » par défaut (serveur)
+                  employeeName: `${state.identity.firstName} ${state.identity.lastName}`.trim(),
+                },
+              });
+              setState((prev) => ({ ...prev, employerSigned: true, employeeSigned: true }));
+              toast({
+                variant: 'success',
+                title: 'Signature manuelle enregistrée',
+                description: 'Le contrat est considéré comme signé par les deux parties (mention manuscrite) — poursuivez la finalisation.',
+              });
+            } catch (err: any) {
+              toast({ variant: 'error', title: 'Erreur enregistrement signature manuelle', description: err?.message });
+              setSavingStep(false);
+              return; // Ne pas avancer si l'enregistrement échoue
+            }
+          }
           // ⭐ Mode différé : quand on quitte l'étape 6 (signature employeur
           //    fait), on appelle completeOnboarding(asyncSign: true) pour
           //    envoyer l'email de signature à l'employé. Le staff reste
-          //    PENDING_HIRE, le contrat reste PENDING. L'étape 7 affichera
+          //    ONBOARDING_DRAFT, le contrat reste PENDING. L'étape 7 affichera
           //    "Email envoyé, en attente de signature à distance" et pollera
           //    jusqu'à ce que l'employé signe à distance via le lien email.
           if (state.signatureMode === 'differe' && state.staffId && state.contractId) {
@@ -599,7 +769,21 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
     }
   };
 
+  // ⭐ 160 — FERMER SANS ENREGISTRER (retour promoteur : « quand on clique sur
+  //    annuler, ça ne doit rien enregistrer ») : dès qu'un brouillon existe
+  //    (staffId) et que le wizard n'est pas terminé, la croix demande
+  //    confirmation — « Abandonner » appelle onboarding/abort qui PURGE tout
+  //    (fiche, contrats brouillons, documents, indemnités, candidature) : il
+  //    ne reste RIEN, la personne n'est jamais « en attente ».
   const handleClose = () => {
+    if (state.staffId && !state.completed) {
+      setConfirmAbandon(true);
+      return;
+    }
+    finishClose();
+  };
+
+  const finishClose = () => {
     // Rafraîchir la liste si un staff a été créé (dès l'étape 1), même si
     // l'utilisateur n'a pas terminé tout le wizard (étapes 2-7).
     // Avant, onSuccess() n'était appelé que si state.completed était true,
@@ -609,6 +793,50 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
     }
     onClose();
     setState({ ...INITIAL_STATE });
+    setConfirmAbandon(false);
+    setResumedFor(null);
+    setAbandoning(false);
+  };
+
+  // ⭐ 160 — ABANDON : purge serveur du brouillon (onboarding/abort) — après
+  //    cet appel, il ne reste AUCUNE trace (ni fiche, ni « en attente », ni
+  //    candidature, ni contrat). Un échec réseau laisse le brouillon
+  //    (reprendre plus tard via « Embauches en cours ») — jamais bloquant.
+  const handleAbandon = async () => {
+    if (!state.staffId) {
+      finishClose();
+      return;
+    }
+    try {
+      setAbandoning(true);
+      const result = await hrFetch<any>(hrUrl('contracts/onboarding/abort', { tenantId }), {
+        method: 'POST',
+        body: { staffId: state.staffId },
+      });
+      toast({
+        variant: 'success',
+        title: 'Embauche abandonnée — rien enregistré',
+        description:
+          result?.purged
+            ? `Supprimé : ${result.purged.staff} fiche, ${result.purged.contracts} contrat(s), ` +
+              `${result.purged.documents} document(s), ${result.purged.allowances} indemnité(s), ` +
+              `${result.purged.candidates} candidature(s).`
+            : 'Le brouillon a été intégralement supprimé.',
+      });
+      finishClose();
+    } catch (err: any) {
+      // Le brouillon reste en base (reprise possible) — on ferme quand même.
+      toast({
+        variant: 'error',
+        title: "L'abandon n'a pas pu être appliqué",
+        description:
+          (err?.message || 'Erreur réseau') +
+          ' — le brouillon est conservé : reprenez-le ou supprimez-le depuis « Embauches en cours ».',
+      });
+      finishClose();
+    } finally {
+      setAbandoning(false);
+    }
   };
 
   const stepTitles: Record<number, string> = {
@@ -810,6 +1038,67 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
           </div>
         )}
       </div>
+
+      {/* ⭐ 160 — CONFIRMATION D'ABANDON : « annuler n'enregistre rien » —
+          purge intégrale du brouillon (fiche, contrats brouillons, documents,
+          indemnités, candidature). */}
+      {confirmAbandon && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div
+              className="px-6 py-4 text-white flex items-center gap-3"
+              style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)` }}
+            >
+              <div className="rounded-lg bg-white/15 p-2">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold">Abandonner l&apos;embauche ?</h3>
+                <p className="text-xs text-white/70">Le processus sera définitivement supprimé</p>
+              </div>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-slate-700 leading-relaxed">
+                Vous avez saisi des informations jusqu&apos;à l&apos;étape {state.currentStep}. En abandonnant,
+                <strong> rien ne sera enregistré</strong> : la fiche de{' '}
+                <strong>{staffFullName || 'la personne'}</strong>, les éventuels documents, contrats brouillons,
+                indemnités et candidature seront <strong>intégralement supprimés</strong>.
+              </p>
+              <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+                En cas de coupure involontaire (connexion, navigateur fermé), le processus est conservé comme
+                BROUILLON : reprenez-le depuis l&apos;onglet Collaborateurs → « Embauches en cours ».
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
+              <button
+                type="button"
+                disabled={abandoning}
+                onClick={() => setConfirmAbandon(false)}
+                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 transition"
+              >
+                Continuer la saisie
+              </button>
+              <button
+                type="button"
+                disabled={abandoning}
+                onClick={handleAbandon}
+                className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition"
+                style={{ backgroundColor: '#dc2626' }}
+              >
+                {abandoning ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Suppression...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" /> Abandonner et tout supprimer
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

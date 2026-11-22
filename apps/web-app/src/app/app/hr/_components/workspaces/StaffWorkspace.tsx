@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Plus, Search, Phone, Briefcase, GraduationCap,
-  Users, Loader2, Globe, Building2, UserX, UserCheck,
+  Users, Loader2, Globe, Building2, UserX, UserCheck, FileEdit, Trash2, RotateCcw,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -20,6 +20,9 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   ACTIVE:            { label: 'En poste',                className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
   PENDING_SIGNATURE: { label: 'En attente de signature', className: 'bg-amber-50 text-amber-700 border border-amber-200' },
   PENDING_HIRE:      { label: 'En attente d\'embauche',  className: 'bg-blue-50 text-blue-700 border border-blue-200' },
+  // ⭐ 160 — brouillon d'embauche (wizard interrompu) : invisible de la grille
+  //    par défaut (filtre serveur), visible via la section « Embauches en cours »
+  ONBOARDING_DRAFT:  { label: 'Brouillon d\'embauche',   className: 'bg-slate-100 text-slate-500 border border-slate-300' },
   INACTIVE:          { label: 'Inactif',                 className: 'bg-slate-100 text-slate-500 border border-slate-200' },
   SUSPENDED:         { label: 'Suspendu',                className: 'bg-rose-50 text-rose-700 border border-rose-200' },
 };
@@ -50,6 +53,14 @@ export function StaffWorkspace() {
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
+  // ⭐ 160 — BROUILLONS D'EMBAUCHE (wizard interrompus — coupure connexion,
+  //    navigateur fermé) : section dédiée « Embauches en cours » avec
+  //    Reprendre (wizard hydraté à l'étape pertinente) et Abandonner (purge).
+  const [drafts, setDrafts] = useState<any[]>([]);
+  const [resumeStaffId, setResumeStaffId] = useState<string | null>(null);
+  const [abortDraftId, setAbortDraftId] = useState<string | null>(null);
+  const [aborting, setAborting] = useState(false);
+
   // Termination modal state
   const [terminationModalOpen, setTerminationModalOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<any>(null);
@@ -58,7 +69,7 @@ export function StaffWorkspace() {
   const [reactivateId, setReactivateId] = useState<string | null>(null);
   const [reactivateLoading, setReactivateLoading] = useState(false);
 
-  useEffect(() => { fetchStaff(); }, [tenant?.id, filterCategory, filterStatus]);
+  useEffect(() => { fetchStaff(); fetchDrafts(); }, [tenant?.id, filterCategory, filterStatus]);
 
   async function fetchStaff() {
     if (!tenant?.id) return;
@@ -75,6 +86,48 @@ export function StaffWorkspace() {
       setLoading(false);
     }
   }
+
+  /** ⭐ 160 — Brouillons d'embauche (ONBOARDING_DRAFT) pour la reprise. */
+  async function fetchDrafts() {
+    if (!tenant?.id) return;
+    try {
+      const result = await hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id, status: 'ONBOARDING_DRAFT' }));
+      setDrafts(Array.isArray(result) ? result : []);
+    } catch {
+      setDrafts([]);
+    }
+  }
+
+  /** ⭐ 160 — Abandon d'un brouillon : purge intégrale (rien enregistré). */
+  async function handleAbortDraft() {
+    if (!tenant?.id || !abortDraftId) return;
+    try {
+      setAborting(true);
+      const result = await hrFetch<any>(hrUrl('contracts/onboarding/abort', { tenantId: tenant.id }), {
+        method: 'POST',
+        body: { staffId: abortDraftId },
+      });
+      toast({
+        variant: 'success',
+        title: 'Embauche abandonnée — rien enregistré',
+        description: result?.purged
+          ? `Supprimé : ${result.purged.staff} fiche, ${result.purged.contracts} contrat(s), ${result.purged.documents} document(s).`
+          : 'Le brouillon a été intégralement supprimé.',
+      });
+      setAbortDraftId(null);
+      fetchDrafts();
+      fetchStaff();
+    } catch (err: any) {
+      toast({ variant: 'error', title: "L'abandon a échoué", description: err?.message });
+    } finally {
+      setAborting(false);
+    }
+  }
+
+  const handleWizardSuccess = () => {
+    fetchStaff();
+    fetchDrafts();
+  };
 
   const handleTerminate = (member: any) => {
     setSelectedStaff(member);
@@ -110,11 +163,15 @@ export function StaffWorkspace() {
 
   return (
     <div className="space-y-6 pb-12">
+      {/* ⭐ 160 — Wizard : remonté à CHAQUE cible (key) — reprise hydratée
+          depuis un brouillon OU nouvelle embauche propre. */}
       <OnboardingWizardModal
+        key={`wizard-${resumeStaffId ?? 'new'}`}
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        onSuccess={fetchStaff}
+        onClose={() => { setIsAddModalOpen(false); setResumeStaffId(null); }}
+        onSuccess={handleWizardSuccess}
         tenantId={tenant?.id || ''}
+        resumeStaffId={resumeStaffId}
       />
 
       <StaffTerminationModal
@@ -163,6 +220,97 @@ export function StaffWorkspace() {
         </div>
       )}
 
+      {/* ⭐ 160 — SECTION « EMBAUCHES EN COURS » (brouillons interrompus —
+          coupure connexion, navigateur fermé, wizard stoppé) : reprendre où
+          l'on s'était arrêté, ou abandonner (purge intégrale, rien enregistré).
+          Ces brouillons n'apparaissent PAS dans la grille Collaborateurs. */}
+      {drafts.length > 0 && (
+        <div className="rounded-2xl border border-dashed border-blue-300 bg-blue-50/30 overflow-hidden">
+          <div className="px-4 py-3 border-b border-blue-200/70 flex items-center gap-2">
+            <FileEdit className="h-4 w-4 text-blue-700" />
+            <h3 className="text-sm font-bold text-blue-900">
+              Embauches en cours <span className="font-normal text-blue-600">({drafts.length})</span>
+            </h3>
+            <p className="text-[11px] text-blue-500 ml-2 hidden sm:block">
+              Processus interrompus — reprenez la saisie là où elle s&apos;est arrêtée, ou abandonnez (rien ne sera enregistré).
+            </p>
+          </div>
+          <div className="divide-y divide-blue-100/70">
+            {drafts.map((d) => (
+              <div key={d.id} className="px-4 py-3 flex flex-wrap items-center gap-3 hover:bg-blue-50/50 transition-colors">
+                <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                  {d.firstName?.[0]}{d.lastName?.[0]}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-slate-800 truncate">{d.firstName} {d.lastName}</p>
+                  <p className="text-[11px] text-slate-500 truncate">
+                    {d.position || 'Poste non défini'}
+                    {d.createdAt ? ` • démarré le ${new Date(d.createdAt).toLocaleDateString('fr-FR')}` : ''}
+                  </p>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-500 border border-slate-300 shrink-0">
+                  Brouillon
+                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => { setResumeStaffId(d.id); setIsAddModalOpen(true); }}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-white text-xs font-bold shadow-sm hover:opacity-90 transition"
+                    style={{ backgroundColor: PRIMARY }}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" /> Reprendre
+                  </button>
+                  <button
+                    onClick={() => setAbortDraftId(d.id)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-rose-200 text-rose-600 text-xs font-bold hover:bg-rose-50 transition"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Abandonner
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ 160 — Confirmation d'abandon d'un brouillon (purge intégrale) */}
+      {abortDraftId && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="flex items-center gap-3 px-6 py-5 text-white" style={{ background: '#dc2626' }}>
+              <div className="rounded-lg bg-white/15 p-2"><Trash2 className="h-5 w-5" /></div>
+              <div>
+                <h3 className="text-base font-bold">Abandonner cette embauche ?</h3>
+                <p className="text-xs text-white/70">Le brouillon sera définitivement supprimé</p>
+              </div>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-slate-700">
+                Tout ce qui a été saisi pour ce processus (fiche, documents, contrats brouillons, indemnités,
+                candidature) sera <strong>intégralement supprimé</strong> — rien ne sera enregistré.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
+              <button
+                onClick={() => setAbortDraftId(null)}
+                disabled={aborting}
+                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 transition"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleAbortDraft}
+                disabled={aborting}
+                className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition"
+                style={{ backgroundColor: '#dc2626' }}
+              >
+                {aborting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Abandonner et tout supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
@@ -196,7 +344,7 @@ export function StaffWorkspace() {
           </select>
         </div>
         <button
-          onClick={() => setIsAddModalOpen(true)}
+          onClick={() => { setResumeStaffId(null); setIsAddModalOpen(true); }}
           className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition whitespace-nowrap"
           style={{ backgroundColor: PRIMARY }}
         >
@@ -237,7 +385,7 @@ export function StaffWorkspace() {
             Ajustez vos filtres ou commencez par ajouter un nouveau membre.
           </p>
           <button
-            onClick={() => setIsAddModalOpen(true)}
+            onClick={() => { setResumeStaffId(null); setIsAddModalOpen(true); }}
             className="mt-5 flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition"
             style={{ backgroundColor: PRIMARY }}
           >

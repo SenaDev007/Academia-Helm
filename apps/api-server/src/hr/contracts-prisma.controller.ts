@@ -500,6 +500,32 @@ export class ContractsPrismaController {
     });
   }
 
+  /**
+   * ⭐ 22/11/2026 — POST /api/hr/contracts/:id/sign-manual
+   * Signature MANUSCRITE (sur papier) déclarée par le RH : le système considère
+   * le contrat comme signé (mention MANUSCRITE_PAPIER tracée, contrat → ACTIVE,
+   * staff → ACTIVE, credentials créés) sans exiger de signature électronique.
+   * Body: { signerName?: string, employeeName?: string }
+   */
+  @Post(':id/sign-manual')
+  async signContractManual(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() body: { signerName?: string; employeeName?: string },
+    @Req() req: Request,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.contractPdfService.signContractManual(id, tid, {
+      signerName: body?.signerName,
+      employeeName: body?.employeeName,
+      ipAddress: req.ip || req.socket?.remoteAddress,
+    });
+  }
+
   // ─── Onboarding Completion ────────────────────────────────────────────────
 
   /**
@@ -524,6 +550,30 @@ export class ContractsPrismaController {
       sendEmail: body.sendEmail ?? true,
       asyncSign: body.asyncSign ?? false,
     });
+  }
+
+  /**
+   * ⭐ 22/11/2026 — POST /api/hr/contracts/onboarding/abort
+   * Abandon d'embauche (retour promoteur : « quand on annule, ça ne doit rien
+   * enregistrer ») : purge INTÉGRALE du brouillon — fiche personnel, contrats
+   * non signés, documents, indemnités, candidature liée. Refuse un staff déjà
+   * ACTIF ou un contrat signé (immuable → procédure de débauche).
+   * Body: { staffId: string }
+   */
+  @Post('onboarding/abort')
+  async abortOnboarding(
+    @GetTenant() tenant: any,
+    @Body() body: { staffId: string },
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    if (!body?.staffId) {
+      throw new BadRequestException('staffId requis pour abandonner l\u2019embauche');
+    }
+    return this.contractPdfService.abortOnboarding(body.staffId, tid);
   }
 
   /**

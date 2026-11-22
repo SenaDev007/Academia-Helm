@@ -102,13 +102,22 @@ export class PayrollDocumentsController {
     const tid = tenant?.id ?? tenantIdFallback;
     if (!tid) throw new BadRequestException('Tenant ID requis pour cette opération');
     const { buffer, document } = await this.documentsService.downloadDocument(id, tid);
-    const staffName = document?.staff
-      ? `${document.staff.lastName}_${document.staff.firstName}`.replace(/\s+/g, '_')
-      : 'personnel';
+
+    // ⭐ 22/11/2026 — nom de fichier PROFESSIONNEL (retour promoteur) :
+    //   « Fiche de paie <Prénom(s) NOM> <Période>.pdf »
+    //   « État de paiement <Prénom(s) NOM> <Période>.pdf »
+    // (filename* RFC 5987 pour accents/espaces + repli ASCII documentNumber).
+    const typeLabel =
+      document.documentType === 'ETAT_DE_PAIEMENT' ? 'État de paiement' : 'Fiche de paie';
+    const staffName = `${document.staff?.firstName ?? ''} ${document.staff?.lastName ?? ''}`
+      .replace(/\s+/g, ' ')
+      .trim() || 'personnel';
+    const periodLabel = String(document.periodLabel || '').replace(/\s+/g, ' ').trim();
+    const prettyName = [typeLabel, staffName, periodLabel].filter(Boolean).join(' ');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${document.documentNumber}-${staffName}.pdf"`,
+      `attachment; filename="${document.documentNumber}.pdf"; filename*=UTF-8''${encodeURIComponent(`${prettyName}.pdf`)}`,
     );
     res.setHeader('Content-Length', String(buffer.length));
     res.setHeader('X-Content-Hash', document.contentHash);

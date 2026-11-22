@@ -41,6 +41,37 @@ function isVacataire(staff: any): boolean {
 }
 
 /**
+ * ⭐ 22/11/2026 — Jours ouvrés (lundi-vendredi) entre deux dates incluses.
+ * Même convention que joursOuvres() des documents FP/EP — la base de
+ * proration « présences » s'appuie sur les MÊMES jours attendus que ceux
+ * affichés « Jours travaillés (ouvrés) » sur la fiche de paie.
+ */
+function businessDaysBetween(start: Date, end: Date): number {
+  const s = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()));
+  const e = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
+  if (e < s) return 0;
+  let count = 0;
+  for (let d = new Date(s); d <= e; d.setUTCDate(d.getUTCDate() + 1)) {
+    const dow = d.getUTCDay();
+    if (dow !== 0 && dow !== 6) count++;
+  }
+  return count;
+}
+
+/**
+ * ⭐ 22/11/2026 — Poids de présence d'un pointage StaffAttendance :
+ *   PRESENT / LATE / MISSION → journée complète ;
+ *   HALF_DAY                 → demi-journée (0,5) ;
+ *   ABSENT (et autres)       → 0.
+ */
+function attendanceDayWeight(status: string | null | undefined): number {
+  const s = (status || '').toUpperCase();
+  if (s === 'PRESENT' || s === 'LATE' || s === 'MISSION') return 1;
+  if (s === 'HALF_DAY') return 0.5;
+  return 0;
+}
+
+/**
  * Extrait le numéro Mobile Money et l'opérateur depuis bankDetails (JSON) ou les champs staff.
  */
 function extractMobileMoneyInfo(staff: any): { number: string; operator: string } | null {
@@ -661,6 +692,101 @@ export class PayrollPrismaService {
    * agents actifs avec un contrat actif dans le lot.
    * Calcule CNSS depuis CNSSRate et IRPP depuis TaxRate brackets.
    */
+  // ============================================================================
+  // ⭐ 22/11/2026 — MODE DE CALCUL « PRÉSENCES »
+  //    Retour promoteur : les RH doivent pouvoir tenir compte des présences
+  //    des enseignants dans le calcul des salaires — OU ne PAS en tenir compte
+  //    (salaire de base + indemnités). Le mode est porté par la PÉRIODE de
+  //    paie (payroll_periods.attendanceBased) : false (défaut) = comportement
+  //    inchangé ; true = la base est proratée par les pointages
+  //    StaffAttendance de la période. Les indemnités/heures supp/primes
+  //    restent entières — SEULE la base est proratée.
+  // ============================================================================
+
+  /** Bascule le mode de calcul de la période (refusée si période close/verrouillée). */
+  async setAttendanceMode(periodId: string, tenantId: string, attendanceBased: boolean) {
+    const period = await this.prisma.payrollPeriod.findFirst({
+      where: { id: periodId, tenantId },
+    });
+    if (!period) {
+      throw new NotFoundException(`Période de paie ${periodId} introuvable.`);
+    }
+    if (period.status === 'CLOSED' || period.status === 'LOCKED') {
+      throw new BadRequestException(
+        'Cette période est close ou verrouillée — le mode de calcul ne peut plus changer.',
+      );
+    }
+    const updated = await this.prisma.payrollPeriod.update({
+      where: { id: period.id },
+      data: { ...prismaUpdateDefaults(), attendanceBased },
+    });
+    this.logger.log(
+      `Mode de calcul « présences » ${attendanceBased ? 'ACTIVÉ' : 'DÉSACTIVÉ'} sur la période ${periodId} (tenant ${tenantId}).`,
+    );
+    return updated;
+  }
+
+  /**
+   * Résout le flag « présences » d'un LOT (Payroll) via sa période de rattachement.
+   * Lots hérités sans payrollPeriodId → false (comportement historique).
+   */
+  private async resolvePeriodAttendanceFlag(payroll: any): Promise<boolean> {
+    const periodId = (payroll as any)?.payrollPeriodId;
+    if (!periodId) return false;
+    try {
+      const period = await this.prisma.payrollPeriod.findUnique({
+        where: { id: periodId },
+        select: { attendanceBased: true },
+      });
+      return period?.attendanceBased === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Base de proration par présences, sur la fenêtre de la période :
+   *   daysExpected = jours ouvrés (lun-ven) de la période ;
+   *   daysPresent  = Σ poids des pointages (PRESENT/LATE/MISSION=1, HALF_DAY=0,5, ABSENT=0) ;
+   *   ratio        = daysPresent / daysExpected (borné [0,1]).
+   * AUCUN pointage sur la période → noRecords=true, ratio=1 (ne pas pénaliser
+   * un personnel dont les pointages n'ont pas été tenus — le drapeau est
+   * visible côté RH dans la page période et sur la fiche de paie).
+   */
+  private async computeStaffAttendanceBasis(
+    staffId: string,
+    tenantId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<{ daysPresent: number; daysExpected: number; ratio: number; noRecords: boolean }> {
+    const daysExpected = Math.max(0, businessDaysBetween(startDate, endDate));
+    let records: any[] = [];
+    try {
+      records = await this.prisma.staffAttendance.findMany({
+        where: {
+          staffId,
+          tenantId,
+          date: { gte: startDate, lte: endDate },
+        },
+        select: { date: true, status: true },
+      });
+    } catch (err: any) {
+      this.logger.warn(`Pointages indisponibles (${err?.message}) — présences non proratées.`);
+      return { daysPresent: 0, daysExpected, ratio: 1, noRecords: true };
+    }
+    if (!records || records.length === 0) {
+      return { daysPresent: 0, daysExpected, ratio: 1, noRecords: true };
+    }
+    // Une ligne max par (staffId, date) — Σ directe des poids journaliers.
+    const daysPresent =
+      Math.round(records.reduce((acc, r) => acc + attendanceDayWeight(r.status), 0) * 100) / 100;
+    if (daysExpected <= 0) {
+      return { daysPresent, daysExpected, ratio: 1, noRecords: false };
+    }
+    const ratio = Math.max(0, Math.min(1, Math.round((daysPresent / daysExpected) * 10000) / 10000));
+    return { daysPresent, daysExpected, ratio, noRecords: false };
+  }
+
   async generatePayrollItems(
     payrollId: string,
     tenantId: string,
@@ -710,6 +836,10 @@ export class PayrollPrismaService {
     const generated = await this.prisma.$transaction(async (tx) => {
       const results = [];
 
+      // ⭐ 22/11/2026 — mode « présences » de la période : la BASE est proratée
+      //    par les pointages (les indemnités/heures supp/primes restent entiers).
+      const attendanceBased = await this.resolvePeriodAttendanceFlag(payroll);
+
       for (const staff of staffWithContracts) {
         // Skip si une ligne existe déjà pour ce staff dans ce lot
         const existing = await tx.payrollItem.findFirst({
@@ -722,8 +852,33 @@ export class PayrollPrismaService {
 
         const contract = staff.contracts[0];
         // Utiliser staff.salary ou contract.baseSalary comme base
-        const baseSalary =
+        const fullBaseSalary =
           staff.salary ?? contract?.baseSalary ?? new Prisma.Decimal(0);
+
+        // ─── ⭐ 22/11/2026 — mode « présences » : base proratée par les pointages ──
+        //    daysPresent/daysExpected/ratio figés dans attendanceDetail (page
+        //    période + fiche de paie). Aucun pointage → ratio 1 (noRecords :
+        //    drapeau visible RH). La base STOCKÉE est la base PRORATÉE.
+        let baseSalary = fullBaseSalary;
+        let attendanceDetail: any = null;
+        if (attendanceBased) {
+          const basis = await this.computeStaffAttendanceBasis(
+            staff.id, tenantId, payroll.startDate, payroll.endDate,
+          );
+          attendanceDetail = {
+            mode: 'ATTENDANCE',
+            daysPresent: basis.daysPresent,
+            daysExpected: basis.daysExpected,
+            ratio: basis.ratio,
+            noRecords: basis.noRecords,
+            fullBase: Number(fullBaseSalary),
+          };
+          if (!basis.noRecords && basis.ratio < 1) {
+            baseSalary = fullBaseSalary
+              .times(new Prisma.Decimal(String(basis.ratio)))
+              .toDecimalPlaces(2);
+          }
+        }
 
         // ─── Détection du statut vacataire ──
         // Les vacataires ne sont PAS soumis à la CNSS ni à l'IRPP
@@ -765,10 +920,13 @@ export class PayrollPrismaService {
         );
 
         // Calculer le taux horaire depuis PayrollRate si disponible, sinon baseSalary / 173.33
+        // ⭐ 22/11/2026 — le taux horaire se dérive de la base COMPLÈTE (jamais
+        //    de la base proratée présences) : les heures supp rémunèrent des
+        //    heures RÉELLEMENT travaillées.
         const payrollRate = await this.findActivePayrollRate(tenantId, countryCode, staff.roleType);
         const hourlyRate = payrollRate
           ? payrollRate.hourlyRate
-          : baseSalary.div(new Prisma.Decimal(173.33));
+          : fullBaseSalary.div(new Prisma.Decimal(173.33));
         const overtimeMultiplier = payrollRate
           ? payrollRate.overtimeMultiplier
           : new Prisma.Decimal(1.5);
@@ -891,6 +1049,7 @@ export class PayrollPrismaService {
             bonuses,
             allowancesTotal,
             allowancesDetail: allowancesDetail as any,
+            attendanceDetail: attendanceDetail as any,
             grossSalary,
             cnssEmployee,
             cnssEmployer,
@@ -1047,8 +1206,34 @@ export class PayrollPrismaService {
     // ─── Détection du statut vacataire ──
     const vacataire = isVacataire(item.staff);
 
-    // Base salary
-    const baseSalary = item.baseSalary;
+    // ─── ⭐ 22/11/2026 — mode « présences » : la base est REPRORATÉE depuis la
+    //    base COMPLÈTE (staff.salary / contrat), jamais depuis la base stockée
+    //    (qui est déjà proratée) — sinon le recalcle appliquerait le ratio
+    //    deux fois. Hors mode présences : base stockée, comportement inchangé.
+    const attendanceBased = await this.resolvePeriodAttendanceFlag(item.payroll);
+    const fullBaseSalary = attendanceBased
+      ? (item.staff?.salary ?? item.staff?.contracts?.[0]?.baseSalary ?? item.baseSalary)
+      : item.baseSalary;
+    let baseSalary = fullBaseSalary;
+    let attendanceDetail: any = null;
+    if (attendanceBased) {
+      const basis = await this.computeStaffAttendanceBasis(
+        item.staffId, tenantId, item.payroll.startDate, item.payroll.endDate,
+      );
+      attendanceDetail = {
+        mode: 'ATTENDANCE',
+        daysPresent: basis.daysPresent,
+        daysExpected: basis.daysExpected,
+        ratio: basis.ratio,
+        noRecords: basis.noRecords,
+        fullBase: Number(fullBaseSalary),
+      };
+      if (!basis.noRecords && basis.ratio < 1) {
+        baseSalary = fullBaseSalary
+          .times(new Prisma.Decimal(String(basis.ratio)))
+          .toDecimalPlaces(2);
+      }
+    }
 
     // Allowances + DÉTAIL par type (même figéage que la génération — 17/11/2026)
     const totalAllowances = item.staff.staffAllowances.reduce(
@@ -1081,10 +1266,11 @@ export class PayrollPrismaService {
       new Prisma.Decimal(0),
     );
     // Calculer le taux horaire depuis PayrollRate si disponible, sinon baseSalary / 173.33
+    // ⭐ 22/11/2026 — taux horaire dérivé de la base COMPLÈTE (jamais proratée).
     const payrollRate = await this.findActivePayrollRate(tenantId, countryCode, item.staff.roleType);
     const hourlyRate = payrollRate
       ? payrollRate.hourlyRate
-      : baseSalary.div(new Prisma.Decimal(173.33));
+      : fullBaseSalary.div(new Prisma.Decimal(173.33));
     const overtimeMultiplier = payrollRate
       ? payrollRate.overtimeMultiplier
       : new Prisma.Decimal(1.5);
@@ -1231,10 +1417,14 @@ export class PayrollPrismaService {
       where: { id },
       data: {
         ...prismaUpdateDefaults(),
+        // ⭐ 22/11/2026 — mode « présences » : la base recalculée (proratée
+        //    hors mode, identique sinon) + le détail de proration figé.
+        baseSalary,
         overtimeAmount,
         bonuses,
         allowancesTotal: totalAllowances,
         allowancesDetail: allowancesDetail as any,
+        attendanceDetail: attendanceDetail as any,
         grossSalary,
         cnssEmployee,
         cnssEmployer,

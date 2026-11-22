@@ -546,6 +546,30 @@ export class PayrollPrismaController {
     return this.payrollService.closePayrollPeriod(id, tid, user?.id);
   }
 
+  /**
+   * ⭐ 22/11/2026 — Mode de calcul de la période :
+   *   attendanceBased=false → salaire de base + indemnités SANS les présences ;
+   *   attendanceBased=true  → la base est proratée par les présences pointées.
+   * Le changement prend effet à la prochaine GÉNÉRATION / au prochain
+   * RECALCUL des lignes (boutons « Générer » / « Calculer » de la page période).
+   */
+  @Put('periods/:id/attendance-mode')
+  async setAttendanceMode(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() body: { attendanceBased?: boolean },
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    if (typeof body?.attendanceBased !== 'boolean') {
+      throw new BadRequestException('attendanceBased (booléen) requis dans le corps de la requête');
+    }
+    return this.payrollService.setAttendanceMode(id, tid, body.attendanceBased);
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
   // OPÉRATIONS AU NIVEAU PÉRIODE (la page mensuelle pilote la période ; le lot
   // de paie sous-jacent est résolu automatiquement — find-or-create)

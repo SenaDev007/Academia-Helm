@@ -35,6 +35,7 @@ import {
   FileBadge2,
   X,
   Calendar,
+  CalendarDays,
   ReceiptText,
   BadgeCheck,
   CheckCheck,
@@ -114,6 +115,26 @@ export default function PayrollDetailPage() {
   const [showRegister, setShowRegister] = useState(false);
   const [registerDocs, setRegisterDocs] = useState<any[]>([]);
   const [registerLoading, setRegisterLoading] = useState(false);
+  // ⭐ 22/11/2026 — bascule du mode de calcul « présences » de la période
+  const [togglingAttendance, setTogglingAttendance] = useState(false);
+
+  // ⭐ 22/11/2026 — libellé de la PÉRIODE pour les noms de fichiers de
+  //    téléchargement (« Novembre 2026 ») : nom de la période d'abord,
+  //    repli mois/année dérivés de startDate (même règle que l'en-tête).
+  const periodNameForFile = () =>
+    period?.name
+    || (period?.startDate
+      ? new Date(period.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+      : '');
+
+  // ⭐ 22/11/2026 — NOM DE FICHIER PROFESSIONNEL (retour promoteur) :
+  //    « Fiche de paie <Prénom(s) NOM> <Période>.pdf » /
+  //    « État de paiement <Prénom(s) NOM> <Période>.pdf » /
+  //    « Bulletin de paie <Prénom(s) NOM> <Période>.pdf ».
+  const payrollFileName = (typeLabel: string, staffName: string) =>
+    `${typeLabel} ${String(staffName || 'personnel').replace(/\s+/g, ' ').trim()} ${periodNameForFile()}`
+      .replace(/\s+/g, ' ')
+      .trim() + '.pdf';
 
   const fetchPayroll = async () => {
     if (!tenant?.id || !id) return;
@@ -176,6 +197,48 @@ export default function PayrollDetailPage() {
       toast({ variant: 'error', title: 'Erreur lors du calcul global', description: error?.message });
     } finally {
       setProcessing(false);
+    }
+  };
+
+  // ⭐ 22/11/2026 — BASCULE « TENIR COMPTE DES PRÉSENCES » : la RH choisit
+  //    librement de prorater la base par les pointages (mode présences) OU
+  //    de payer la base + indemnités sans en tenir compte. Le changement
+  //    recalcule immédiatement les lignes existantes de la période.
+  const handleToggleAttendanceMode = async () => {
+    if (!period) return;
+    const next = !period.attendanceBased;
+    const confirmed = window.confirm(
+      next
+        ? 'Activer le calcul de la paie sur les PRÉSENCES ?\n\nLa base de chaque ligne sera proratée par les pointages de la période ' +
+        '(indemnités, heures supplémentaires et primes inchangées). Un personnel sans AUCUN pointage sur la période n\u2019est pas pénalisé.'
+        : 'Revenir au calcul sur le SALAIRE DE BASE + indemnités, SANS tenir compte des présences ?',
+    );
+    if (!confirmed) return;
+    try {
+      setTogglingAttendance(true);
+      await hrFetch<any>(hrUrl(`payroll/periods/${id}/attendance-mode`, {
+        tenantId: tenant.id,
+      }), {
+        method: 'PUT',
+        body: { attendanceBased: next },
+      });
+      // Recalcul immédiat si des lignes existent déjà (applique le mode).
+      const hasItems = (period.payrolls?.length || 0) > 0;
+      if (hasItems) {
+        await hrFetch<any>(hrUrl(`payroll/periods/${id}/calculate`, {
+          tenantId: tenant.id,
+        }), { method: 'POST' });
+      }
+      toast({
+        variant: 'success',
+        title: `Mode « présences » ${next ? 'activé' : 'désactivé'}`,
+        description: hasItems ? 'Lignes de paie recalculées avec le nouveau mode.' : 'Le mode s\u2019appliquera à la génération des lignes.',
+      });
+      fetchPayroll();
+    } catch (error: any) {
+      toast({ variant: 'error', title: 'Impossible de changer le mode de calcul', description: error?.message });
+    } finally {
+      setTogglingAttendance(false);
     }
   };
 
@@ -285,12 +348,14 @@ export default function PayrollDetailPage() {
         credentials: 'include',
       });
       if (!response.ok) throw new Error('Erreur téléchargement');
+      // ⭐ 22/11/2026 — nom PROFESSIONNEL : « Bulletin de paie <employé> <période>.pdf »
+      const fileName = payrollFileName('Bulletin de paie', staffName);
       const contentType = response.headers.get('content-type') || '';
       if (contentType.includes('application/pdf') || contentType.includes('octet-stream')) {
         const blob = await response.blob();
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `bulletin_${staffName.replace(/\s+/g, '_')}.pdf`;
+        link.download = fileName;
         link.click();
         URL.revokeObjectURL(link.href);
       } else {
@@ -306,7 +371,7 @@ export default function PayrollDetailPage() {
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `bulletin_${staffName.replace(/\s+/g, '_')}.pdf`;
+          a.download = fileName;
           a.click();
           URL.revokeObjectURL(url);
         }
@@ -360,7 +425,15 @@ export default function PayrollDetailPage() {
     }
   };
 
-  const handleDownloadDocument = async (docId: string) => {
+  // ⭐ 22/11/2026 — téléchargement FP/EP : le nom de fichier suit le type
+  //    réel du document (« Fiche de paie… » / « État de paiement… »),
+  //    l'employé ET la période. Le Content-Disposition du serveur (RFC 5987)
+  //    est utilisé en priorité ; repli construit côté client avec les
+  //    métadonnées du document.
+  const handleDownloadDocument = async (
+    docId: string,
+    meta?: { documentType?: string | null; staffName?: string | null },
+  ) => {
     try {
       const response = await fetch(`/api/hr/payroll/documents/${docId}/download?tenantId=${tenant.id}`, {
         method: 'GET',
@@ -371,12 +444,21 @@ export default function PayrollDetailPage() {
         throw new Error(data?.message || 'Erreur téléchargement');
       }
       const blob = await response.blob();
+      // Nom serveur (filename*=UTF-8'') sinon construction client.
+      const cd = response.headers.get('content-disposition') || '';
+      const cdMatch = cd.match(/filename\*=UTF-8''([^;]+)/i);
+      const fileName = cdMatch
+        ? decodeURIComponent(cdMatch[1]).trim()
+        : payrollFileName(
+            meta?.documentType === 'ETAT_DE_PAIEMENT' ? 'État de paiement' : 'Fiche de paie',
+            meta?.staffName || '',
+          );
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `document-paie.pdf`;
+      link.download = fileName;
       link.click();
       URL.revokeObjectURL(link.href);
-      toast({ variant: 'success', title: 'Téléchargement lancé (intégrité vérifiée).' });
+      toast({ variant: 'success', title: `Téléchargement lancé — ${fileName}`, description: 'Intégrité SHA-256 vérifiée.' });
     } catch (error: any) {
       toast({ variant: 'error', title: 'Téléchargement impossible', description: error?.message });
     }
@@ -477,6 +559,21 @@ export default function PayrollDetailPage() {
                 <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase', statusClass)}>
                   {PERIOD_STATUS_LABELS[period.status] || period.status}
                 </span>
+                {/* ⭐ 22/11/2026 — mode de calcul de la période : badge visible */}
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap',
+                    period.attendanceBased
+                      ? 'bg-teal-50 text-teal-700 border-teal-200'
+                      : 'bg-slate-50 text-slate-500 border-slate-200',
+                  )}
+                  title={period.attendanceBased
+                    ? 'La base de chaque ligne est proratée par les présences pointées de la période'
+                    : 'Salaire de base + indemnités, sans tenir compte des présences'}
+                >
+                  <CalendarDays className="h-3 w-3" />
+                  {period.attendanceBased ? 'Présences' : 'Base + indemnités'}
+                </span>
                 <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
                   {new Date(period.startDate).toLocaleDateString('fr-FR')} → {new Date(period.endDate).toLocaleDateString('fr-FR')}
@@ -486,6 +583,32 @@ export default function PayrollDetailPage() {
           </div>
 
           <div className="flex gap-2 flex-wrap">
+            {/* ⭐ 22/11/2026 — BASCULE « TENIR COMPTE DES PRÉSENCES » : la RH
+                choisit librement le mode de calcul de la paie de la période
+                (proratation de la base par les pointages, ou base +
+                indemnités sans en tenir compte). */}
+            {['OPEN', 'CALCULATED'].includes(period.status) && (
+              <button
+                onClick={handleToggleAttendanceMode}
+                disabled={togglingAttendance || processing}
+                className={cn(
+                  'flex items-center gap-2 px-3.5 py-2 rounded-xl transition-all font-bold text-xs disabled:opacity-50 border',
+                  period.attendanceBased
+                    ? 'bg-teal-50 text-teal-700 border-teal-300 hover:bg-teal-100'
+                    : 'bg-slate-50 text-slate-600 border-slate-300 hover:bg-slate-100',
+                )}
+                title={period.attendanceBased
+                  ? 'Désactiver : revenir au salaire de base + indemnités, sans tenir compte des présences'
+                  : 'Activer : prorater la base de chaque ligne par les présences pointées de la période'}
+              >
+                {togglingAttendance ? <Loader2 size={14} className="animate-spin" /> : <CalendarDays size={14} />}
+                {togglingAttendance
+                  ? 'Application…'
+                  : period.attendanceBased
+                    ? 'Présences : activé'
+                    : 'Présences : désactivé'}
+              </button>
+            )}
             <button
               onClick={openDocumentsRegister}
               className="flex items-center gap-2 px-4 py-2 rounded-xl hover:opacity-90 transition font-bold text-xs text-white"
@@ -590,7 +713,7 @@ export default function PayrollDetailPage() {
             <table className="w-full text-left">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  {['Employé', 'Salaire Brut', 'Retenues', 'Net à Payer', 'Statut Ligne', 'Paiement'].map((h) => (
+                  {['Employé', 'Salaire Brut', ...(period.attendanceBased ? ['Présences'] : []), 'Retenues', 'Net à Payer', 'Statut Ligne', 'Paiement'].map((h) => (
                     <th key={h} className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                   <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right whitespace-nowrap">Actions</th>
@@ -676,6 +799,31 @@ export default function PayrollDetailPage() {
                         );
                       })()}
                     </td>
+                    {/* ⭐ 22/11/2026 — colonne PRÉSENCES (mode « présences »
+                        uniquement) : jours pointés / ouvrés + taux de base
+                        appliqué — le lien présences ↔ paie est visible. */}
+                    {period.attendanceBased && (
+                      <td className="px-4 py-2.5">
+                        {(() => {
+                          const att = payroll.attendanceDetail;
+                          if (!att || att.mode !== 'ATTENDANCE') {
+                            return <span className="text-[10px] text-slate-400">—</span>;
+                          }
+                          const pct = Math.round(Number(att.ratio ?? 1) * 1000) / 10;
+                          return (
+                            <div className="flex flex-col">
+                              <span className="text-[10px] font-bold text-slate-700 whitespace-nowrap">
+                                {att.daysPresent}/{att.daysExpected} j
+                                {att.noRecords ? <span className="text-slate-400 font-medium"> · aucun pointage</span> : null}
+                              </span>
+                              <span className={cn('text-[8px] font-bold whitespace-nowrap', pct >= 100 ? 'text-emerald-600' : pct >= 75 ? 'text-amber-600' : 'text-red-500')}>
+                                {pct} % de base
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </td>
+                    )}
                     <td className="px-4 py-2.5">
                       {(isVacataire || isPrestataire) ? (
                         <div className="flex flex-col">
@@ -768,9 +916,12 @@ export default function PayrollDetailPage() {
                           <>
                           {doc ? (
                             <button
-                              onClick={() => handleDownloadDocument(doc.id)}
+                              onClick={() => handleDownloadDocument(doc.id, {
+                                documentType: doc.documentType,
+                                staffName: `${payroll.staff?.firstName} ${payroll.staff?.lastName}`,
+                              })}
                               className={`p-1.5 rounded-lg transition-colors ${doc.documentType === 'ETAT_DE_PAIEMENT' ? 'text-emerald-600 hover:bg-emerald-50' : 'text-[#1A2BA6] hover:bg-blue-50'}`}
-                              title={`Télécharger ${doc.documentNumber} (${doc.documentType === 'ETAT_DE_PAIEMENT' ? 'état de paiement' : 'fiche de paie'} — PDF scellé)`}
+                              title={`Télécharger ${doc.documentType === 'ETAT_DE_PAIEMENT' ? 'l\u2019état de paiement' : 'la fiche de paie'} (${payroll.staff?.firstName} ${payroll.staff?.lastName} — ${monthLabel}) — PDF scellé)`}
                             >
                               {doc.documentType === 'ETAT_DE_PAIEMENT' ? <ReceiptText size={15} /> : <FileText size={15} />}
                             </button>
@@ -821,7 +972,7 @@ export default function PayrollDetailPage() {
                 })}
                 {(!period.payrolls || period.payrolls.length === 0) && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                    <td colSpan={period.attendanceBased ? 8 : 7} className="px-4 py-12 text-center text-slate-400">
                       <AlertCircle className="mx-auto mb-2 opacity-20" size={32} />
                       <p className="text-xs">Aucune ligne de paie générée pour cette période.</p>
                       {period.status === 'OPEN' && (
@@ -845,6 +996,18 @@ export default function PayrollDetailPage() {
               fiche de paie (FP) pour les salariés — CNSS si déclarés, ITS progressif — et état de paiement (EP) pour
               les prestataires (retenue AIB à la source). Les montants alimentent automatiquement les déclarations
               CNSS / IST / AIB de l'onglet « CNSS &amp; Cotisations ».
+              {period.attendanceBased ? (
+                <>
+                  {' '}Mode <strong>présences</strong> actif : le <strong>salaire de base</strong> de chaque ligne est proraté
+                  par les pointages de la période (colonne Présences — jours pointés / jours ouvrés) ; les indemnités,
+                  heures supplémentaires et primes restent entiers ; un personnel sans aucun pointage n'est pas pénalisé.
+                </>
+              ) : (
+                <>
+                  {' '}Mode <strong>base + indemnités</strong> : les présences pointées ne modifient pas le salaire — la
+                  bascule « Présences » de l'en-tête permet à la RH d'en tenir compte à tout moment.
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -919,9 +1082,12 @@ export default function PayrollDetailPage() {
                         </td>
                         <td className="px-4 py-2.5 text-right">
                           <button
-                            onClick={() => handleDownloadDocument(d.id)}
+                            onClick={() => handleDownloadDocument(d.id, {
+                              documentType: d.documentType,
+                              staffName: `${d.staff?.firstName} ${d.staff?.lastName}`,
+                            })}
                             className={`p-1.5 rounded-lg transition-colors ${isEP ? 'text-emerald-600 hover:bg-emerald-50' : 'text-[#1A2BA6] hover:bg-blue-50'}`}
-                            title={`Télécharger le PDF émis (${isEP ? 'état de paiement' : 'fiche de paie'} — vérification SHA-256 incluse)`}
+                            title={`Télécharger le PDF émis (${isEP ? 'état de paiement' : 'fiche de paie'} — ${d.staff?.firstName} ${d.staff?.lastName} — vérification SHA-256 incluse)`}
                           >
                             {isEP ? <ReceiptText size={14} /> : <FileText size={14} />}
                           </button>

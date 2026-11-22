@@ -6239,6 +6239,10 @@ model PayrollItem {
   /// Détail des indemnités par type [{code,label,amount}] — figé au calcul,
   /// alimente la page période et les documents FP/EP (gains détaillés).
   allowancesDetail Json?
+  /// ⭐ 22/11/2026 — Base de proration par présences, figée au calcul :
+  ///   { mode: 'ATTENDANCE', daysPresent, daysExpected, ratio, fullBase, noRecords }
+  ///   Alimente la page période (colonnes présences) et la fiche de paie.
+  attendanceDetail Json?
   grossSalary     Decimal          @db.Decimal(10, 2)
   cnssEmployee    Decimal          @default(0) @db.Decimal(10, 2)
   cnssEmployer    Decimal          @default(0) @db.Decimal(10, 2)
@@ -6720,6 +6724,11 @@ model PayrollPeriod {
   startDate      DateTime     @db.Date
   endDate        DateTime     @db.Date
   status         String       @default("OPEN") // OPEN, CLOSED, LOCKED
+  /// ⭐ 22/11/2026 — Mode de calcul de la paie :
+  ///   false (défaut) = salaire de base + indemnités SANS tenir compte des présences ;
+  ///   true            = la base est PRORATÉE par les présences pointées
+  ///   (StaffAttendance) sur la période — les indemnités restent entières.
+  attendanceBased Boolean      @default(false)
   closedBy       String?
   closedAt       DateTime?
   payrolls       Payroll[]

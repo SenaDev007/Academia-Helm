@@ -47,6 +47,29 @@ export interface EmployerIdentity {
   email?: string | null;
   representant: string;
   qualite: string;
+  // ⭐ 22/11/2026 — identité COMPLÈTE de l'école (onglet Identité du module
+  //    Paramètres — maternelle/primaire, ou niveau secondaire via overlay) :
+  //    toutes les informations paramétrées apparaissent sur le document.
+  sigle?: string | null;
+  autorisation?: string | null;      // N° d'autorisation d'ouverture
+  devise?: string | null;           // slogan / devise de l'école
+  telephone2?: string | null;
+  whatsapp?: string | null;
+  website?: string | null;
+  ville?: string | null;
+  departement?: string | null;
+  pays?: string | null;
+  /** Logo (data-URL inline) — FILIGRANE + en-tête du document. */
+  logoUrl?: string | null;
+}
+
+/** ⭐ 22/11/2026 — Proration par présences (mode « présences » de la période). */
+export interface PresencesInfo {
+  daysPresent: number;
+  daysExpected: number;
+  ratio: number;
+  noRecords: boolean;
+  fullBase?: number | null;
 }
 
 export interface CumulsAnnuels {
@@ -121,6 +144,8 @@ export interface FichePaieSnapshot {
     total: number;
     informatif: true;
   } | null;
+  /** ⭐ 22/11/2026 — proration par présences (null hors mode « présences »). */
+  presences?: PresencesInfo | null;
   cumuls: CumulsAnnuels;
   conges: CongesInfo;
   rates: RatesStamp;
@@ -152,6 +177,8 @@ export interface EtatPaiementSnapshot {
     /** Indemnités détaillées par type (figées au calcul) — null si aucune. */
     indemnites?: Array<{ label: string; amount: number }> | null;
   };
+  /** ⭐ 22/11/2026 — proration par présences (null hors mode « présences »). */
+  presences?: PresencesInfo | null;
   cumuls: CumulsAnnuels;
   rates: RatesStamp;
   mention: string;
@@ -300,13 +327,90 @@ export function computeConges(opts: {
 
 // ─── Gabarits HTML — deux identités visuelles DISTINCTES ───────────────────
 
+/**
+ * ⭐ 22/11/2026 — FILIGRANE logo : centré, incliné, très léger — traverse
+ * le document (fiche de paie ET état de paiement) sans gêner la lecture.
+ */
+function schoolWatermarkHtml(e: EmployerIdentity): string {
+  return e.logoUrl
+    ? `<div class="watermark"><img src="${e.logoUrl}" alt="logo" /></div>`
+    : '';
+}
+
+/**
+ * ⭐ 22/11/2026 — bandeau école COMPLET (onglet Identité du module
+ * Paramètres) : logo en tête + nom + sigle + adresse + identifiants
+ * (IFU/RCCM/N° employeur CNSS), suivi du strip de coordonnées
+ * (tél, tél 2, WhatsApp, email, site web, autorisation, devise).
+ * Le personnel du SECONDAIRE reçoit automatiquement l'identité du niveau
+ * secondaire (résolue en amont dans resolveEmployer).
+ * @param docHtml bloc de droite (« Fiche de paie » / « État de paiement »,
+ *                numéro, période) — propre à chaque document.
+ */
+function schoolBandHtml(e: EmployerIdentity, color: string, docHtml: string): string {
+  const logo = e.logoUrl
+    ? `<img class="logo-head" src="${e.logoUrl}" alt="logo" />`
+    : '';
+  const idBits = [
+    e.ifu ? `IFU ${esc(e.ifu)}` : null,
+    e.rccm ? `RCCM ${esc(e.rccm)}` : null,
+  ].filter(Boolean).join(' · ');
+  // Strip de coordonnées : uniquement s'il y a AU MOINS une information à
+  // afficher (un snapshot hérité sans coordonnées ne produit pas de strip vide).
+  const contactSpans = [
+    e.telephone ? `<span>Tél. ${esc(e.telephone)}</span>` : null,
+    e.telephone2 ? `<span>Tél. 2 ${esc(e.telephone2)}</span>` : null,
+    e.whatsapp ? `<span>WhatsApp ${esc(e.whatsapp)}</span>` : null,
+    e.email ? `<span>${esc(e.email)}</span>` : null,
+    e.website ? `<span>${esc(e.website)}</span>` : null,
+    e.autorisation ? `<span>Autorisation N° ${esc(e.autorisation)}</span>` : null,
+    e.devise ? `<span class="slogan">« ${esc(e.devise)} »</span>` : null,
+  ].filter(Boolean).join('');
+  const contactsStrip = contactSpans
+    ? `\n  <div class="school-contacts">${contactSpans}</div>`
+    : '';
+  return `
+  <div class="band" style="background:${color}">
+    <div class="org-wrap">
+      ${logo}
+      <div>
+        <div class="org">${esc(e.raisonSociale)}${e.sigle ? ` <span class="sigle">(${esc(e.sigle)})</span>` : ''}</div>
+        <div class="org-sub">${esc(e.adresse)}${idBits ? (e.adresse && e.adresse !== '—' ? ' · ' : '') + idBits : ''}</div>
+        ${e.cnss ? `<div class="org-sub">N° employeur CNSS ${esc(e.cnss)}</div>` : ''}
+      </div>
+    </div>
+    ${docHtml}
+  </div>${contactsStrip}`;
+}
+
+/** Bloc de droite du bandeau — titre du document + numéro + période. */
+function docBandHtml(type: string, num: string, periodLabel: string): string {
+  return `
+    <div class="doc">
+      <div class="type">${esc(type)}</div>
+      <div class="num">N° ${esc(num)}</div>
+      <div class="num">Période : ${esc(periodLabel)}</div>
+    </div>`;
+}
+
 const BASE_CSS = `
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1f2937; font-size: 11px; line-height: 1.45; }
   .sheet { padding: 28px 34px 22px; }
-  .band { color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; }
+  /* ⭐ 22/11/2026 — logo en FILIGRANE (demande promoteur) : centré, incliné,
+     très léger — il traverse tout le document sans gêner la lecture. */
+  .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); z-index: 0; opacity: .055; pointer-events: none; }
+  .watermark img { width: 330px; height: auto; }
+  .band { color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px 4px 0 0; }
+  .band .org-wrap { display: flex; gap: 12px; align-items: center; max-width: 68%; }
+  .band .logo-head { width: 50px; height: 50px; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px; flex-shrink: 0; }
   .band .org { font-size: 15px; font-weight: 800; letter-spacing: .2px; }
+  .band .org .sigle { font-size: 10px; font-weight: 600; opacity: .85; }
   .band .org-sub { font-size: 8.5px; opacity: .85; margin-top: 2px; }
+  /* ⭐ 22/11/2026 — coordonnées COMPLÈTES de l'école (onglet Identité) :
+     tél / tél 2 / WhatsApp / email / site web / autorisation / devise. */
+  .school-contacts { display: flex; flex-wrap: wrap; gap: 3px 14px; font-size: 8px; color: #4b5563; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 4px 4px; padding: 5px 10px; background: #f9fafb; }
+  .school-contacts .slogan { font-style: italic; color: #6b7280; }
   .band .doc { text-align: right; }
   .band .doc .type { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; }
   .band .doc .num { font-size: 10px; opacity: .9; margin-top: 2px; font-weight: 600; }
@@ -344,16 +448,27 @@ const BASE_CSS = `
 const FP_BLUE = '#1e3a5f'; // bleu nuit — fiche de paie
 const EP_GREEN = '#14532d'; // vert foncé — état de paiement
 
+/** ⭐ 22/11/2026 — pourcentage français (virgule décimale) : 85,7 (jamais 85.7). */
+function fmtPctFr(n: number): string {
+  return String(Math.round(n * 10) / 10).replace('.', ',');
+}
+
 /** Rendu HTML de la FICHE DE PAIE (identité bleu nuit). */
 export function renderFicheDePaieHtml(s: FichePaieSnapshot): string {
   const num = s.documentNumber ? esc(s.documentNumber) : 'PROJET — NON ÉMIS';
+  // ⭐ 22/11/2026 — proration par présences : libellé de base et taux.
+  const presences = s.presences ?? null;
+  const presencePct = presences ? fmtPctFr(Math.round(presences.ratio * 1000) / 10) : null;
+  const baseLabel = presences && presences.ratio < 1 && !presences.noRecords
+    ? `Salaire de base (proraté présences ${presencePct} %)`
+    : 'Salaire de base';
   // ⭐ 17/11/2026 — gains détaillés : chaque type d'indemnité figé dans la
   //    ligne de paie s'affiche comme rubrique À PART ENTIERE (le brut =
   //    base + Σ indemnités + heures supp + primes devient lisible) ;
   //    snapshots hérités sans gains.indemnites → « Primes et indemnités ».
   const indemnitesRows = (s.gains.indemnites ?? []).map((a) => row(a.label, a.amount));
   const gainsRows = [
-    row('Salaire de base', s.gains.base),
+    row(baseLabel, s.gains.base),
     s.gains.heuresSup > 0 ? row('Heures supplémentaires', s.gains.heuresSup) : null,
     ...(indemnitesRows.length > 0
       ? indemnitesRows
@@ -390,20 +505,9 @@ export function renderFicheDePaieHtml(s: FichePaieSnapshot): string {
 
   return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"><style>${BASE_CSS}</style></head>
-<body>${s.documentNumber ? '' : '<div class="draft">Projet</div>'}
+<body>${s.documentNumber ? '' : '<div class="draft">Projet</div>'}${schoolWatermarkHtml(s.employeur)}
 <div class="sheet">
-  <div class="band" style="background:${FP_BLUE}">
-    <div>
-      <div class="org">${esc(s.employeur.raisonSociale)}</div>
-      <div class="org-sub">${esc(s.employeur.adresse)}${s.employeur.ifu ? ' · IFU ' + esc(s.employeur.ifu) : ''}${s.employeur.rccm ? ' · RCCM ' + esc(s.employeur.rccm) : ''}</div>
-      ${s.employeur.cnss ? `<div class="org-sub">N° employeur CNSS ${esc(s.employeur.cnss)}</div>` : ''}
-    </div>
-    <div class="doc">
-      <div class="type">Fiche de paie</div>
-      <div class="num">N° ${num}</div>
-      <div class="num">Période : ${esc(s.period.label)}</div>
-    </div>
-  </div>
+  ${schoolBandHtml(s.employeur, FP_BLUE, docBandHtml('Fiche de paie', num, s.period.label))}
 
   <div class="identity">
     <div>
@@ -419,6 +523,7 @@ export function renderFicheDePaieHtml(s: FichePaieSnapshot): string {
       ${s.cnssDeclare && s.salarie.cnssNumber ? `<p>N° immatriculation CNSS : <span class="hl">${esc(s.salarie.cnssNumber)}</span></p>` : ''}
       <p>Ancienneté : ${esc(s.salarie.anciennete)}${s.salarie.ancienneteDepuis ? ` (depuis le ${fmtDateFr(s.salarie.ancienneteDepuis)})` : ''}</p>
       <p>Jours travaillés (ouvrés) : ${s.salarie.joursTravailles}</p>
+      ${presences ? `<p>Présences pointées : <span class="hl">${presences.daysPresent}/${presences.daysExpected} j</span> · taux ${presencePct} %${presences.noRecords ? ' · aucun pointage sur la période' : ''}${presences.fullBase != null && presences.ratio < 1 ? ` · base entière ${fmtMoney(presences.fullBase)} FCFA` : ''}</p>` : ''}
     </div>
   </div>
 
@@ -478,6 +583,10 @@ export function renderFicheDePaieHtml(s: FichePaieSnapshot): string {
 /** Rendu HTML de l'ÉTAT DE PAIEMENT (identité verte + avertissement). */
 export function renderEtatDePaiementHtml(s: EtatPaiementSnapshot): string {
   const num = s.documentNumber ? esc(s.documentNumber) : 'PROJET — NON ÉMIS';
+  // ⭐ 22/11/2026 — proration par présences (si la période est en mode
+  //    « présences ») : taux affiché dans l'identité prestation.
+  const presences = s.presences ?? null;
+  const presencePct = presences ? fmtPctFr(Math.round(presences.ratio * 1000) / 10) : null;
   const modeLine =
     s.prestataire.mode === 'FORFAIT'
       ? 'Rémunération : forfait convenu'
@@ -499,23 +608,15 @@ export function renderEtatDePaiementHtml(s: EtatPaiementSnapshot): string {
 
   return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"><style>${BASE_CSS}</style></head>
-<body>${s.documentNumber ? '' : '<div class="draft">Projet</div>'}
+<body>${s.documentNumber ? '' : '<div class="draft">Projet</div>'}${schoolWatermarkHtml(s.employeur)}
 <div class="sheet">
   <div class="warn-box">
     <div class="t">⚠ Avertissement — nature juridique du document</div>
     <div class="m">${esc(s.mention)}</div>
   </div>
 
-  <div class="band" style="background:${EP_GREEN};margin-top:10px">
-    <div>
-      <div class="org">${esc(s.employeur.raisonSociale)}</div>
-      <div class="org-sub">${esc(s.employeur.adresse)}${s.employeur.ifu ? ' · IFU ' + esc(s.employeur.ifu) : ''}${s.employeur.rccm ? ' · RCCM ' + esc(s.employeur.rccm) : ''}</div>
-    </div>
-    <div class="doc">
-      <div class="type">État de paiement</div>
-      <div class="num">N° ${num}</div>
-      <div class="num">Période : ${esc(s.period.label)}</div>
-    </div>
+  <div style="margin-top:10px">
+  ${schoolBandHtml(s.employeur, EP_GREEN, docBandHtml('État de paiement', num, s.period.label))}
   </div>
 
   <div class="identity">
@@ -530,6 +631,7 @@ export function renderEtatDePaiementHtml(s: EtatPaiementSnapshot): string {
       ${modeLine ? `<p>${modeLine}</p>` : ''}
       ${s.prestataire.description ? `<p>Objet : ${esc(s.prestataire.description)}</p>` : ''}
       <p>Période d'exécution : ${fmtDateFr(s.period.startDate)} → ${fmtDateFr(s.period.endDate)}</p>
+      ${presences ? `<p>Présences pointées : <span class="hl">${presences.daysPresent}/${presences.daysExpected} j</span> · taux ${presencePct} %${presences.noRecords ? ' · aucun pointage sur la période' : ''}</p>` : ''}
     </div>
   </div>
 

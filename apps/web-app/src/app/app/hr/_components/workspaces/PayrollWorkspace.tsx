@@ -233,10 +233,19 @@ function PayrollRow({ payroll, index }: { payroll: any; index: number }) {
               </div>
               <div>
                 <h4 className="font-bold text-slate-900 text-sm capitalize">{monthLabel}</h4>
-                <div className="flex items-center gap-2 mt-0.5">
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                   <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase', config.className)}>
                     <StatusIcon className="h-3 w-3" />{config.label}
                   </span>
+                  {/* ⭐ 22/11/2026 — mode de calcul de la période (badge discret) */}
+                  {payroll.attendanceBased && (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border bg-teal-50 text-teal-700 border-teal-200"
+                      title="La base des lignes est proratée par les présences pointées de la période"
+                    >
+                      Présences
+                    </span>
+                  )}
                   <span className="text-[10px] text-slate-400 font-medium">{payroll.itemCount ?? payroll._count?.payrolls ?? 0} bulletins</span>
                 </div>
               </div>

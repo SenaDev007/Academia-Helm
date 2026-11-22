@@ -45,6 +45,9 @@ import {
   MENTION_FICHE_CONSERVATION, MENTION_ETAT_PAIEMENT,
 } from './payroll-document-templates';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
+// ⭐ 22/11/2026 — identité par niveau : le personnel du SECONDAIRE reçoit
+// l'identité du niveau secondaire (onglet Identité) sur ses documents de paie.
+import { resolveLevelIdentityOverlay } from '../../common/context/resolve-level-identity';
 
 const BLANK = '…à compléter';
 
@@ -296,9 +299,24 @@ export class PayrollDocumentsService {
       );
     }
 
-    const employeur = await this.resolveEmployer(tenantId, contract);
+    const employeur = await this.resolveEmployer(tenantId, contract, staff);
     const cnssNumber = staff.employeeCNSS?.cnssNumber || staff.cnssNumber || null;
     const periodEnd = new Date(period.endDate);
+
+    // ⭐ 22/11/2026 — proration par présences (mode « présences » de la
+    //    période) : base de proration figée dans la ligne de paie au calcul.
+    //    Affichée sur la fiche (jours pointés / ouvrés, taux) — traçabilité
+    //    du lien présences ↔ paie exigé par le promoteur.
+    const attendanceRaw = (item as any).attendanceDetail;
+    const presences = attendanceRaw && attendanceRaw.mode === 'ATTENDANCE'
+      ? {
+          daysPresent: Number(attendanceRaw.daysPresent ?? 0),
+          daysExpected: Number(attendanceRaw.daysExpected ?? 0),
+          ratio: Number(attendanceRaw.ratio ?? 1),
+          noRecords: attendanceRaw.noRecords === true,
+          fullBase: attendanceRaw.fullBase != null ? Number(attendanceRaw.fullBase) : null,
+        }
+      : null;
 
     // Cumuls annuels : RECALCULÉS depuis les documents émis (jamais d'incrément stocké)
     const cumuls = await this.recalculateCumuls(staff.id, staff.tenantId, fiscalYear, item);
@@ -343,6 +361,7 @@ export class PayrollDocumentsService {
               : null,
         },
         decompte: { brut, tauxAib, aib, net, indemnites: buildIndemnitesGains(item) },
+        presences,
         cumuls,
         rates: { fiscalYear: rates.fiscalYear, aibPct: tauxAib, sourceNotes: rates.sourceNotes },
         mention: MENTION_ETAT_PAIEMENT,
@@ -417,6 +436,7 @@ export class PayrollDocumentsService {
       retenues,
       net: Number(item.netSalary),
       chargesPatronales,
+      presences,
       cumuls,
       conges,
       rates: { fiscalYear: rates.fiscalYear, cnssSalarialPct: rates.cnssSalarial, sourceNotes: rates.sourceNotes },
@@ -488,10 +508,21 @@ export class PayrollDocumentsService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // IDENTITÉ EMPLOYEUR (fiche R1 > SchoolSettings > IdentityProfile > School > Tenant)
+  // IDENTITÉ EMPLOYEUR — ONGLET IDENTITÉ DU MODULE PARAMÈTRES (source de vérité)
+  // ⭐ 22/11/2026 — retour promoteur : « toutes les informations de l'école ne
+  //    sont pas bien récupérées » + distinction maternelle/primaire vs
+  //    secondaire :
+  //      · personnel de la MATERNELLE/PRIMAIRE → tenant_identity_profiles
+  //        (profil ACTIF de l'onglet Identité) ;
+  //      · personnel du SECONDAIRE → overlay tenant_level_identity_profiles
+  //        (Identité du niveau secondaire du même onglet) — chaque champ non
+  //        vide remplace le champ global ;
+  //      · replis legacy : SchoolSettings → School → Tenant.
+  //    Le LOGO (filigrane + en-tête) suit la même résolution, converti en
+  //    data-URL pour le rendu Puppeteer (aucune requête réseau pendant le PDF).
   // ─────────────────────────────────────────────────────────────────────────
 
-  private async resolveEmployer(tenantId: string, contract?: any): Promise<any> {
+  private async resolveEmployer(tenantId: string, contract?: any, staff?: any): Promise<any> {
     const schoolSettings: any = await this.prisma.schoolSettings.findFirst({ where: { tenantId } }).catch(() => null);
     const identityProfile: any = await this.prisma.tenantIdentityProfile.findFirst({
       where: { tenantId, isActive: true }, orderBy: { version: 'desc' },
@@ -503,22 +534,152 @@ export class PayrollDocumentsService {
     const tenant: any = await this.prisma.tenant.findUnique({ where: { id: tenantId } }).catch(() => null);
     const recruiter: any = await this.prisma.recruiterProfile.findFirst({ where: { tenantId } }).catch(() => null);
 
+    // ⭐ 22/11/2026 — overlay SECONDAIRE : le personnel du secondaire reçoit
+    //    l'identité du niveau secondaire paramétrée dans l'onglet Identité.
+    const overlay = staff
+      ? await resolveLevelIdentityOverlay(this.prisma, tenantId, {
+          schoolLevelId: (staff as any)?.schoolLevelId ?? null,
+        }).catch(() => null)
+      : null;
+    // Champ override non vide → remplace le champ global (maternelle/primaire).
+    const lvl = (field: string): string | null => {
+      const v = (overlay as any)?.[field];
+      return v === null || v === undefined || String(v).trim() === '' ? null : String(v).trim();
+    };
+
     const schoolName =
-      schoolSettings?.schoolName || identityProfile?.schoolName || school?.name || tenant?.name || "L'École";
-    const schoolAddress = schoolSettings?.address || identityProfile?.address || school?.address || BLANK;
-    const schoolCity = schoolSettings?.city || identityProfile?.city || '';
+      lvl('schoolName') ||
+      identityProfile?.schoolName ||
+      schoolSettings?.schoolName ||
+      school?.name ||
+      tenant?.name ||
+      "L'École";
+    const sigle =
+      lvl('schoolAcronym') ||
+      identityProfile?.schoolAcronym ||
+      null;
+    const address =
+      lvl('address') ||
+      identityProfile?.address ||
+      schoolSettings?.address ||
+      school?.address ||
+      BLANK;
+    const city =
+      lvl('city') ||
+      identityProfile?.city ||
+      schoolSettings?.city ||
+      '';
+    const department =
+      lvl('department') ||
+      identityProfile?.department ||
+      null;
+    const telephone =
+      lvl('phonePrimary') ||
+      identityProfile?.phonePrimary ||
+      schoolSettings?.phone ||
+      school?.primaryPhone ||
+      null;
+    const telephone2 =
+      lvl('phoneSecondary') ||
+      identityProfile?.phoneSecondary ||
+      null;
+    const whatsapp = lvl('whatsapp') || identityProfile?.whatsapp || null;
+    const email =
+      lvl('email') ||
+      identityProfile?.email ||
+      schoolSettings?.email ||
+      school?.primaryEmail ||
+      null;
+    const website = lvl('website') || identityProfile?.website || null;
+    const autorisation =
+      identityProfile?.authorizationNumber ||
+      null;
+    const devise = lvl('slogan') || identityProfile?.slogan || null;
+    const pays =
+      lvl('country') ||
+      identityProfile?.country ||
+      null;
+
+    // Logo — overlay secondaire d'abord, profil global ensuite ; data-URL
+    // inline pour Puppeteer (pattern receipt-finance PERF 2026-09-16).
+    const rawLogo = lvl('logoUrl') || identityProfile?.logoUrl || null;
+    const logoUrl = rawLogo ? await this.resolveInlineLogo(rawLogo) : null;
+
+    const adresseParts = [address, city, department].filter((p: any) => p && String(p).trim());
     return {
-      raisonSociale: financialHeader?.denominationSociale || schoolName,
+      // Raison sociale = NOM de l'école (onglet Identité) ; la dénomination
+      // sociale des états financiers reste le repli légal.
+      raisonSociale: schoolName,
+      sigle,
       formeJuridique: financialHeader?.formeJuridique || null,
       rccm: financialHeader?.numeroRC || null,
       ifu: financialHeader?.numeroIF || null,
       cnss: financialHeader?.numeroCNSS || (financialHeader as any)?.cnssNumber || null,
-      adresse: schoolAddress + (schoolCity ? `, ${schoolCity}` : ''),
-      telephone: schoolSettings?.phone || identityProfile?.phonePrimary || school?.primaryPhone || null,
-      email: schoolSettings?.email || identityProfile?.email || school?.primaryEmail || null,
+      autorisation,
+      devise,
+      adresse: adresseParts.join(', '),
+      ville: city || null,
+      departement: department || null,
+      pays,
+      telephone,
+      telephone2,
+      whatsapp,
+      email,
+      website,
+      logoUrl,
       representant: contract?.terms?.employerSignerName || recruiter?.fullName || school?.directorPrimary || 'Le Directeur',
       qualite: (contract?.terms as any)?.employer?.representantQualite || recruiter?.functionLabel || 'Directeur(trice)',
     };
+  }
+
+  /**
+   * ⭐ 22/11/2026 — Résout le logo en data-URL inline pour le HTML Puppeteer
+   * (aucune requête réseau pendant le rendu). Best-effort : renvoie la
+   * valeur brute en cas d'échec. Pattern commun receipt-finance /
+   * class-list-pdf (PERF 2026-09-16).
+   */
+  private async resolveInlineLogo(raw: string | null | undefined): Promise<string | null> {
+    if (!raw) return null;
+    if (raw.startsWith('data:')) return raw;
+    try {
+      if (/^https?:\/\//.test(raw)) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 5000);
+        try {
+          const r = await fetch(raw, { signal: ctrl.signal });
+          if (r.ok) {
+            const ct = r.headers.get('content-type') || 'image/png';
+            const buf = Buffer.from(await r.arrayBuffer());
+            return `data:${ct};base64,${buf.toString('base64')}`;
+          }
+        } finally {
+          clearTimeout(timer);
+        }
+        return raw;
+      }
+      // Chemin de fichier local (uploads) → lecture disque + base64.
+      const fs = await import('fs');
+      const pathMod = await import('path');
+      const candidates = [
+        raw,
+        pathMod.join(process.cwd(), String(raw).replace(/^\//, '')),
+        pathMod.join(process.cwd(), 'uploads', String(raw).replace(/^(\/)?uploads\/?/, '')),
+      ];
+      for (const c of candidates) {
+        try {
+          if (fs.existsSync(c) && fs.statSync(c).isFile()) {
+            const buf = fs.readFileSync(c);
+            const ext = pathMod.extname(c).toLowerCase();
+            const ct = ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif'
+              : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+            return `data:${ct};base64,${buf.toString('base64')}`;
+          }
+        } catch { /* essai suivant */ }
+      }
+      return raw;
+    } catch {
+      return raw;
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────

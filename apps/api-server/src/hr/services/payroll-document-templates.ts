@@ -106,6 +106,14 @@ export interface FichePaieSnapshot {
   statutContractuel: 'SALARIE_DECLARE' | 'SALARIE_NON_DECLARE';
   cnssDeclare: boolean;
   documentNumber: string | null; // null en prévisualisation
+  /** ⭐ 163 — version du gabarit de rendu : un PDF archivé dont le snapshot
+   *  porte une version antérieure (ou absente) est RÉ-ÉDITÉ au téléchargement
+   *  (identité école + logo filigrane + QR actualisés) — les données
+   *  financières FIGÉES restent strictement inchangées. */
+  renderVersion?: number;
+  /** ⭐ 163 — date d'émission réelle (ISO) : pied « Émis le … » fidèle à
+   *  l'émission d'origine, y compris sur un PDF ré-édité plus tard. */
+  issuedAt?: string | null;
   period: PeriodInfo;
   fiscalYear: number;
   employeur: EmployerIdentity;
@@ -160,6 +168,10 @@ export interface EtatPaiementSnapshot {
   kind: 'ETAT_DE_PAIEMENT';
   statutContractuel: 'PRESTATAIRE_SERVICE';
   documentNumber: string | null; // null en prévisualisation
+  /** ⭐ 163 — voir FichePaieSnapshot.renderVersion (ré-édition du rendu). */
+  renderVersion?: number;
+  /** ⭐ 163 — voir FichePaieSnapshot.issuedAt (date d'émission réelle). */
+  issuedAt?: string | null;
   period: PeriodInfo;
   fiscalYear: number;
   employeur: EmployerIdentity;
@@ -204,6 +216,19 @@ export const MENTION_ETAT_PAIEMENT =
 
 export const MENTION_CHARGES_PATRONALES =
   "Charges patronales calculées à titre informatif — provisionnées pour la déclaration CNSS de l'employeur, NON déduites du net à payer.";
+
+/**
+ * ⭐ 163 — VERSION DU GABARIT FP/EP. Historique :
+ *   · (sans version) — émissions antérieures : identité incomplète, logo
+ *     diagonal ou absent selon l'époque, pas de QR, tampon « Projet » ;
+ *   · v3 — retour promoteur 163 : logo filigrane DROIT (exactement comme
+ *     présenté dans l'onglet Identité — AUCUNE rotation), suppression du
+ *     tampon « Projet » (ce mot n'a pas de sens métier sur le document), QR
+ *     de vérification, identité complète de l'école par niveau.
+ * Un document archivé dont le snapshot porte une version < v3 est RÉ-ÉDITÉ
+ * au téléchargement (données figées inchangées — présentation actualisée).
+ */
+export const PAYROLL_DOCUMENT_RENDER_VERSION = 3;
 
 // ─── Helpers de formatage (purs) ───────────────────────────────────────────
 
@@ -334,11 +359,11 @@ export function computeConges(opts: {
 // ─── Gabarits HTML — deux identités visuelles DISTINCTES ───────────────────
 
 /**
- * ⭐ 22/11/2026 — FILIGRANE logo : centré, très léger — traverse le document
- * (fiche de paie ET état de paiement) sans gêner la lecture.
- * ⭐ 161 — 22/11/2026 — retour promoteur : le logo doit être PENCHÉ EN
- * DIAGONALE (45°) — pas droit à la verticale, pas « à moitié incliné » :
- * c'est le vrai filigrane diagonal classique des documents officiels.
+ * FILIGRANE logo école — centré, très léger (traverse la fiche de paie ET
+ * l'état de paiement sans gêner la lecture).
+ * ⭐ 163 — retour promoteur : le logo reste DROIT, EXACTEMENT comme présenté
+ * dans l'onglet Identité — AUCUNE rotation (la diagonale de la v161 est
+ * abandonnée : « pourquoi changer l'angle de positionnement du logo ? »).
  */
 function schoolWatermarkHtml(e: EmployerIdentity): string {
   return e.logoUrl
@@ -392,12 +417,15 @@ function schoolBandHtml(e: EmployerIdentity, color: string, docHtml: string): st
   </div>${contactsStrip}`;
 }
 
-/** Bloc de droite du bandeau — titre du document + numéro + période. */
-function docBandHtml(type: string, num: string, periodLabel: string): string {
+/** Bloc de droite du bandeau — titre du document + numéro + période.
+ * ⭐ 163 — `numHtml` est un libellé PRÊT À RENDRE : « N° FP-2026-000123 » ou
+ * « Non émis » en prévisualisation (le mot « Projet » disparaît — retour
+ * promoteur : ce mot n'avait pas de sens métier sur le document). */
+function docBandHtml(type: string, numHtml: string, periodLabel: string): string {
   return `
     <div class="doc">
       <div class="type">${esc(type)}</div>
-      <div class="num">N° ${esc(num)}</div>
+      <div class="num">${numHtml}</div>
       <div class="num">Période : ${esc(periodLabel)}</div>
     </div>`;
 }
@@ -406,11 +434,12 @@ const BASE_CSS = `
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1f2937; font-size: 11px; line-height: 1.45; }
   .sheet { padding: 28px 34px 22px; }
-  /* ⭐ 22/11/2026 — logo en FILIGRANE (demande promoteur) : centré, très léger
-     — il traverse tout le document sans gêner la lecture.
-     ⭐ 161 — DIAGONALE VRAIE (45°) exigée par le promoteur : ni vertical, ni
-     penché d'un angle intermédiaire — le logo traverse la feuille de coin. */
-  .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); z-index: 0; opacity: .06; pointer-events: none; }
+  /* FILIGRANE logo (demande promoteur) : centré, très léger — il traverse
+     tout le document sans gêner la lecture.
+     ⭐ 163 — logo DROIT, EXACTEMENT comme présenté dans l'onglet Identité :
+     aucune rotation (la diagonale 45° de la v161 est abandonnée sur retour
+     promoteur — « le logo doit être droit »). */
+  .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 0; opacity: .06; pointer-events: none; }
   .watermark img { width: 330px; height: auto; }
   .band { color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px 4px 0 0; }
   .band .org-wrap { display: flex; gap: 12px; align-items: center; max-width: 68%; }
@@ -457,7 +486,6 @@ const BASE_CSS = `
   .footer .qr-wrap { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .footer .qr-wrap img { width: 62px; height: 62px; }
   .footer .qr-wrap .cap { font-size: 7.2px; color: #6b7280; text-align: right; line-height: 1.35; }
-  .draft { position: fixed; top: 42%; left: 50%; transform: translate(-50%, -50%) rotate(-24deg); font-size: 42px; font-weight: 900; color: rgba(107, 114, 128, .16); letter-spacing: 8px; text-transform: uppercase; }
   /* ⭐ 161 — respect des limites en impression multi-pages : l'en-tête de
      tableau se RÉPÈTE sur chaque page (table-header-group), aucune ligne
      n'est coupée en deux (tr insécable), les blocs signatures / footer /
@@ -478,7 +506,9 @@ function fmtPctFr(n: number): string {
 
 /** Rendu HTML de la FICHE DE PAIE (identité bleu nuit). */
 export function renderFicheDePaieHtml(s: FichePaieSnapshot): string {
-  const num = s.documentNumber ? esc(s.documentNumber) : 'PROJET — NON ÉMIS';
+  // ⭐ 163 — libellé du numéro : « N° FP-2026-000123 » émis, « Non émis » en
+  //    prévisualisation — le mot « Projet » (tampon hérité) disparaît.
+  const num = s.documentNumber ? `N° ${esc(s.documentNumber)}` : 'Non émis';
   // ⭐ 22/11/2026 — proration par présences : libellé de base et taux.
   const presences = s.presences ?? null;
   const presencePct = presences ? fmtPctFr(Math.round(presences.ratio * 1000) / 10) : null;
@@ -528,7 +558,7 @@ export function renderFicheDePaieHtml(s: FichePaieSnapshot): string {
 
   return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"><style>${BASE_CSS}</style></head>
-<body>${s.documentNumber ? '' : '<div class="draft">Projet</div>'}${schoolWatermarkHtml(s.employeur)}
+<body>${schoolWatermarkHtml(s.employeur)}
 <div class="sheet">
   ${schoolBandHtml(s.employeur, FP_BLUE, docBandHtml('Fiche de paie', num, s.period.label))}
 
@@ -600,7 +630,7 @@ export function renderFicheDePaieHtml(s: FichePaieSnapshot): string {
     <div class="qr-wrap">
       ${s.qrDataUrl
         ? `<span class="cap">Vérification d'authenticité<br/>(scan du code)</span><img src="${s.qrDataUrl}" alt="vérification" />`
-        : `<span class="cap">Exercice fiscal ${esc(String(s.fiscalYear))} · Barème ${esc(String(s.rates.fiscalYear))}${s.documentNumber ? ` · Émis le ${fmtDateTimeFr(new Date().toISOString())}` : ' · PRÉVISUALISATION'}</span>`}
+        : `<span class="cap">Exercice fiscal ${esc(String(s.fiscalYear))} · Barème ${esc(String(s.rates.fiscalYear))}${s.documentNumber ? ` · Émis le ${fmtDateTimeFr(s.issuedAt ?? new Date().toISOString())}` : ' · PRÉVISUALISATION'}</span>`}
     </div>
   </div>
 </div>
@@ -609,7 +639,9 @@ export function renderFicheDePaieHtml(s: FichePaieSnapshot): string {
 
 /** Rendu HTML de l'ÉTAT DE PAIEMENT (identité verte + avertissement). */
 export function renderEtatDePaiementHtml(s: EtatPaiementSnapshot): string {
-  const num = s.documentNumber ? esc(s.documentNumber) : 'PROJET — NON ÉMIS';
+  // ⭐ 163 — libellé du numéro : « N° EP-2026-000045 » émis, « Non émis » en
+  //    prévisualisation — le mot « Projet » (tampon hérité) disparaît.
+  const num = s.documentNumber ? `N° ${esc(s.documentNumber)}` : 'Non émis';
   // ⭐ 22/11/2026 — proration par présences (si la période est en mode
   //    « présences ») : taux affiché dans l'identité prestation.
   const presences = s.presences ?? null;
@@ -635,7 +667,7 @@ export function renderEtatDePaiementHtml(s: EtatPaiementSnapshot): string {
 
   return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"><style>${BASE_CSS}</style></head>
-<body>${s.documentNumber ? '' : '<div class="draft">Projet</div>'}${schoolWatermarkHtml(s.employeur)}
+<body>${schoolWatermarkHtml(s.employeur)}
 <div class="sheet">
   <div class="warn-box">
     <div class="t">⚠ Avertissement — nature juridique du document</div>
@@ -705,7 +737,7 @@ export function renderEtatDePaiementHtml(s: EtatPaiementSnapshot): string {
     <div class="qr-wrap">
       ${s.qrDataUrl
         ? `<span class="cap">Vérification d'authenticité<br/>(scan du code)</span><img src="${s.qrDataUrl}" alt="vérification" />`
-        : `<span class="cap">Exercice fiscal ${esc(String(s.fiscalYear))}${s.documentNumber ? ` · Émis le ${fmtDateTimeFr(new Date().toISOString())}` : ' · PRÉVISUALISATION'}</span>`}
+        : `<span class="cap">Exercice fiscal ${esc(String(s.fiscalYear))}${s.documentNumber ? ` · Émis le ${fmtDateTimeFr(s.issuedAt ?? new Date().toISOString())}` : ' · PRÉVISUALISATION'}</span>`}
     </div>
   </div>
 </div>

@@ -46,6 +46,7 @@ import {
   renderFicheDePaieHtml, renderEtatDePaiementHtml,
   monthLabel, joursOuvres, ancienneteLabel, computeConges, formatDocumentNumber,
   MENTION_FICHE_CONSERVATION, MENTION_ETAT_PAIEMENT,
+  PAYROLL_DOCUMENT_RENDER_VERSION,
 } from './payroll-document-templates';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 // ⭐ 22/11/2026 — Notification in-app au personnel à l'émission de sa paie :
@@ -77,7 +78,7 @@ export class PayrollDocumentsService {
   async previewDocument(payrollItemId: string, tenantId: string) {
     const ctx = await this.loadContext(payrollItemId, tenantId);
     // ⭐ 162 — prévisualisation d'une ligne DÉJÀ ÉMISE : le VRAI numéro du
-    //    document émis (FP-2026-000123) remplace le tampon « PROJET — NON ÉMIS »
+    //    document émis (FP-2026-000123) remplace le libellé « Non émis »
     //    — l'aperçu d'une ligne émise est conforme au document scellé (même
     //    numéro, même QR) : le RH voit exactement le gabarit actuel.
     const snapshot = await this.buildSnapshot(ctx, {
@@ -355,9 +356,36 @@ export class PayrollDocumentsService {
     }
   }
 
-  /** PDF émis — fichier archivé tel quel (jamais régénéré) + contrôle du hash. */
+  /**
+   * ⭐ 163 — TÉLÉCHARGEMENT + RÉ-ÉDITION DU RENDU AU GABARIT ACTUEL.
+   *
+   * Retour promoteur : les fiches / états ÉMIS AVANT l'identité complète,
+   * le logo filigrane DROIT et le QR doivent les porter AUSSI au
+   * téléchargement. Le snapshot FIGÉ (montants, numéro, cumuls, mentions)
+   * reste STRICTEMENT inchangé — seule la PRÉSENTATION (identité de
+   * l'école résolue à l'instant, logo filigrane, QR) est actualisée ; le
+   * PDF est re-scellé (nouveau SHA-256) et re-archivé.
+   *
+   *   · snapshot.renderVersion < v3 (émission antérieure) → ré-édition ;
+   *   · gabarit courant MAIS logo apparu DEPUIS l'émission (l'école a
+   *     configuré son logo dans l'onglet Identité après coup) → ré-édition ;
+   *   · sinon → le PDF archivé tel quel + contrôle du hash (comme avant).
+   */
   async downloadDocument(id: string, tenantId: string): Promise<{ buffer: Buffer; document: any }> {
     const doc = await this.getDocument(id, tenantId);
+
+    // Ré-édition au gabarit actuel si le rendu archivé est antérieur
+    // (best-effort : un échec ne bloque JAMAIS le téléchargement — repli
+    // sur le fichier scellé d'origine).
+    try {
+      const refreshed = await this.refreshDocumentRendering(doc);
+      if (refreshed) return refreshed;
+    } catch (err: any) {
+      this.logger.warn(
+        `Ré-édition impossible pour ${doc.documentNumber} (repli sur le PDF archivé) : ${err?.message}`,
+      );
+    }
+
     if (!doc.filePath) {
       throw new NotFoundException('Aucun fichier PDF archivé pour ce document.');
     }
@@ -373,6 +401,83 @@ export class PayrollDocumentsService {
     return { buffer, document: doc };
   }
 
+  /**
+   * ⭐ 163 — Ré-édite le rendu PDF d'un document émis au GABARIT ACTUEL :
+   * identité de l'école (onglet Identité — maternelle/primaire ou secondaire
+   * via overlay), logo filigrane DROIT, QR de vérification. Les données
+   * FINANCIÈRES du snapshot figé ne sont jamais retouchées.
+   * @returns null quand AUCUNE actualisation n'est nécessaire (gabarit
+   *          courant + logo déjà présent / école sans logo) → l'appelant
+   *          sert le PDF scellé d'origine.
+   */
+  private async refreshDocumentRendering(doc: any): Promise<{ buffer: Buffer; document: any } | null> {
+    const snapshot: any = doc?.snapshot;
+    if (!snapshot || !doc?.documentType || !doc?.id) return null;
+
+    const versionCurrent = Number(snapshot.renderVersion ?? 0) >= PAYROLL_DOCUMENT_RENDER_VERSION;
+    // Fast-path : gabarit courant ET logo déjà embarqué → rien à faire.
+    if (versionCurrent && snapshot.employeur?.logoUrl) return null;
+
+    // Identité de présentation ACTUELLE (même résolution que l'émission :
+    // onglet Identité + overlay secondaire selon le niveau du personnel).
+    const staff: any = await this.prisma.staff
+      .findUnique({
+        where: { id: doc.staffId },
+        include: {
+          contracts: {
+            where: { status: { in: ['ACTIVE', 'PENDING'] } },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+      })
+      .catch(() => null);
+    const contract = staff?.contracts?.[0] ?? null;
+    const freshEmployer = await this.resolveEmployer(doc.tenantId, contract, staff).catch(() => null);
+
+    // Gabarit courant, école TOUJOURS sans logo → le scellé reste tel quel.
+    if (versionCurrent && !snapshot.employeur?.logoUrl && !freshEmployer?.logoUrl) return null;
+
+    // ── Ré-édition : snapshot figé + présentation actualisée ──
+    const merged: any = { ...snapshot };
+    if (freshEmployer) merged.employeur = freshEmployer;
+    // QR manquant (émission pré-162) → reconstruit depuis le numéro émis.
+    if (!merged.qrDataUrl) {
+      merged.qrDataUrl = await this.buildDocumentQrDataUrl({
+        doc: doc.documentType,
+        ref: doc.documentNumber,
+        periode: String(doc.periodLabel || ''),
+        net: Number(merged.net ?? merged.decompte?.net ?? 0),
+      });
+    }
+    // Pied « Émis le … » fidèle à la date d'émission d'ORIGINE.
+    merged.issuedAt = doc.issuedAt ? new Date(doc.issuedAt).toISOString() : (merged.issuedAt ?? null);
+    merged.renderVersion = PAYROLL_DOCUMENT_RENDER_VERSION;
+
+    const html =
+      doc.documentType === 'ETAT_DE_PAIEMENT'
+        ? renderEtatDePaiementHtml(merged as EtatPaiementSnapshot)
+        : renderFicheDePaieHtml(merged as FichePaieSnapshot);
+    const pdfBuffer = await this.renderPdf(html);
+    const contentHash = createHash('sha256').update(pdfBuffer).digest('hex');
+    const filePath = await this.savePdf(doc.tenantId, doc.documentNumber, { fiscalYear: doc.fiscalYear }, pdfBuffer);
+
+    const updated = await this.prisma.payrollDocument.update({
+      where: { id: doc.id },
+      data: {
+        snapshot: merged as any,
+        contentHash,
+        filePath,
+        ...prismaUpdateDefaults(),
+      },
+    });
+    this.logger.log(
+      `♻️ Ré-édition du rendu ${doc.documentNumber} au gabarit v${PAYROLL_DOCUMENT_RENDER_VERSION} — ` +
+        `données figées inchangées ; identité école + logo filigrane + QR actualisés (nouveau sceau ${fmtHash(contentHash)})`,
+    );
+    return { buffer: pdfBuffer, document: updated };
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // ⭐ 161 — 22/11/2026 — ONGLET CNSS (module Impôts) : PDF CONFORME AU MODÈLE
   //
@@ -382,7 +487,7 @@ export class PayrollDocumentsService {
   // VRAI document du module Paie :
   //   · ligne de paie réelle du mois (PayrollItem) → snapshot EXACT de la
   //     prévisualisation/émission (mêmes gabarits FP bleu nuit / EP vert,
-  //     filigrane diagonal, identité complète de l'école) ;
+  //     filigrane logo DROIT, identité complète de l'école) ;
   //   · sinon (mois sans paie générée) → snapshot reconstruit depuis la
   //     fiche fiscale (tax_payslips) sur les MÊMES gabarits.
   // Le type reste TOUJOURS dérivé du statut contractuel : prestataire →
@@ -779,6 +884,10 @@ export class PayrollDocumentsService {
         kind: 'ETAT_DE_PAIEMENT',
         statutContractuel: 'PRESTATAIRE_SERVICE',
         documentNumber: opts.documentNumber ?? null,
+        // ⭐ 163 — version du gabarit (ré-édition auto. du PDF archivé si
+        //    antérieure) + date d'émission réelle pour le pied « Émis le … ».
+        renderVersion: PAYROLL_DOCUMENT_RENDER_VERSION,
+        issuedAt: opts.issuedAt ? new Date(opts.issuedAt).toISOString() : null,
         period,
         fiscalYear,
         employeur,
@@ -858,6 +967,10 @@ export class PayrollDocumentsService {
       statutContractuel: statut,
       cnssDeclare,
       documentNumber: opts.documentNumber ?? null,
+      // ⭐ 163 — version du gabarit (ré-édition auto. du PDF archivé si
+      //    antérieure) + date d'émission réelle pour le pied « Émis le … ».
+      renderVersion: PAYROLL_DOCUMENT_RENDER_VERSION,
+      issuedAt: opts.issuedAt ? new Date(opts.issuedAt).toISOString() : null,
       period,
       fiscalYear,
       employeur,

@@ -126,9 +126,9 @@ export class TaxPdfService {
   }> {
     // ⭐ 161 — 22/11/2026 — DÉLÉGATION au module Paie (retour promoteur) :
     // le bouton PDF de l'onglet CNSS doit produire le document CONFORME AU
-    // MODÈLE ÉTABLI (fiche FP bleu nuit / état de paiement EP vert, filigrane
-    // diagonal, identité complète de l'école) — et pour les VACATAIRES un
-    // ÉTAT DE PAIEMENT, pas une « fiche de paie » maison.
+    // MODÈLE ÉTABLI (fiche FP bleu nuit / état de paiement EP vert, logo en
+    // filigrane DROIT, identité complète de l'école) — et pour les VACATAIRES
+    // un ÉTAT DE PAIEMENT, pas une « fiche de paie » maison.
     try {
       const documentsService = this.moduleRef.get(PayrollDocumentsService, { strict: false });
       if (documentsService?.renderTaxPayslipPdf) {

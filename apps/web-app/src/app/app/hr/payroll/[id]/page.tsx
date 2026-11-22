@@ -118,8 +118,8 @@ export default function PayrollDetailPage() {
   const [registerLoading, setRegisterLoading] = useState(false);
   // ⭐ 162 — VISIONNEUSE INTÉGRÉE (retour promoteur : « l'aperçu doit ouvrir au
   //    sein de l'application, pas un écran externe ») : le bulletin (PDF) et
-  //    les documents FP/EP (HTML — identité école complète, filigrane
-  //    diagonal, QR) s'affichent dans un modal IN-APP ; « Télécharger »
+  //    les documents FP/EP (HTML — identité école complète, logo en filigrane
+  //    DROIT, QR) s'affichent dans un modal IN-APP ; « Télécharger »
   //    télécharge le fichier localement — plus jamais de nouvel onglet.
   const [viewer, setViewer] = useState<{
     kind: 'html' | 'pdf';
@@ -954,7 +954,7 @@ export default function PayrollDetailPage() {
                               {/* ⭐ 162 — APERÇU TOUJOURS VISIBLE (même après
                                   émission) : le RH voit le gabarit ACTUEL —
                                   identité école complète (maternelle/primaire
-                                  ou secondaire), filigrane diagonal, QR —
+                                  ou secondaire), logo en filigrane, QR —
                                   directement DANS l'application. */}
                               <button
                                 onClick={() => handlePreviewDocument(payroll.id, doc.documentType === 'ETAT_DE_PAIEMENT' ? 'état de paiement' : 'fiche de paie')}
@@ -1083,7 +1083,7 @@ export default function PayrollDetailPage() {
                 <p className="text-white/70 text-xs mt-0.5">
                   {viewer.kind === 'pdf'
                     ? 'Aperçu intégré du bulletin — bouton « Télécharger » pour enregistrer le PDF'
-                    : 'Aperçu intégré du document officiel — identité de l\u2019école, filigrane diagonal et QR de vérification'}
+                    : 'Aperçu intégré du document officiel — identité de l\u2019école, logo en filigrane et QR de vérification'}
                 </p>
               </div>
             </div>
@@ -1109,7 +1109,7 @@ export default function PayrollDetailPage() {
           <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
             <p className="text-[10px] text-slate-500 leading-relaxed max-w-[58%]">
               {viewer.kind === 'html'
-                ? 'Prévisualisation du gabarit officiel. Le PDF émis est scellé (SHA-256) au moment de l\u2019émission — le document déjà émis conserve son rendu d\u2019origine, les nouvelles émissions utilisent ce gabarit.'
+                ? 'Prévisualisation du gabarit officiel. Le PDF téléchargé est scellé (SHA-256) : les données financières restent figées, le rendu (identité de l\u2019école, logo en filigrane, QR) est actualisé au gabarit courant si nécessaire.'
                 : 'Aperçu du bulletin tel qu\u2019il sera imprimé — en-tête et pied de page répétés sur chaque page.'}
             </p>
             <div className="flex items-center gap-2">

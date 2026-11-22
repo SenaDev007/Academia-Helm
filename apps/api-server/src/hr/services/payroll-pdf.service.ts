@@ -102,7 +102,7 @@ export class PayrollPdfService {
 
     // 1. Résoudre l'identité COMPLÈTE de l'école (onglet Identité du module
     //    Paramètres — maternelle/primaire, ou niveau secondaire via overlay)
-    //    + logo en data-URL (filigrane diagonal + en-tête du bulletin).
+    //    + logo en data-URL (filigrane DROIT + en-tête du bulletin).
     const school = await this.resolveSchoolIdentity(tenantId, payrollItem.staff);
 
     // ⭐ 161 — QR CODE de vérification (retour promoteur) : l'identifiant ne
@@ -277,8 +277,9 @@ export class PayrollPdfService {
   /**
    * Génère le HTML du bulletin de paie avec labels régionaux.
    *
-   * ⭐ 161 — refonte du gabarit (retour promoteur) :
-   *   · filigrane logo PENCHÉ EN DIAGONALE (45°) ;
+   * ⭐ 163 — retour promoteur : filigrane logo DROIT, exactement comme
+   *   présenté dans l'onglet Identité (la diagonale 45° de la v161 est
+   *   abandonnée : « pourquoi changer l'angle de positionnement du logo ? ») ;
    *   · plus AUCUN identifiant en clair — la référence est encodée dans un
    *     QR code discret en pied de page ;
    *   · identité visuelle alignée sur les gabarits FP/EP (bandeau école,
@@ -320,8 +321,9 @@ export class PayrollPdfService {
 
     // Filigrane + en-tête logo (onglet Identité — maternelle/primaire ou
     // niveau secondaire selon le personnel).
-    // ⭐ 161 — DIAGONALE VRAIE : rotate(-45deg) (le promoteur exige un logo
-    // penché en diagonale, pas droit à la verticale).
+    // ⭐ 163 — logo DROIT (retour promoteur : le logo reste EXACTEMENT comme
+    // présenté dans l'onglet Identité — AUCUNE rotation, la diagonale de la
+    // v161 est abandonnée).
     const watermark = school?.logoUrl
       ? `<div class="watermark"><img src="${school.logoUrl}" alt="logo" /></div>`
       : '';
@@ -359,9 +361,11 @@ export class PayrollPdfService {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1f2937; font-size: 11px; line-height: 1.45; }
-    /* ⭐ 161 — logo en FILIGRANE DIAGONAL (45°) : traverse la feuille de coin,
-       très léger, sans gêner la lecture — sur CHAQUE page du bulletin. */
-    .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); z-index: 0; opacity: .06; pointer-events: none; }
+    /* FILIGRANE logo (demande promoteur) : centré, très léger — traverse la
+       feuille sans gêner la lecture — sur CHAQUE page du bulletin.
+       ⭐ 163 — logo DROIT, exactement comme présenté dans l'onglet Identité :
+       aucune rotation (retour promoteur — la diagonale 45° est abandonnée). */
+    .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 0; opacity: .06; pointer-events: none; }
     .watermark img { width: 330px; height: auto; }
     .band { background: #1e3a5f; color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px 4px 0 0; }
     .band .org-wrap { display: flex; gap: 12px; align-items: center; max-width: 66%; }

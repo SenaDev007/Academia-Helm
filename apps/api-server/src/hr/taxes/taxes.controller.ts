@@ -25,7 +25,7 @@ import { TaxSettingsService, TaxSettingsData } from './services/tax-settings.ser
 import { FinancialStatementService } from './services/financial-statement.service';
 import { TaxDeclarationService } from './services/tax-declaration.service';
 import { FinancialNoteService } from './services/financial-note.service';
-import { PayrollService } from './services/payroll.service';
+import { PayrollService, fiscalStaffType } from './services/payroll.service';
 import { TaxPdfService } from './services/tax-pdf.service';
 import { TaxExcelService } from './services/tax-excel.service';
 
@@ -65,21 +65,85 @@ export class TaxesController {
     const tid = t?.id;
     if (!tid || !academicYearId) throw new BadRequestException('academicYearId requis');
 
-    const [summary, declarations] = await Promise.all([
+    // ⭐ 156 — STATISTIQUES RÉELLES : l'ancien tableau de bord ne lisait que
+    //    les états financiers SYSCOHADA (saisie MANUELLE — 0 tant que le
+    //    bilan n'est pas rempli) et les seules déclarations PAID/SUBMITTED
+    //    (0 quand tout était en brouillon) : les 4 statistiques paraissaient
+    //    « ne pas fonctionner ». Désormais : masse salariale, cotisations
+    //    CNSS, effectif (permanents = déclarés CNSS / vacataires =
+    //    prestataires & non déclarés) et charges fiscales TOUTES déclarations.
+    const [summary, declarations, payrollAgg, staffRows] = await Promise.all([
       this.financialStatementService.getSummary(tid, academicYearId),
       this.taxDeclarationService.listByType(tid, academicYearId),
+      this.prisma.payrollItem.aggregate({
+        where: { tenantId: tid, academicYearId },
+        _sum: {
+          grossSalary: true,
+          cnssEmployee: true,
+          cnssEmployer: true,
+          netSalary: true,
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.staff.findMany({
+        where: { tenantId: tid, status: { not: 'ARCHIVED' } },
+        select: {
+          statutContractuel: true,
+          cnssNumber: true,
+          employeeCNSS: { select: { cnssNumber: true, isActive: true } },
+        },
+      }),
     ]);
 
-    // Calculer le total des charges fiscales
+    let permanents = 0;
+    let vacataires = 0;
+    for (const s of staffRows) {
+      if (fiscalStaffType(s as any) === 'PERMANENT') permanents++;
+      else vacataires++;
+    }
+
+    let masseSalariale = Number(payrollAgg._sum?.grossSalary ?? 0);
+    let cnssOuvriere = Number(payrollAgg._sum?.cnssEmployee ?? 0);
+    let cnssPatronale = Number(payrollAgg._sum?.cnssEmployer ?? 0);
+    let netVerse = Number(payrollAgg._sum?.netSalary ?? 0);
+    if (!masseSalariale && !cnssOuvriere && !cnssPatronale) {
+      // Repli : fiches fiscales générées sans le module Paie (tax_payslips)
+      const slipAgg = await this.prisma.taxPayslip.aggregate({
+        where: { tenantId: tid, academicYearId },
+        _sum: {
+          salaireBrut: true,
+          cnssOuvriere: true,
+          cnssPatronale: true,
+          netAPayer: true,
+        },
+      });
+      masseSalariale = Number(slipAgg._sum?.salaireBrut ?? 0);
+      cnssOuvriere = Number(slipAgg._sum?.cnssOuvriere ?? 0);
+      cnssPatronale = Number(slipAgg._sum?.cnssPatronale ?? 0);
+      netVerse = Number(slipAgg._sum?.netAPayer ?? 0);
+    }
+
+    // Charges fiscales : TOUTES les déclarations (brouillon + déposées +
+    // payées) — l'ancien filtre PAID/SUBMITTED renvoyait 0 en brouillon.
     const totalTax = declarations
-      .filter(d => d.status === 'PAID' || d.status === 'SUBMITTED')
-      .reduce((sum, d) => sum + Number(d.totalAmount), 0);
+      .filter(d => ['DRAFT', 'SUBMITTED', 'PAID'].includes(d.status))
+      .reduce((sum, d) => sum + Number(d.totalAmount || 0), 0);
 
     return {
       ...summary,
       totalTax,
       declarationsCount: declarations.length,
       pendingDeclarations: declarations.filter(d => d.status === 'DRAFT').length,
+      // ⭐ 156 — statistiques réelles (paie + effectif + déclarations)
+      masseSalariale,
+      netVerse,
+      cotisationsCnss: {
+        ouvriere: cnssOuvriere,
+        patronale: cnssPatronale,
+        total: cnssOuvriere + cnssPatronale,
+      },
+      effectif: { permanents, vacataires, total: staffRows.length },
+      lignesDePaie: Number(payrollAgg._count ?? 0),
     };
   }
 
@@ -233,6 +297,8 @@ export class TaxesController {
         employeeNumber: true,
         tenantMatricule: true,
         hireDate: true,
+        statutContractuel: true,
+        employeeCNSS: { select: { cnssNumber: true, isActive: true } },
         // Champs supplémentaires du fichier Excel
         qualifications: true,    // Diplôme
         gender: true,
@@ -246,7 +312,11 @@ export class TaxesController {
     return staff.map(s => ({
       ...s,
       salary: Number(s.salary || 0),
-      staffType: s.contractType === 'VACATAIRE' ? 'VACATAIRE' : 'PERMANENT',
+      // ⭐ 156 — règle fiscale : PERMANENT = déclaré à la CNSS (SALARIE_DECLARE
+      //    ou n° CNSS actif) ; VACATAIRE = prestataire / non déclaré. L'ancien
+      //    contractType ne matchait aucun dossier → les filtres ne filtraient
+      //    rien et la colonne vacataire restait vide.
+      staffType: fiscalStaffType(s as any),
       displayName: `${s.firstName} ${s.lastName}`,
       diploma: s.qualifications || '',     // Alias pour Diplôme
       grade: s.position || '',             // Alias pour Grade/Expériences

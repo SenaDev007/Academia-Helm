@@ -16,6 +16,7 @@ import { FinancialNoteService } from './services/financial-note.service';
 import { PayrollService } from './services/payroll.service';
 import { TaxPdfService } from './services/tax-pdf.service';
 import { TaxExcelService } from './services/tax-excel.service';
+import { PayrollEngineService } from '../services/payroll-engine.service';
 
 @Module({
   imports: [PrismaModule],
@@ -23,6 +24,10 @@ import { TaxExcelService } from './services/tax-excel.service';
   providers: [
     StorageService,
     PuppeteerPoolService,
+    // ⭐ 156 — barème fiscal réel (ITS brut de l'état de paiement) : le moteur
+    //    ne dépend que de PrismaService (DatabaseModule @Global) — aucune
+    //    deuxième instance de PrismaClient n'est créée.
+    PayrollEngineService,
     TaxSettingsService,
     FinancialStatementService,
     TaxDeclarationService,

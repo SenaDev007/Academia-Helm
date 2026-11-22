@@ -8,6 +8,7 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
+import { fiscalStaffType } from './payroll.service';
 
 @Injectable()
 export class TaxExcelService {
@@ -155,9 +156,15 @@ export class TaxExcelService {
    * Génère un export Excel de l'annuaire fiscal du personnel.
    */
   async exportStaffFiscal(tenantId: string): Promise<Buffer> {
+    // ⭐ 156 — même règle fiscale que l'annuaire à l'écran : permanents =
+    //    déclarés CNSS ; vacataires = prestataires / non déclarés.
     const staff = await this.prisma.staff.findMany({
       where: { tenantId, status: { not: 'ARCHIVED' } },
-      select: { firstName: true, lastName: true, position: true, salary: true, cnssNumber: true, ifuNumber: true, contractType: true, tenantMatricule: true, hireDate: true, email: true, phone: true },
+      select: {
+        firstName: true, lastName: true, position: true, salary: true, cnssNumber: true, ifuNumber: true,
+        contractType: true, statutContractuel: true, tenantMatricule: true, hireDate: true, email: true, phone: true,
+        employeeCNSS: { select: { cnssNumber: true, isActive: true } },
+      },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });
 
@@ -179,7 +186,7 @@ export class TaxExcelService {
     staff.forEach((s, i) => {
       ws.getRow(4 + i).values = [
         `${s.firstName} ${s.lastName}`, s.position,
-        s.contractType === 'VACATAIRE' ? 'VACATAIRE' : 'PERMANENT',
+        fiscalStaffType(s as any),
         s.tenantMatricule, s.cnssNumber, s.ifuNumber,
         Number(s.salary || 0), s.email, s.phone,
         s.hireDate ? new Date(s.hireDate).toLocaleDateString('fr-FR') : '',

@@ -15,6 +15,15 @@ export function StaffFiscalManagement() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<any>({});
 
+  // ⭐ 156 — règle fiscale (exigence promoteur) : PERMANENTS = déclarés à la
+  //    CNSS ; VACATAIRES = prestataires et personnels NON déclarés à la CNSS.
+  //    Le type est dérivé côté serveur du statut contractuel + n° CNSS.
+  const STATUT_LABELS: Record<string, string> = {
+    SALARIE_DECLARE: 'Salarié déclaré (CNSS)',
+    SALARIE_NON_DECLARE: 'Salarié non déclaré',
+    PRESTATAIRE_SERVICE: 'Prestataire de services',
+  };
+
   useEffect(() => {
     if (!tenant?.id) return;
     (async () => {
@@ -76,6 +85,10 @@ export function StaffFiscalManagement() {
         <div>
           <h3 className="text-base font-bold text-slate-900">Gestion du personnel</h3>
           <p className="text-xs text-slate-500 mt-0.5">Annuaire fiscal : personnels permanents et vacataires</p>
+          <p className="text-[11px] text-slate-400 mt-1">
+            <span className="font-semibold text-blue-600">Permanents</span> = déclarés à la CNSS ·
+            <span className="font-semibold text-purple-600"> Vacataires</span> = prestataires / non déclarés à la CNSS
+          </p>
         </div>
         <div className="flex gap-3 items-center">
           <div className="bg-white rounded-lg border border-slate-200 px-4 py-2">
@@ -135,9 +148,14 @@ export function StaffFiscalManagement() {
                 </td>
                 <td className={tdClass}>{s.position || '—'}</td>
                 <td className={tdClass}>
-                  <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${s.staffType === 'PERMANENT' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>
-                    {s.staffType}
-                  </span>
+                  <div className="flex flex-col items-start gap-0.5">
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${s.staffType === 'PERMANENT' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>
+                      {s.staffType === 'PERMANENT' ? 'PERMANENT' : 'VACATAIRE'}
+                    </span>
+                    {s.statutContractuel && (
+                      <span className="text-[9px] text-slate-400 whitespace-nowrap">{STATUT_LABELS[s.statutContractuel] || s.statutContractuel}</span>
+                    )}
+                  </div>
                 </td>
                 {editingId === s.id ? (
                   <>

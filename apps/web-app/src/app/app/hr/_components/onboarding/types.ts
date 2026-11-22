@@ -10,6 +10,21 @@ export interface OnboardingState {
   loading: boolean;
   error: string | null;
 
+  // ⭐ 158 — Calendrier des interventions (prestation) : sélection STRUCTURÉE
+  // (jours + plages horaires + mois prédéfinis) — le texte professionnel du
+  // contrat est GÉNÉRÉ automatiquement (jamais saisi à la main). La sélection
+  // persiste pendant toute la session du wizard (retours arrière inclus).
+  prestationCalendar: { days: string[]; slots: string[]; months: string[] };
+
+  // ⭐ 158 — Statut contractuel DÉJÀ SAUVÉ sur la fiche du personnel (étape 2).
+  // Permet de détecter un CHANGEMENT après retour arrière et de recréer le
+  // contrat DRAFT avec le bon statut (au lieu de refuser/bloquer le RH).
+  savedStatutContractuel: string;
+  // ⭐ 158 — Signature du contrat DRAFT créé à l'étape 4 (statut + type + dates +
+  // montants). Toute divergence après retour arrière → suppression du brouillon
+  // non signé + recréation propre (le RH n'est jamais bloqué).
+  contractDraftSignature: string | null;
+
   // Step 1: Identité
   identity: {
     firstName: string;
@@ -132,6 +147,10 @@ export const INITIAL_STATE: OnboardingState = {
   contractId: null,
   loading: false,
   error: null,
+
+  prestationCalendar: { days: [], slots: [], months: [] },
+  savedStatutContractuel: '',
+  contractDraftSignature: null,
 
   identity: {
     firstName: '',

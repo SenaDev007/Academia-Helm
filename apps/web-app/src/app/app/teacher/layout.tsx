@@ -31,7 +31,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, BookOpen, CalendarDays,
   Video, ClipboardList, MessageSquare, Loader2,
-  FileEdit,
+  FileEdit, Wallet,
   Building2, LogOut, Menu, X, CalendarCheck, UserCog, NotebookPen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -57,6 +57,9 @@ import { useSecondaryOnlyUser } from "@/hooks/useSecondaryOnlyUser";
 const TEACHER_MODULES = [
   { path: "/app/teacher", label: "Dashboard", labelEn: "Dashboard", icon: LayoutDashboard, desc: "Cours du jour, classes assignées", descEn: "Today's lessons, assigned classes" },
   { path: "/app/teacher/presence", label: "Présence & Absences", labelEn: "Attendance & Leaves", icon: CalendarCheck, desc: "Pointer ma présence, heures sup, congés et absences", descEn: "Check in, overtime, leaves and absences" },
+  // ⭐ 22/11/2026 — SELF-SERVICE PAIE : fiches de paie / états de paiement
+  //    émis (PDF téléchargeable) + notification mensuelle dans la cloche.
+  { path: "/app/teacher/paie", label: "Ma Paie", labelEn: "My Payroll", icon: Wallet, desc: "Mes fiches de paie et états de paiement — téléchargement PDF", descEn: "My payslips and payment statements — PDF download" },
   { path: "/app/teacher/timetable", label: "Emploi du Temps", labelEn: "Timetable", icon: CalendarDays, desc: "Mon emploi du temps", descEn: "My timetable" },
   { path: "/app/teacher/annual-planning", label: "Planification annuelle", labelEn: "Annual Planning", icon: ClipboardList, desc: "Planification pédagogique officielle (CI à CM2 + Maternelle)", descEn: "Official pedagogical planning (CI to CM2 + Maternelle)" },
   { path: "/app/teacher/pedagogy", label: "Espace Pédagogique", labelEn: "Pedagogy Space", icon: BookOpen, desc: "Cahier journal, fiches, registre d'appel, cahier de texte, devoirs", descEn: "Daily log, lesson sheets, attendance register, textbook, homework" },

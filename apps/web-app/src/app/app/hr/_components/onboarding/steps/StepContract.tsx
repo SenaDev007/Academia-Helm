@@ -1,6 +1,6 @@
 'use client';
 
-import { FileText, DollarSign, Building2, Landmark, Smartphone, Handshake, CalendarClock, Info, AlertTriangle, History, Plus, Trash2, Award } from 'lucide-react';
+import { FileText, DollarSign, Building2, Landmark, Smartphone, Handshake, CalendarClock, Info, AlertTriangle, History, Plus, Trash2, Award, Clock } from 'lucide-react';
 
 const inputClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 ' +
@@ -57,6 +57,10 @@ interface StepContractProps {
     periodeEssaiMois: string;
     justificationStatut: string;
   };
+  /** ⭐ 158 — Sélection STRUCTURÉE du calendrier des interventions (prestation) */
+  prestationCalendar: { days: string[]; slots: string[]; months: string[] };
+  /** ⭐ 158 — Modification de la sélection structurée (génère le texte du contrat) */
+  onPrestationCalendarChange?: (next: { days: string[]; slots: string[]; months: string[] }) => void;
   /** ⭐ Statut contractuel choisi à l'étape 2 (bloquant) */
   statutContractuel: string;
   /** Catégorie du personnel (roleType — période d'essai suggérée selon barème) */
@@ -76,7 +80,7 @@ interface StepContractProps {
   onUpdate: (field: string, value: any) => void;
 }
 
-export function StepContract({ contract, statutContractuel, roleType, fiscalHints, hrSettings, cddChain, allowanceTypes, allowances, onAllowancesChange, onUpdate }: StepContractProps) {
+export function StepContract({ contract, statutContractuel, roleType, fiscalHints, hrSettings, cddChain, allowanceTypes, allowances, onAllowancesChange, prestationCalendar, onPrestationCalendarChange, onUpdate }: StepContractProps) {
   const showBankFields = contract.paymentMode === 'BANK';
   const showMobileMoneyFields = contract.paymentMode === 'MOBILE_MONEY';
   const isPrestation = statutContractuel === 'PRESTATAIRE_SERVICE';
@@ -199,21 +203,55 @@ export function StepContract({ contract, statutContractuel, roleType, fiscalHint
             </p>
           </div>
 
+          {/* ⭐ 158 — Dates de la prestation (début + terme convenu) : le
+              bouton Suivant exige ces dates — elles sont désormais SAISISSABLES
+              ici, comme tout contrat professionnel. */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>D&eacute;but de la prestation *</label>
+              <div className="relative">
+                <CalendarClock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input
+                  required
+                  type="date"
+                  className={inputClass + ' pl-9'}
+                  value={contract.startDate}
+                  onChange={(e) => onUpdate('startDate', e.target.value)}
+                />
+              </div>
+            </div>
+            <div>
+              <label className={labelClass}>Fin de la prestation (terme convenu) *</label>
+              <div className="relative">
+                <CalendarClock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input
+                  required
+                  type="date"
+                  min={contract.startDate || undefined}
+                  className={inputClass + ' pl-9'}
+                  value={contract.endDate}
+                  onChange={(e) => onUpdate('endDate', e.target.value)}
+                />
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Terme d&eacute;termin&eacute; convenu d&rsquo;un commun accord (reconduction possible par avenant).
+              </p>
+            </div>
+          </div>
+
           <div>
             <label className={labelClass}>Calendrier des interventions *</label>
-            <div className="relative">
-              <CalendarClock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-              <input
-                required
-                type="text"
-                className={inputClass + ' pl-9'}
-                placeholder="Ex : plages indicatives de 15h à 17h, mardis et jeudis, d'octobre à juin"
-                value={contract.prestationCalendrier}
-                onChange={(e) => onUpdate('prestationCalendrier', e.target.value)}
+            {/* ⭐ 158 — SÉLECTEUR PROFESSIONNEL : jours + plages horaires + mois
+                prédéfinis, simples à cliquer — le texte du contrat est GÉNÉRÉ
+                (fini la saisie libre « plages de 15h à 17h… »). */}
+            <PrestationCalendarSelector
+              value={prestationCalendar}
+              text={contract.prestationCalendrier}
+              onChange={(next) => onPrestationCalendarChange?.(next)}
+              onTextChange={(text) => onUpdate('prestationCalendrier', text)}
             />
-            </div>
             <p className="text-[10px] text-slate-400 mt-1">
-              Formulez des <em>plages indicatives</em> convenues d&apos;un commun accord — jamais des horaires imposés.
+              Plages <em>indicatives</em> convenues d&apos;un commun accord — jamais des horaires imposés.
             </p>
           </div>
 
@@ -658,6 +696,255 @@ export function StepContract({ contract, statutContractuel, roleType, fiscalHint
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ⭐ 158 — PRESTATION CALENDAR SELECTOR
+   Sélection PROFESSIONNELLE du calendrier des interventions (prestation de
+   services) : jours de semaine, plages horaires et mois PRÉDÉFINIS — l'RH ne
+   clique que des choix concrets, le texte contractuel est GÉNÉRÉ.
+
+   Remplace l'ancien champ texte libre (« plages indicatives de 15h à 17h,
+   mardis et jeudis, d'octobre à juin ») : plus de fautes de frappe, plus de
+   formulations approximatives — la clause reste une plage INDICATIVE convenue
+   (jamais un horaire imposé — absence de lien de subordination).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+interface PrestationCalendarValue {
+  days: string[];
+  slots: string[];
+  months: string[];
+}
+
+const PC_DAYS: Array<{ key: string; label: string; plural: string }> = [
+  { key: 'LUNDI', label: 'Lundi', plural: 'lundis' },
+  { key: 'MARDI', label: 'Mardi', plural: 'mardis' },
+  { key: 'MERCREDI', label: 'Mercredi', plural: 'mercredis' },
+  { key: 'JEUDI', label: 'Jeudi', plural: 'jeudis' },
+  { key: 'VENDREDI', label: 'Vendredi', plural: 'vendredis' },
+  { key: 'SAMEDI', label: 'Samedi', plural: 'samedis' },
+];
+
+const PC_SLOTS: Array<{ key: string; label: string; text: string }> = [
+  { key: '07h00-09h00', label: '07h00 – 09h00', text: 'de 07h00 à 09h00' },
+  { key: '08h00-10h00', label: '08h00 – 10h00', text: 'de 08h00 à 10h00' },
+  { key: '09h00-11h00', label: '09h00 – 11h00', text: 'de 09h00 à 11h00' },
+  { key: '10h00-12h00', label: '10h00 – 12h00', text: 'de 10h00 à 12h00' },
+  { key: '12h00-14h00', label: '12h00 – 14h00', text: 'de 12h00 à 14h00' },
+  { key: '15h00-17h00', label: '15h00 – 17h00', text: 'de 15h00 à 17h00' },
+  { key: '16h00-18h00', label: '16h00 – 18h00', text: 'de 16h00 à 18h00' },
+  { key: '17h00-19h00', label: '17h00 – 19h00', text: 'de 17h00 à 19h00' },
+];
+
+/** Ordre ANNÉE SCOLAIRE (Bénin) : septembre → août. */
+const PC_MONTHS: Array<{ key: string; label: string; short: string }> = [
+  { key: 'SEPTEMBRE', label: 'Septembre', short: 'septembre' },
+  { key: 'OCTOBRE', label: 'Octobre', short: 'octobre' },
+  { key: 'NOVEMBRE', label: 'Novembre', short: 'novembre' },
+  { key: 'DECEMBRE', label: 'Décembre', short: 'décembre' },
+  { key: 'JANVIER', label: 'Janvier', short: 'janvier' },
+  { key: 'FEVRIER', label: 'Février', short: 'février' },
+  { key: 'MARS', label: 'Mars', short: 'mars' },
+  { key: 'AVRIL', label: 'Avril', short: 'avril' },
+  { key: 'MAI', label: 'Mai', short: 'mai' },
+  { key: 'JUIN', label: 'Juin', short: 'juin' },
+  { key: 'JUILLET', label: 'Juillet', short: 'juillet' },
+  { key: 'AOUT', label: 'Août', short: 'août' },
+];
+
+/** Liste « a, b et c » en français. */
+function pcJoin(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} et ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')} et ${items[items.length - 1]}`;
+}
+
+/** Élision française : « d'octobre » / « de septembre ». */
+function pcElide(mois: string): string {
+  return /^[aeiouyéèêà]/i.test(mois) ? `d'${mois}` : `de ${mois}`;
+}
+
+/** Mois sélectionnés → fragment (« de septembre à juin » si contigus). */
+function pcMonthsFragment(selectedMonths: string[]): string | null {
+  if (selectedMonths.length === 0) return null;
+  const indices = selectedMonths
+    .map((key) => PC_MONTHS.findIndex((m) => m.key === key))
+    .filter((i) => i >= 0)
+    .sort((a, b) => a - b);
+  if (indices.length === 0) return null;
+
+  const unique = Array.from(new Set(indices));
+  const contiguous = unique.every((v, i) => i === 0 || v === unique[i - 1] + 1);
+
+  if (unique.length === PC_MONTHS.length) {
+    return "toute l'année"; // septembre → août complet
+  }
+  if (contiguous && unique.length > 1) {
+    return `${pcElide(PC_MONTHS[unique[0]].short)} à ${PC_MONTHS[unique[unique.length - 1]].short}`;
+  }
+  const names = unique.map((i) => PC_MONTHS[i].short);
+  return `en ${pcJoin(names)}`;
+}
+
+/** Génère le texte contractuel professionnel à partir de la sélection.
+ *  ⭐ Défense en profondeur : la sélection est TOUJOURS réordonnée selon les
+ *  catalogues (lundis avant mardis, plages chronologiques, septembre avant
+ *  octobre) — même si l'appelant fournit un ordre de clics chaotique. */
+export function buildPrestationCalendarText(value: PrestationCalendarValue): string {
+  const parts: string[] = [];
+
+  const slotTexts = PC_SLOTS.filter((s) => (value.slots ?? []).includes(s.key)).map((s) => s.text);
+  if (slotTexts.length > 0) {
+    parts.push(`plages indicatives ${pcJoin(slotTexts)}`);
+  }
+
+  const dayPlurals = PC_DAYS.filter((d) => (value.days ?? []).includes(d.key)).map((d) => d.plural);
+  if (dayPlurals.length > 0) {
+    parts.push(`les ${pcJoin(dayPlurals)}`);
+  }
+
+  const monthsFragment = pcMonthsFragment(value.months ?? []);
+  if (monthsFragment) {
+    parts.push(monthsFragment);
+  }
+
+  return parts.join(', ');
+}
+
+function PrestationCalendarSelector({
+  value,
+  text,
+  onChange,
+  onTextChange,
+}: {
+  value: PrestationCalendarValue;
+  text: string;
+  onChange: (next: PrestationCalendarValue) => void;
+  onTextChange: (text: string) => void;
+}) {
+  const toggle = (group: 'days' | 'slots' | 'months', key: string) => {
+    const current = value[group] ?? [];
+    const next = current.includes(key)
+      ? current.filter((k) => k !== key)
+      : [...current, key];
+    // Ordre stable et lisible (celui des catalogues), pas l'ordre des clics
+    const ordered =
+      group === 'days'
+        ? PC_DAYS.filter((d) => next.includes(d.key)).map((d) => d.key)
+        : group === 'slots'
+          ? PC_SLOTS.filter((s) => next.includes(s.key)).map((s) => s.key)
+          : PC_MONTHS.filter((m) => next.includes(m.key)).map((m) => m.key);
+    const nextValue = { ...value, [group]: ordered };
+    onChange(nextValue);
+    onTextChange(buildPrestationCalendarText(nextValue));
+  };
+
+  const reset = () => {
+    onChange({ days: [], slots: [], months: [] });
+    onTextChange('');
+  };
+
+  const chip = (active: boolean) =>
+    'px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition text-left leading-tight ' +
+    (active
+      ? 'border-[#1d4fa5] bg-[#1d4fa5]/10 text-[#1d4fa5]'
+      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50');
+
+  const hasSelection =
+    (value.days?.length ?? 0) + (value.slots?.length ?? 0) + (value.months?.length ?? 0) > 0;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+      {/* ── Jours ── */}
+      <div className="p-3 border-b border-slate-100">
+        <p className="text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+          Jours d&rsquo;intervention
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {PC_DAYS.map((d) => (
+            <button
+              key={d.key}
+              type="button"
+              onClick={() => toggle('days', d.key)}
+              className={chip(value.days?.includes(d.key))}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Plages horaires ── */}
+      <div className="p-3 border-b border-slate-100 bg-slate-50/40">
+        <p className="text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1">
+          <Clock className="h-3 w-3" /> Plages horaires (indicatives)
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+          {PC_SLOTS.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              onClick={() => toggle('slots', s.key)}
+              className={chip(value.slots?.includes(s.key))}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Mois ── */}
+      <div className="p-3 border-b border-slate-100">
+        <p className="text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+          Mois d&rsquo;intervention (ann&eacute;e scolaire)
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {PC_MONTHS.map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => toggle('months', m.key)}
+              className={chip(value.months?.includes(m.key))}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Texte généré (aperçu = ce qui figure dans le contrat) ── */}
+      <div className="p-3 bg-[#1d4fa5]/5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10.5px] font-bold uppercase tracking-wider text-[#1d4fa5] mb-1">
+              Clause g&eacute;n&eacute;r&eacute;e (figurant dans le contrat)
+            </p>
+            {hasSelection && text ? (
+              <p className="text-xs text-slate-700 leading-relaxed">
+                &laquo;&nbsp;{text}&nbsp;&raquo;
+              </p>
+            ) : (
+              <p className="text-xs text-slate-400 italic">
+                {text
+                  ? `Texte conservé : « ${text} » (saisie manuelle antérieure)`
+                  : 'Sélectionnez les jours, plages horaires et mois ci-dessus — la clause se rédige automatiquement.'}
+              </p>
+            )}
+          </div>
+          {hasSelection && (
+            <button
+              type="button"
+              onClick={reset}
+              className="shrink-0 text-[10px] font-semibold text-slate-400 hover:text-slate-600 underline underline-offset-2"
+            >
+              R&eacute;initialiser
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

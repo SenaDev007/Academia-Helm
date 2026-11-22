@@ -19,8 +19,7 @@
 
 import {
   Controller, Get, Post, Param, Query, UseGuards, Res, BadRequestException,
-} from '@nestjs/common';
-import { Response } from 'express';
+} from '@nestjs/common';import { Response } from 'express';
 import { PayrollDocumentsService } from './services/payroll-documents.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -77,6 +76,61 @@ export class PayrollDocumentsController {
       ...(documentType ? { documentType } : {}),
       ...(staffId ? { staffId } : {}),
     });
+  }
+
+  // ===========================================================================
+  // ⭐ 22/11/2026 — SELF-SERVICE « MA PAIE » (portail du personnel)
+  //
+  // /app/my-paie (tous portails admin) et /app/teacher/paie (enseignants) :
+  // chaque membre du personnel consulte SES documents émis et télécharge SON
+  // PDF. Staff résolu par l'email du compte connecté (anti-usurpation) —
+  // ces routes restent AVANT les routes paramétrées :id (ordre NestJS).
+  // ===========================================================================
+
+  /** Mes documents de paie émis (fiches FP + états EP, période décroissante). */
+  @Get('my-payslips')
+  async myPayslips(
+    @GetTenant() tenant: any,
+    @CurrentUser() user: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback ?? user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis pour cette opération');
+    if (!user?.email) throw new BadRequestException('Utilisateur non authentifié');
+    return this.documentsService.listMyPayslips(tid, user.email);
+  }
+
+  /** Téléchargement de SON document de paie (appartenance vérifiée, 403 sinon). */
+  @Get('my-payslips/:id/download')
+  async myPayslipDownload(
+    @GetTenant() tenant: any,
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Res() res: Response,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback ?? user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis pour cette opération');
+    if (!user?.email) throw new BadRequestException('Utilisateur non authentifié');
+    const { buffer, document } = await this.documentsService.downloadMyDocument(id, tid, user.email);
+
+    // ⭐ Même nom de fichier professionnel que le registre RH : « Fiche de paie /
+    //   État de paiement <Prénom(s) NOM> <Période>.pdf » (filename* RFC 5987).
+    const typeLabel =
+      document.documentType === 'ETAT_DE_PAIEMENT' ? 'État de paiement' : 'Fiche de paie';
+    const staffName = `${document.staff?.firstName ?? ''} ${document.staff?.lastName ?? ''}`
+      .replace(/\s+/g, ' ')
+      .trim() || 'personnel';
+    const periodLabel = String(document.periodLabel || '').replace(/\s+/g, ' ').trim();
+    const prettyName = [typeLabel, staffName, periodLabel].filter(Boolean).join(' ');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${document.documentNumber}.pdf"; filename*=UTF-8''${encodeURIComponent(`${prettyName}.pdf`)}`,
+    );
+    res.setHeader('Content-Length', String(buffer.length));
+    res.setHeader('X-Content-Hash', document.contentHash);
+    return res.send(buffer);
   }
 
   /** Détail d'un document émis (snapshot figé). */

@@ -272,6 +272,13 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
       method: 'PUT',
       body: updateBody,
     });
+
+    // ⭐ 158 — Statut contractuel désormais SAUVÉ sur la fiche : mémorise la
+    // valeur de référence pour détecter un changement après retour arrière
+    // (le serveur autorise la correction d’un brouillon d’embauche non finalisé).
+    if (state.employment.statutContractuel) {
+      setState((prev) => ({ ...prev, savedStatutContractuel: prev.employment.statutContractuel }));
+    }
   };
 
   const saveStep3AndAdvance = async () => {
@@ -329,6 +336,25 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
     const isPrestation = statut === 'PRESTATAIRE_SERVICE';
     const isDeclare = statut === 'SALARIE_DECLARE';
 
+    // ⭐ 158 — SIGNATURE DU BROUILLON : statut + type + dates + montants saisis
+    // à CET instant. Divergence après un retour arrière (l’RH corrige le statut
+    // à l’étape 2 ou le type/montant ici) → le contrat DRAFT non signé est
+    // supprimé puis recréé proprement : le RH n’est JAMAIS bloqué, plus de
+    // « système refuse », et le contrat final reflète toujours la saisie.
+    const draftSignature = JSON.stringify({
+      statut: statut ?? '',
+      contractType: isPrestation ? 'PRESTATION' : state.contract.contractType,
+      startDate: state.contract.startDate ?? '',
+      endDate: isPrestation
+        ? (state.contract.endDate ?? '')
+        : state.contract.contractType === 'CDD'
+          ? (state.contract.endDate ?? '')
+          : '',
+      paymentMode: state.contract.paymentMode ?? '',
+      baseSalary: isPrestation ? Number(state.contract.prestationAmount) || 0 : Number(state.contract.baseSalary) || 0,
+      prestationPaymentMode: isPrestation ? state.contract.prestationPaymentMode : null,
+    });
+
     // Update staff with CNSS, IFU, bank details (including Mobile Money for FedaPay)
     const bankDetails: any = {};
     if (state.contract.paymentMode === 'BANK' && state.contract.bankName) {
@@ -362,7 +388,52 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
     });
 
     // Create contract if not yet created
-    if (!state.contractId) {
+    // ⭐ 158 — RETOUR ARRIÈRE SANS BLOCAGE : si un contrat DRAFT existe déjà
+    // (premier passage) mais que la saisie a changé (statut corrigé à l'étape 2,
+    // type/montant/dates modifiés ici), le brouillon NON SIGNÉ est supprimé puis
+    // recréé avec les valeurs actuelles. Un contrat SIGNÉ reste immuable (voie
+    // légale : procédure tracée de changement de statut) — jamais bloquant.
+    let effectiveContractId: string | null = state.contractId;
+    if (state.contractId && state.contractDraftSignature !== draftSignature) {
+      let deletable = false;
+      try {
+        const existing: any = await hrFetch<any>(hrUrl(`contracts/${state.contractId}`, { tenantId }));
+        deletable = !!existing && !existing.signedAt && existing.status !== 'ACTIVE';
+      } catch {
+        // Introuvable/inaccessible → on recrée le contrat de toute façon.
+        deletable = true;
+      }
+      if (deletable) {
+        try {
+          await hrFetch(hrUrl(`contracts/${state.contractId}`, { tenantId }), { method: 'DELETE' });
+        } catch (err) {
+          console.warn('[OnboardingWizard] Échec suppression du brouillon de contrat :', err);
+        }
+        effectiveContractId = null;
+        setState((prev) => ({
+          ...prev,
+          contractId: null,
+          contractDraftSignature: null,
+          // Le nouveau contrat repart d'une feuille propre : les articles et
+          // le PDF de l'ancien brouillon ne s'appliquent plus.
+          articlesSaved: false,
+          articles: [],
+          previewHtml: null,
+          pdfGenerated: false,
+        }));
+      } else {
+        // Contrat signé/actif : immuable — on poursuit AVEC lui (aucun blocage,
+        // les corrections passent par la procédure tracée côté RH).
+        toast({
+          variant: 'info',
+          title: 'Contrat déjà signé',
+          description:
+            "Le contrat existant (signé) est conservé : un changement de statut ou de type passe par la procédure tracée depuis la fiche du personnel.",
+        });
+      }
+    }
+
+    if (!effectiveContractId) {
       const contractBody: any = {
         staffId: state.staffId,
         startDate: state.contract.startDate,
@@ -417,7 +488,14 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
         method: 'POST',
         body: contractBody,
       });
-      setState((prev) => ({ ...prev, contractId: contractResponse.id }));
+      // ⭐ 158 — mémorise la signature du brouillon créé : comparée à chaque
+      // nouveau passage sur l'étape 4, elle détecte une correction après
+      // retour arrière (statut, type, dates, montants).
+      setState((prev) => ({
+        ...prev,
+        contractId: contractResponse.id,
+        contractDraftSignature: draftSignature,
+      }));
     }
 
     // ⭐ Onglet Indemnités ↔ workflow d'embauche — création des assignations
@@ -624,6 +702,13 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
                   allowances={state.allowances}
                   onAllowancesChange={(next) =>
                     setState((prev) => ({ ...prev, allowances: next }))
+                  }
+                  // ⭐ 158 — Calendrier des interventions : sélection structurée
+                  // (jours + plages horaires + mois prédéfinis) qui GÉNÈRE le
+                  // texte de la clause — persiste pendant toute la session.
+                  prestationCalendar={state.prestationCalendar}
+                  onPrestationCalendarChange={(next) =>
+                    setState((prev) => ({ ...prev, prestationCalendar: next }))
                   }
                   onUpdate={(field, value) =>
                     setState((prev) => ({ ...prev, contract: { ...prev.contract, [field]: value } }))

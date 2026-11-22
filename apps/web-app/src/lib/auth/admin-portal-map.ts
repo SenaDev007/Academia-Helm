@@ -206,6 +206,24 @@ const MY_PRESENCE_MODULE: AdminPortalModule = {
   descEn: 'Check in, overtime, leave & absence requests',
 };
 
+/**
+ * ⭐ 22/11/2026 — Module self-service « Ma Paie » du personnel.
+ *
+ * Chaque membre du personnel consulte SES fiches de paie / états de paiement
+ * émis par le RH (liste par période, net à payer) et télécharge le PDF
+ * archivé (scellé SHA-256) — il est notifié dans la cloche à chaque émission
+ * mensuelle. Les enseignants ont l'équivalent dans leur portail
+ * (/app/teacher/paie).
+ */
+const MY_PAYSLIPS_MODULE: AdminPortalModule = {
+  path: '/app/my-paie',
+  label: 'Ma Paie',
+  labelEn: 'My Payroll',
+  icon: 'Wallet',
+  desc: 'Mes fiches de paie et états de paiement — téléchargement PDF',
+  descEn: 'My payslips and payment statements — PDF download',
+};
+
 // ─── Définition des portails ────────────────────────────────────────────────
 
 export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
@@ -224,6 +242,8 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
       { path: '/app/director', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: "Pilotage global de l'établissement", descEn: "School-wide overview and steering" },
       // ⭐ Self-service personnel : présence, heures supp., congés/absences
       MY_PRESENCE_MODULE,
+      // ⭐ Self-service personnel : fiches de paie / états de paiement (PDF)
+      MY_PAYSLIPS_MODULE,
       { path: '/app/director/oversight', label: 'Espace Directeur', labelEn: 'Director Space', icon: 'Brain', desc: 'Score de risque croisé + décrochage (Secondaire)', descEn: 'Cross risk score + dropout (Secondary)', requiresSecondary: true },
       { path: '/app/pedagogy', label: 'Organisation Pédagogique', labelEn: 'Pedagogical Organisation', icon: 'School', desc: 'Planification, cahiers, validation des documents', descEn: 'Planning, notebooks, document approval', featureCode: 'PEDAGOGY' },
       { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', descEn: 'Admissions, records, headcount', featureCode: 'STUDENTS' },
@@ -257,6 +277,8 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
       { path: '/app/secretaire', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: 'KPIs effectifs, finances, alertes', descEn: 'Headcount, finance KPIs, alerts' },
       // ⭐ Self-service personnel : présence, heures supp., congés/absences
       MY_PRESENCE_MODULE,
+      // ⭐ Self-service personnel : fiches de paie / états de paiement (PDF)
+      MY_PAYSLIPS_MODULE,
       { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', descEn: 'Admissions, records, headcount', featureCode: 'STUDENTS' },
       // ⭐ 2026-09-21 — MODULE PRÉPARATION D'EXAMEN : réception des épreuves
       //    d'évaluation envoyées par les enseignants après validation direction.
@@ -290,6 +312,8 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
       { path: '/app/secretaire-comptable', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: 'KPIs effectifs, finances, alertes', descEn: 'Headcount, finance KPIs, alerts' },
       // ⭐ Self-service personnel : présence, heures supp., congés/absences
       MY_PRESENCE_MODULE,
+      // ⭐ Self-service personnel : fiches de paie / états de paiement (PDF)
+      MY_PAYSLIPS_MODULE,
       // UNION DES DEUX MÉTIERS (validation utilisateur) : le secrétaire-
       // comptable a TOUT ce que le secrétaire a ET TOUT ce que le comptable
       // a. Outil quotidien : Encaissements (TransactionsContent partagé —
@@ -331,6 +355,8 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
       { path: '/app/comptable', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: "Vue financière de l'établissement", descEn: "School's financial view" },
       // ⭐ Self-service personnel : présence, heures supp., congés/absences
       MY_PRESENCE_MODULE,
+      // ⭐ Self-service personnel : fiches de paie / états de paiement (PDF)
+      MY_PAYSLIPS_MODULE,
       { path: '/app/finance', label: 'Finances & Économat', labelEn: 'Finance & Store', icon: 'Wallet', desc: 'Frais, encaissements, trésorerie, audit', descEn: 'Fees, collections, treasury, audit', featureCode: 'FINANCE' },
       { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Effectifs, dossiers', descEn: 'Headcount, records', featureCode: 'STUDENTS' },
       { path: '/app/exams', label: 'Examens, Notes & Bulletins', labelEn: 'Exams, Grades & Report Cards', icon: 'GraduationCap', desc: 'Bulletins, impressions', descEn: 'Report cards, printing', featureCode: 'EXAMS' },
@@ -353,6 +379,8 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
       { path: '/app/surveillant', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: 'Vue vie scolaire', descEn: 'School life overview' },
       // ⭐ Self-service personnel : présence, heures supp., congés/absences
       MY_PRESENCE_MODULE,
+      // ⭐ Self-service personnel : fiches de paie / états de paiement (PDF)
+      MY_PAYSLIPS_MODULE,
       { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Effectifs, dossiers', descEn: 'Headcount, records', featureCode: 'STUDENTS' },
       { path: '/app/discipline', label: 'Vie Scolaire', labelEn: 'School Life', icon: 'Shield', desc: 'Sanctions, conduite, assiduité (Secondaire)', descEn: 'Sanctions, conduct, attendance (Secondary)', requiresSecondary: true },
       // ⭐ Parité d'accès : le surveillant général accède à l'Espace Censeur
@@ -380,6 +408,8 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
       { path: '/app/censeur', label: 'Espace Censeur', labelEn: 'Censor Space', icon: 'ClipboardCheck', desc: 'Visites de classes, conseils de classe, fraudes', descEn: 'Class visits, class councils, exam fraud' },
       // ⭐ Self-service personnel : présence, heures supp., congés/absences
       MY_PRESENCE_MODULE,
+      // ⭐ Self-service personnel : fiches de paie / états de paiement (PDF)
+      MY_PAYSLIPS_MODULE,
       { path: '/app/pedagogy', label: 'Organisation Pédagogique', labelEn: 'Pedagogical Organisation', icon: 'School', desc: 'Planification, cahiers, contrôle', descEn: 'Planning, notebooks, oversight', featureCode: 'PEDAGOGY' },
       { path: '/app/exams', label: 'Examens, Notes & Bulletins', labelEn: 'Exams, Grades & Report Cards', icon: 'GraduationCap', desc: 'Évaluations, fraudes, validation', descEn: 'Assessments, fraud, validation', featureCode: 'EXAMS' },
       { path: '/app/discipline', label: 'Vie Scolaire', labelEn: 'School Life', icon: 'Shield', desc: 'Conduite, sanctions (Secondaire)', descEn: 'Conduct, sanctions (Secondary)', requiresSecondary: true },

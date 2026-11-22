@@ -19,7 +19,7 @@ import { useRef, useEffect } from 'react';
 import {
   Bell, Check, CheckCheck, Trash2, X, FileText, UserPlus, AlertCircle, Info,
   CalendarX, CalendarCheck, GraduationCap, Award, ShieldAlert,
-  ClipboardList, BookOpen, MessageSquare, Heart, NotebookPen, CalendarDays, Clock,
+  ClipboardList, BookOpen, MessageSquare, Heart, NotebookPen, CalendarDays, Clock, Wallet,
 } from 'lucide-react';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useRouter } from 'next/navigation';
@@ -92,6 +92,10 @@ function getNotifIcon(type: string) {
       return <Clock className="w-4 h-4 text-emerald-600" />;
     case 'OVERTIME_REJECTED':
       return <Clock className="w-4 h-4 text-red-600" />;
+    // ⭐ 22/11/2026 — RH self-service paie : fiche de paie / état de paiement émis
+    //    (le personnel est notifié chaque mois, PDF téléchargeable dans « Ma Paie »).
+    case 'PAYROLL_DOCUMENT_ISSUED':
+      return <Wallet className="w-4 h-4 text-emerald-700" />;
     default:
       return <FileText className="w-4 h-4 text-slate-500" />;
   }

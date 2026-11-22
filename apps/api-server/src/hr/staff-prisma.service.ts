@@ -482,10 +482,36 @@ export class StaffPrismaService {
     //    par la procédure tracée POST :id/statut-contractuel/change.
     if (data.statutContractuel !== undefined && data.statutContractuel !== null && data.statutContractuel !== '') {
       if (staff.statutContractuel && staff.statutContractuel !== data.statutContractuel) {
-        throw new BadRequestException(
-          `Le statut contractuel de ce personnel est déjà « ${STATUT_CONTRACTUEL_LABELS[staff.statutContractuel] || staff.statutContractuel} » et ne peut pas être modifié par édition directe. ` +
-          'Utilisez la procédure tracée de changement de statut (date d\u2019effet + justification).',
-        );
+        // ⭐ 22/11/2026 — EXCEPTION BROUILLON D'EMBAUCHE (retour promoteur) :
+        //    pendant le wizard d'embauche, le personnel est PENDING_HIRE et son
+        //    contrat (s'il existe) n'est pas encore signé — l'RH doit pouvoir
+        //    revenir sur l'étape 2 et CORRIGER librement le statut choisi par
+        //    erreur (« le système refuse » était bloquant). Le verrou légal reste
+        //    intégral dès que le profil est finalisé (contrat signé/actif ou
+        //    personnel ACTIF) — la procédure tracée reprend alors le relais.
+        const isOnboardingDraft =
+          staff.status === 'PENDING_HIRE' &&
+          !(await this.prisma.contract.findFirst({
+            where: {
+              staffId: id,
+              tenantId,
+              OR: [{ signedAt: { not: null } }, { status: 'ACTIVE' }],
+            },
+            select: { id: true },
+          }));
+        if (!isOnboardingDraft) {
+          throw new BadRequestException(
+            `Le statut contractuel de ce personnel est déjà « ${STATUT_CONTRACTUEL_LABELS[staff.statutContractuel] || staff.statutContractuel} » et ne peut pas être modifié par édition directe. ` +
+            'Utilisez la procédure tracée de changement de statut (date d\u2019effet + justification).',
+          );
+        }
+        // Correction de brouillon autorisée : on repart d'un état cohérent —
+        // les champs propres au statut quitté sont purgés (ex. quitter
+        // PRESTATAIRE_SERVICE → prestationPaymentMode/prestationAmount null).
+        if (staff.statutContractuel === 'PRESTATAIRE_SERVICE' && data.statutContractuel !== 'PRESTATAIRE_SERVICE') {
+          updateData.prestationPaymentMode = null;
+          updateData.prestationAmount = null;
+        }
       }
       if (!isValidStatutContractuel(data.statutContractuel)) {
         throw new BadRequestException(`Statut contractuel invalide : ${data.statutContractuel}`);

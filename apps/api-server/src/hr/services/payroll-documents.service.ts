@@ -26,7 +26,7 @@
  */
 
 import {
-  Injectable, Logger, NotFoundException, BadRequestException, ConflictException,
+  Injectable, Logger, NotFoundException, BadRequestException, ConflictException, ForbiddenException,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -45,6 +45,10 @@ import {
   MENTION_FICHE_CONSERVATION, MENTION_ETAT_PAIEMENT,
 } from './payroll-document-templates';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
+// ⭐ 22/11/2026 — Notification in-app au personnel à l'émission de sa paie :
+// chaque membre du personnel est notifié dans SON interface (cloche) avec le
+// lien vers « Ma Paie » (module self-service de téléchargement FP/EP).
+import { NotificationService } from '../../notifications/notification.service';
 // ⭐ 22/11/2026 — identité par niveau : le personnel du SECONDAIRE reçoit
 // l'identité du niveau secondaire (onglet Identité) sur ses documents de paie.
 import { resolveLevelIdentityOverlay } from '../../common/context/resolve-level-identity';
@@ -60,6 +64,7 @@ export class PayrollDocumentsService {
     private readonly puppeteerPool: PuppeteerPoolService,
     private readonly storageService: StorageService,
     private readonly payrollEngine: PayrollEngineService,
+    private readonly notifications: NotificationService,
   ) {}
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -140,6 +145,11 @@ export class PayrollDocumentsService {
         },
       });
       this.logger.log(`📄 Document de paie émis : ${documentNumber} (${fmtHash(contentHash)})`);
+      // ⭐ 22/11/2026 — Self-service paie : le personnel est NOTIFIÉ dans son
+      // interface (cloche) dès que sa fiche de paie / son état de paiement est
+      // émis — le PDF est téléchargeable depuis « Ma Paie » (best-effort : un
+      // échec de notification n'annule jamais l'émission).
+      this.notifyStaffDocumentIssued(doc, ctx, snapshot as any).catch(() => {});
       return { document: doc, pdfBase64: pdfBuffer.toString('base64'), contentHash };
     } catch (err: any) {
       // Collision d'unicité = émission concurrente de la même ligne
@@ -194,6 +204,145 @@ export class PayrollDocumentsService {
     });
     if (!doc) throw new NotFoundException(`Document de paie ${id} introuvable.`);
     return doc;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ⭐ 22/11/2026 — SELF-SERVICE « MA PAIE » (portail du personnel)
+  //
+  // Le Staff est TOUJOURS résolu par l'email de l'utilisateur connecté
+  // (anti-usurpation — même règle que my-history / my-overtime / my-presence).
+  // Un membre du personnel ne voit et ne télécharge que SES documents.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** Résout le Staff lié à l'utilisateur connecté (par email, insensible à la casse). */
+  private async resolveStaffByEmail(tenantId: string, email: string) {
+    const staff = await this.prisma.staff.findFirst({
+      where: {
+        tenantId,
+        email: { equals: email, mode: 'insensitive' },
+      },
+      select: { id: true, firstName: true, lastName: true, roleType: true, position: true, status: true },
+    });
+    if (!staff) {
+      throw new NotFoundException(
+        'Aucun dossier de personnel ne correspond à votre compte utilisateur ' +
+        '(email non rattaché à une fiche de personnel de cet établissement).',
+      );
+    }
+    return staff as any;
+  }
+
+  /**
+   * Documents de paie émis de l'utilisateur connecté (fiches FP + états EP),
+   * par période décroissante. Le net vient du SNAPSHOT FIGÉ (jamais recalculé).
+   */
+  async listMyPayslips(tenantId: string, email: string) {
+    const staff = await this.resolveStaffByEmail(tenantId, email);
+    const docs = await this.prisma.payrollDocument.findMany({
+      where: { tenantId, staffId: staff.id },
+      select: {
+        id: true,
+        documentType: true,
+        documentNumber: true,
+        periodYear: true,
+        periodMonth: true,
+        periodLabel: true,
+        statutContractuel: true,
+        snapshot: true,
+        contentHash: true,
+        issuedAt: true,
+        issuedByName: true,
+      },
+      orderBy: [{ periodYear: 'desc' }, { periodMonth: 'desc' }, { documentNumber: 'desc' }],
+    });
+
+    return {
+      staff: { id: staff.id, firstName: staff.firstName, lastName: staff.lastName, position: staff.position },
+      documents: docs.map((d: any) => ({
+        id: d.id,
+        documentType: d.documentType,
+        documentNumber: d.documentNumber,
+        periodYear: d.periodYear,
+        periodMonth: d.periodMonth,
+        periodLabel: d.periodLabel,
+        statutContractuel: d.statutContractuel,
+        net: Number(d.snapshot?.net ?? 0),
+        gross: Number(d.snapshot?.brut ?? 0),
+        issuedAt: d.issuedAt,
+        issuedByName: d.issuedByName,
+        hasFile: !!d.contentHash,
+      })),
+    };
+  }
+
+  /**
+   * Téléchargement SELF-SERVICE : le document DOIT appartenir au Staff
+   * résolu par l'email de l'utilisateur connecté (403 sinon).
+   */
+  async downloadMyDocument(id: string, tenantId: string, email: string): Promise<{ buffer: Buffer; document: any }> {
+    const staff = await this.resolveStaffByEmail(tenantId, email);
+    const doc = await this.getDocument(id, tenantId);
+    if (doc.staffId !== staff.id) {
+      // Anti-usurpation : le personnel ne télécharge QUE ses propres documents.
+      throw new ForbiddenException(
+        'Ce document de paie ne vous appartient pas — le téléchargement est réservé à vos propres documents.',
+      );
+    }
+    return this.downloadDocument(id, tenantId);
+  }
+
+  /**
+   * ⭐ 22/11/2026 — Notification in-app au personnel lors de l'émission de son
+   * document de paie : « Paie de <période> disponible » + lien « Ma Paie » du
+   * portail de l'utilisateur (enseignant → /app/teacher/paie, autres → /app/my-paie).
+   * Best-effort : échec journalisé, jamais propagé.
+   */
+  private async notifyStaffDocumentIssued(doc: any, ctx: any, snapshot: any): Promise<void> {
+    try {
+      const staff = ctx?.staff;
+      const email = staff?.email;
+      if (!email) {
+        this.logger.warn(`notifyStaffDocumentIssued: pas d'email sur le dossier ${staff?.id} — notification ignorée`);
+        return;
+      }
+      const user = await this.prisma.user.findFirst({
+        where: {
+          tenantId: doc.tenantId,
+          status: 'active',
+          email: { equals: email, mode: 'insensitive' },
+        },
+        select: { id: true },
+      });
+      if (!user) {
+        this.logger.log(
+          `notifyStaffDocumentIssued: aucun compte utilisateur actif pour ${email} — notification ignorée`,
+        );
+        return;
+      }
+
+      const isFiche = doc.documentType === 'FICHE_DE_PAIE';
+      const docLabel = isFiche ? 'fiche de paie' : 'état de paiement';
+      const net = Number(snapshot?.net ?? 0);
+      const url = staff?.roleType === 'TEACHER' ? '/app/teacher/paie' : '/app/my-paie';
+
+      await this.notifications.create({
+        tenantId: doc.tenantId,
+        recipientId: user.id,
+        type: 'PAYROLL_DOCUMENT_ISSUED',
+        title: `Paie de ${doc.periodLabel} disponible`,
+        body:
+          `Votre ${docLabel} (${doc.documentNumber}) de ${doc.periodLabel} vient d'être émise` +
+          (net > 0 ? ` — net à payer : ${net.toLocaleString('fr-FR')} FCFA.` : '.') +
+          ` Téléchargez le PDF depuis votre espace « Ma Paie ».`,
+        priority: 'HIGH',
+        data: { url },
+        relatedEntityType: 'PayrollDocument',
+        relatedEntityId: doc.id,
+      });
+      this.logger.log(`🔔 Notification paie envoyée (${doc.documentNumber}) → user ${user.id} (${email})`);
+    } catch (err: any) {
+      this.logger.warn(`notifyStaffDocumentIssued: échec non bloquant — ${err?.message}`);
+    }
   }
 
   /** PDF émis — fichier archivé tel quel (jamais régénéré) + contrôle du hash. */

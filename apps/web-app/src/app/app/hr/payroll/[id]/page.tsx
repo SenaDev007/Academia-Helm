@@ -39,6 +39,7 @@ import {
   ReceiptText,
   BadgeCheck,
   CheckCheck,
+  Eye,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -115,6 +116,18 @@ export default function PayrollDetailPage() {
   const [showRegister, setShowRegister] = useState(false);
   const [registerDocs, setRegisterDocs] = useState<any[]>([]);
   const [registerLoading, setRegisterLoading] = useState(false);
+  // ⭐ 162 — VISIONNEUSE INTÉGRÉE (retour promoteur : « l'aperçu doit ouvrir au
+  //    sein de l'application, pas un écran externe ») : le bulletin (PDF) et
+  //    les documents FP/EP (HTML — identité école complète, filigrane
+  //    diagonal, QR) s'affichent dans un modal IN-APP ; « Télécharger »
+  //    télécharge le fichier localement — plus jamais de nouvel onglet.
+  const [viewer, setViewer] = useState<{
+    kind: 'html' | 'pdf';
+    url?: string;
+    srcDoc?: string;
+    title: string;
+    fileName?: string;
+  } | null>(null);
   // ⭐ 22/11/2026 — bascule du mode de calcul « présences » de la période
   const [togglingAttendance, setTogglingAttendance] = useState(false);
 
@@ -320,19 +333,26 @@ export default function PayrollDetailPage() {
   // prestataires — le type est dérivé du statut contractuel, jamais choisi ici.
 
   // ─── Bulletin générique (personnel hérité SANS statut contractuel) ──
-  const handlePreviewPayslip = async (itemId: string) => {
+  const handlePreviewPayslip = async (itemId: string, staffName?: string) => {
     try {
       const result = await hrFetch<any>(hrUrl(`payroll/items/${itemId}/payslip-pdf`, { tenantId: tenant.id }), { method: 'POST' });
       if (result?.pdfBase64) {
         const byteCharacters = atob(result.pdfBase64);
-        const byteNumbers = new Array(byteCharacters.length);
+        const byteArray = new Uint8Array(byteCharacters.length);
         for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
+          byteArray[i] = byteCharacters.charCodeAt(i);
         }
-        const byteArray = new Uint8Array(byteNumbers);
         const blob = new Blob([byteArray], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
-        window.open(url, '_blank');
+        // ⭐ 162 — VISIONNEUSE IN-APP : l'aperçu s'ouvre DANS l'application
+        //    (modal intégré) — plus jamais d'onglet/« écran externe ». Le
+        //    bouton Télécharger du modal enregistre le fichier localement.
+        setViewer({
+          kind: 'pdf',
+          url,
+          title: 'Aperçu du bulletin de paie',
+          fileName: payrollFileName('Bulletin de paie', staffName || 'personnel'),
+        });
       } else {
         toast({ variant: 'info', title: 'Aperçu du bulletin', description: 'Le PDF sera généré par le serveur.' });
       }
@@ -407,22 +427,37 @@ export default function PayrollDetailPage() {
     }
   };
 
-  const handlePreviewDocument = async (itemId: string) => {
+  const handlePreviewDocument = async (itemId: string, docLabel?: string) => {
     try {
       const result = await hrFetch<any>(hrUrl(`payroll/documents/preview/${itemId}`, { tenantId: tenant.id }), {
         method: 'POST',
       });
       if (result?.html) {
-        const blob = new Blob([result.html], { type: 'text/html;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank');
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        // ⭐ 162 — VISIONNEUSE IN-APP : la fiche de paie (FP) / l'état de
+        //    paiement (EP) s'affiche DANS l'application — bandeau école
+        //    complet (maternelle/primaire ou niveau secondaire selon le
+        //    personnel), logo en FILIGRANE DIAGONAL, QR de vérification.
+        //    Plus d'onglet externe : « l'aperçu doit ouvrir au sein de
+        //    l'application » (retour promoteur).
+        setViewer({
+          kind: 'html',
+          srcDoc: result.html,
+          title: docLabel ? `Aperçu — ${docLabel}` : 'Aperçu du document de paie',
+        });
       } else {
         toast({ variant: 'info', title: 'Aperçu indisponible', description: 'Aucun rendu retourné.' });
       }
     } catch (error: any) {
       toast({ variant: 'error', title: 'Aperçu impossible', description: error?.message });
     }
+  };
+
+  // ⭐ 162 — fermeture de la visionneuse (libération du blob PDF).
+  const closeViewer = () => {
+    if (viewer?.kind === 'pdf' && viewer.url) {
+      try { URL.revokeObjectURL(viewer.url); } catch { /* noop */ }
+    }
+    setViewer(null);
   };
 
   // ⭐ 22/11/2026 — téléchargement FP/EP : le nom de fichier suit le type
@@ -915,20 +950,37 @@ export default function PayrollDetailPage() {
                              L'aperçu ET le téléchargement suivent la même couleur. */
                           <>
                           {doc ? (
-                            <button
-                              onClick={() => handleDownloadDocument(doc.id, {
-                                documentType: doc.documentType,
-                                staffName: `${payroll.staff?.firstName} ${payroll.staff?.lastName}`,
-                              })}
-                              className={`p-1.5 rounded-lg transition-colors ${doc.documentType === 'ETAT_DE_PAIEMENT' ? 'text-emerald-600 hover:bg-emerald-50' : 'text-[#1A2BA6] hover:bg-blue-50'}`}
-                              title={`Télécharger ${doc.documentType === 'ETAT_DE_PAIEMENT' ? 'l\u2019état de paiement' : 'la fiche de paie'} (${payroll.staff?.firstName} ${payroll.staff?.lastName} — ${monthLabel}) — PDF scellé)`}
-                            >
-                              {doc.documentType === 'ETAT_DE_PAIEMENT' ? <ReceiptText size={15} /> : <FileText size={15} />}
-                            </button>
+                            <>
+                              {/* ⭐ 162 — APERÇU TOUJOURS VISIBLE (même après
+                                  émission) : le RH voit le gabarit ACTUEL —
+                                  identité école complète (maternelle/primaire
+                                  ou secondaire), filigrane diagonal, QR —
+                                  directement DANS l'application. */}
+                              <button
+                                onClick={() => handlePreviewDocument(payroll.id, doc.documentType === 'ETAT_DE_PAIEMENT' ? 'état de paiement' : 'fiche de paie')}
+                                disabled={payroll.status === 'PENDING'}
+                                className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 ${doc.documentType === 'ETAT_DE_PAIEMENT'
+                                  ? 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'
+                                  : 'text-slate-400 hover:text-[#1A2BA6] hover:bg-blue-50'}`}
+                                title={`Aperçu ${doc.documentType === 'ETAT_DE_PAIEMENT' ? 'de l\u2019état de paiement' : 'de la fiche de paie'} (dans l\u2019application — gabarit actuel, filigrane + QR)`}
+                              >
+                                <Eye size={15} />
+                              </button>
+                              <button
+                                onClick={() => handleDownloadDocument(doc.id, {
+                                  documentType: doc.documentType,
+                                  staffName: `${payroll.staff?.firstName} ${payroll.staff?.lastName}`,
+                                })}
+                                className={`p-1.5 rounded-lg transition-colors ${doc.documentType === 'ETAT_DE_PAIEMENT' ? 'text-emerald-600 hover:bg-emerald-50' : 'text-[#1A2BA6] hover:bg-blue-50'}`}
+                                title={`Télécharger ${doc.documentType === 'ETAT_DE_PAIEMENT' ? 'l\u2019état de paiement' : 'la fiche de paie'} (${payroll.staff?.firstName} ${payroll.staff?.lastName} — ${monthLabel}) — PDF scellé)`}
+                              >
+                                {doc.documentType === 'ETAT_DE_PAIEMENT' ? <ReceiptText size={15} /> : <FileText size={15} />}
+                              </button>
+                            </>
                           ) : (
                             <>
                               <button
-                                onClick={() => handlePreviewDocument(payroll.id)}
+                                onClick={() => handlePreviewDocument(payroll.id, statut === 'PRESTATAIRE_SERVICE' ? 'état de paiement' : 'fiche de paie')}
                                 disabled={payroll.status === 'PENDING'}
                                 className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 ${statut === 'PRESTATAIRE_SERVICE'
                                   ? 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'
@@ -957,7 +1009,7 @@ export default function PayrollDetailPage() {
                         ) : (
                           /* ── Personnel SANS statut → boutons historiques (bulletin générique) ── */
                           <>
-                            <button onClick={() => handlePreviewPayslip(payroll.id)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Aperçu Bulletin">
+                            <button onClick={() => handlePreviewPayslip(payroll.id, `${payroll.staff?.firstName} ${payroll.staff?.lastName}`)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Aperçu du bulletin (dans l'application)">
                               <FileText size={15} />
                             </button>
                             <button onClick={() => handleDownloadPayslip(payroll.id, `${payroll.staff?.firstName} ${payroll.staff?.lastName}`)} className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors" title="Télécharger PDF">
@@ -1013,6 +1065,72 @@ export default function PayrollDetailPage() {
         </div>
       </div>
     </div>
+
+    {/* ── ⭐ 162 — VISIONNEUSE INTÉGRÉE : l'aperçu (bulletin PDF / document
+        FP-EP HTML) s'ouvre AU SEIN DE L'APPLICATION — plus d'onglet externe.
+        « Télécharger » enregistre le fichier localement avec son nom
+        professionnel (Fiche de paie / État de paiement / Bulletin · employé · période). ── */}
+    {viewer && (
+      <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="bg-white w-full max-w-4xl h-[88vh] rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+          <div className="px-6 py-4 text-white flex items-center justify-between shrink-0" style={{ background: PRIMARY }}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center">
+                {viewer.kind === 'pdf' ? <FileText className="h-5 w-5" /> : <FileBadge2 className="h-5 w-5" />}
+              </div>
+              <div>
+                <h3 className="font-bold text-base">{viewer.title}</h3>
+                <p className="text-white/70 text-xs mt-0.5">
+                  {viewer.kind === 'pdf'
+                    ? 'Aperçu intégré du bulletin — bouton « Télécharger » pour enregistrer le PDF'
+                    : 'Aperçu intégré du document officiel — identité de l\u2019école, filigrane diagonal et QR de vérification'}
+                </p>
+              </div>
+            </div>
+            <button onClick={closeViewer} className="rounded-lg p-1.5 hover:bg-white/15 transition-colors">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="flex-grow bg-slate-100 overflow-hidden">
+            {viewer.kind === 'html' ? (
+              <iframe
+                title={viewer.title}
+                srcDoc={viewer.srcDoc}
+                className="w-full h-full border-0 bg-white"
+              />
+            ) : (
+              <iframe
+                title={viewer.title}
+                src={viewer.url}
+                className="w-full h-full border-0"
+              />
+            )}
+          </div>
+          <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
+            <p className="text-[10px] text-slate-500 leading-relaxed max-w-[58%]">
+              {viewer.kind === 'html'
+                ? 'Prévisualisation du gabarit officiel. Le PDF émis est scellé (SHA-256) au moment de l\u2019émission — le document déjà émis conserve son rendu d\u2019origine, les nouvelles émissions utilisent ce gabarit.'
+                : 'Aperçu du bulletin tel qu\u2019il sera imprimé — en-tête et pied de page répétés sur chaque page.'}
+            </p>
+            <div className="flex items-center gap-2">
+              {viewer.kind === 'pdf' && viewer.url && (
+                <a
+                  href={viewer.url}
+                  download={viewer.fileName || 'bulletin-de-paie.pdf'}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-bold shadow-sm hover:opacity-90 transition"
+                  style={{ backgroundColor: PRIMARY }}
+                >
+                  <Download size={14} /> Télécharger
+                </a>
+              )}
+              <button onClick={closeViewer} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-100 transition">
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* ── Registre des documents de paie émis (FP fiches / EP états) ── */}
     {showRegister && (

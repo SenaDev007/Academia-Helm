@@ -109,6 +109,10 @@ export interface FichePaieSnapshot {
   period: PeriodInfo;
   fiscalYear: number;
   employeur: EmployerIdentity;
+  /** ⭐ 162 — QR code de vérification (data-URL) : la référence est lisible
+   *  UNIQUEMENT au scan — jamais en clair sur le document (exigence
+   *  promoteur, alignée sur le bulletin de paie). */
+  qrDataUrl?: string | null;
   salarie: {
     matricule: string;
     nom: string;
@@ -159,6 +163,8 @@ export interface EtatPaiementSnapshot {
   period: PeriodInfo;
   fiscalYear: number;
   employeur: EmployerIdentity;
+  /** ⭐ 162 — QR code de vérification (data-URL) — voir FichePaieSnapshot. */
+  qrDataUrl?: string | null;
   prestataire: {
     nom: string;
     prenoms: string;
@@ -446,6 +452,11 @@ const BASE_CSS = `
   .sign .box { border: 1px dashed #9ca3af; border-radius: 3px; height: 58px; margin-top: 5px; }
   .sign .date { font-size: 8px; color: #6b7280; margin-top: 4px; }
   .footer { margin-top: 16px; border-top: 1px solid #d1d5db; padding-top: 7px; font-size: 7.8px; color: #6b7280; display: flex; justify-content: space-between; }
+  /* ⭐ 162 — QR de vérification : même disposition discrète que le bulletin. */
+  .footer .mention { max-width: 62%; }
+  .footer .qr-wrap { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .footer .qr-wrap img { width: 62px; height: 62px; }
+  .footer .qr-wrap .cap { font-size: 7.2px; color: #6b7280; text-align: right; line-height: 1.35; }
   .draft { position: fixed; top: 42%; left: 50%; transform: translate(-50%, -50%) rotate(-24deg); font-size: 42px; font-weight: 900; color: rgba(107, 114, 128, .16); letter-spacing: 8px; text-transform: uppercase; }
   /* ⭐ 161 — respect des limites en impression multi-pages : l'en-tête de
      tableau se RÉPÈTE sur chaque page (table-header-group), aucune ligne
@@ -585,8 +596,12 @@ export function renderFicheDePaieHtml(s: FichePaieSnapshot): string {
   </div>
 
   <div class="footer">
-    <span>${esc(MENTION_FICHE_CONSERVATION)}</span>
-    <span>Exercice fiscal ${esc(String(s.fiscalYear))} · Barème ${esc(String(s.rates.fiscalYear))}${s.documentNumber ? ` · Émis le ${fmtDateTimeFr(new Date().toISOString())}` : ' · PRÉVISUALISATION'}</span>
+    <span class="mention">${esc(MENTION_FICHE_CONSERVATION)}</span>
+    <div class="qr-wrap">
+      ${s.qrDataUrl
+        ? `<span class="cap">Vérification d'authenticité<br/>(scan du code)</span><img src="${s.qrDataUrl}" alt="vérification" />`
+        : `<span class="cap">Exercice fiscal ${esc(String(s.fiscalYear))} · Barème ${esc(String(s.rates.fiscalYear))}${s.documentNumber ? ` · Émis le ${fmtDateTimeFr(new Date().toISOString())}` : ' · PRÉVISUALISATION'}</span>`}
+    </div>
   </div>
 </div>
 </body></html>`;
@@ -686,8 +701,12 @@ export function renderEtatDePaiementHtml(s: EtatPaiementSnapshot): string {
   </div>
 
   <div class="footer">
-    <span>${esc(s.mention)}</span>
-    <span>Exercice fiscal ${esc(String(s.fiscalYear))}${s.documentNumber ? ` · Émis le ${fmtDateTimeFr(new Date().toISOString())}` : ' · PRÉVISUALISATION'}</span>
+    <span class="mention">${esc(s.mention)}</span>
+    <div class="qr-wrap">
+      ${s.qrDataUrl
+        ? `<span class="cap">Vérification d'authenticité<br/>(scan du code)</span><img src="${s.qrDataUrl}" alt="vérification" />`
+        : `<span class="cap">Exercice fiscal ${esc(String(s.fiscalYear))}${s.documentNumber ? ` · Émis le ${fmtDateTimeFr(new Date().toISOString())}` : ' · PRÉVISUALISATION'}</span>`}
+    </div>
   </div>
 </div>
 </body></html>`;

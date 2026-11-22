@@ -76,7 +76,14 @@ export class PayrollDocumentsService {
 
   async previewDocument(payrollItemId: string, tenantId: string) {
     const ctx = await this.loadContext(payrollItemId, tenantId);
-    const snapshot = await this.buildSnapshot(ctx, { forIssue: false });
+    // ⭐ 162 — prévisualisation d'une ligne DÉJÀ ÉMISE : le VRAI numéro du
+    //    document émis (FP-2026-000123) remplace le tampon « PROJET — NON ÉMIS »
+    //    — l'aperçu d'une ligne émise est conforme au document scellé (même
+    //    numéro, même QR) : le RH voit exactement le gabarit actuel.
+    const snapshot = await this.buildSnapshot(ctx, {
+      forIssue: false,
+      documentNumber: ctx.existingDocument?.documentNumber ?? undefined,
+    });
     const html =
       snapshot.kind === 'FICHE_DE_PAIE'
         ? renderFicheDePaieHtml(snapshot)
@@ -426,6 +433,15 @@ export class PayrollDocumentsService {
 
     // ── 2. Repli : snapshot reconstruit depuis la fiche fiscale (tax_payslips) ──
     const snapshot = await this.buildSnapshotFromTaxPayslip(payslip, staff, contract);
+    // ⭐ 162 — QR de vérification sur le document servi par l'onglet CNSS
+    //    aussi (même règle que l'émission FP/EP : référence lisible
+    //    uniquement au scan, jamais en clair sur l'affiche).
+    (snapshot as any).qrDataUrl = await this.buildDocumentQrDataUrl({
+      doc: snapshot.kind,
+      ref: null,
+      periode: snapshot.period.label,
+      net: snapshot.kind === 'FICHE_DE_PAIE' ? snapshot.net : snapshot.decompte.net,
+    });
     const html =
       snapshot.kind === 'FICHE_DE_PAIE'
         ? renderFicheDePaieHtml(snapshot)
@@ -714,6 +730,18 @@ export class PayrollDocumentsService {
     const cnssNumber = staff.employeeCNSS?.cnssNumber || staff.cnssNumber || null;
     const periodEnd = new Date(period.endDate);
 
+    // ⭐ 162 — QR code de vérification (retour promoteur : les modifications
+    //    « avec le QR code et tout » doivent s'appliquer AUSSI à la fiche de
+    //    paie et à l'état de paiement, pas seulement au bulletin). La
+    //    référence (n° FP/EP émis, null en prévisualisation) est lisible
+    //    UNIQUEMENT au scan — jamais en clair sur le document.
+    const qrDataUrl = await this.buildDocumentQrDataUrl({
+      doc: ctx.documentType as 'FICHE_DE_PAIE' | 'ETAT_DE_PAIEMENT',
+      ref: opts.documentNumber ?? ctx.existingDocument?.documentNumber ?? null,
+      periode: period.label,
+      net: Number(item.netSalary),
+    });
+
     // ⭐ 22/11/2026 — proration par présences (mode « présences » de la
     //    période) : base de proration figée dans la ligne de paie au calcul.
     //    Affichée sur la fiche (jours pointés / ouvrés, taux) — traçabilité
@@ -776,6 +804,7 @@ export class PayrollDocumentsService {
         cumuls,
         rates: { fiscalYear: rates.fiscalYear, aibPct: tauxAib, sourceNotes: rates.sourceNotes },
         mention: MENTION_ETAT_PAIEMENT,
+        qrDataUrl,
       };
       return snapshot;
     }
@@ -852,8 +881,41 @@ export class PayrollDocumentsService {
       conges,
       rates: { fiscalYear: rates.fiscalYear, cnssSalarialPct: rates.cnssSalarial, sourceNotes: rates.sourceNotes },
       mention: MENTION_FICHE_CONSERVATION,
+      qrDataUrl,
     };
     return snapshot;
+  }
+
+  /**
+   * ⭐ 162 — QR code de vérification du document de paie (fiche FP / état
+   * EP) : même exigence promoteur que le bulletin — la référence est lisible
+   * UNIQUEMENT au scan, JAMAIS en clair sur l'affiche. Best-effort : null si
+   * la librairie qrcode est indisponible (le document reste complet sans QR).
+   */
+  private async buildDocumentQrDataUrl(payload: {
+    doc: 'FICHE_DE_PAIE' | 'ETAT_DE_PAIEMENT';
+    ref: string | null;
+    periode: string;
+    net: number;
+  }): Promise<string | null> {
+    try {
+      const QRCode: any = await import('qrcode');
+      const data = JSON.stringify({
+        app: 'academia-helm',
+        doc: payload.doc,
+        ref: payload.ref,
+        periode: payload.periode,
+        net: payload.net,
+      });
+      return await QRCode.toDataURL(data, {
+        margin: 1,
+        width: 128,
+        errorCorrectionLevel: 'M',
+        color: { dark: '#1f2937', light: '#ffffff' },
+      });
+    } catch {
+      return null;
+    }
   }
 
   /** Cumuls annuels RECALCULÉS depuis les payroll_documents émis + la ligne courante. */

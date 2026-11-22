@@ -7,7 +7,16 @@ import { Resend } from 'resend';
    attempts to forward the message to WhatsApp via Evolution API.
    ══════════════════════════════════════════════════════════════════════ */
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+/* Lazy client — `new Resend()` throws at module evaluation when the key is absent,
+   which crashes `next build` during page-data collection on Vercel. Instantiating
+   on first use keeps the build green even if RESEND_API_KEY is only set at runtime. */
+let resendClient: Resend | null = null;
+function getResend(): Resend {
+  if (!resendClient) {
+    resendClient = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resendClient;
+}
 
 /* ─── Palette ─── */
 const NAVY = '#0b2f73';
@@ -209,7 +218,18 @@ export async function POST(req: Request) {
     }
 
     /* ─── Send email via Resend ─── */
-    const emailResult = await resend.emails.send({
+    if (!process.env.RESEND_API_KEY) {
+      console.error(
+        '[contact] RESEND_API_KEY is not configured — cannot send the contact email. Message:',
+        JSON.stringify({ from: name, email, subject }),
+      );
+      return NextResponse.json(
+        { success: false, error: "Le service d'envoi d'email n'est pas encore configuré. Veuillez réessayer plus tard." },
+        { status: 503 },
+      );
+    }
+
+    const emailResult = await getResend().emails.send({
       from: 'Academia Helm Contact <noreply@academiahelm.com>',
       to: ['support@academiahelm.com'],
       replyTo: email.trim(),

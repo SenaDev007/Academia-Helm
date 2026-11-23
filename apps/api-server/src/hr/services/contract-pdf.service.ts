@@ -1194,9 +1194,14 @@ export class ContractPdfService {
 
     // Contrat signé/actif → immuable : on refuse l'abandon (l'embauche est
     // déjà juridiquement conclue, il faut la dénoncer via la débauche).
+    // ⭐ FIX 165 : le select référençait « documentNumber », champ ABSENT du
+    //    modèle Contract (il n'existe que sur PayrollDocument/OnboardingDocument)
+    //    → PrismaClientValidationError « Invalid prisma.contract.findFirst()
+    //    invocation » sur CHAQUE abandon depuis le build 1.0.34. Le select ne
+    //    sert qu'à tester l'existence : champs réels du modèle uniquement.
     const signedContract = await this.prisma.contract.findFirst({
       where: { staffId, tenantId, OR: [{ signedAt: { not: null } }, { status: 'ACTIVE' }] },
-      select: { id: true, documentNumber: true },
+      select: { id: true, signedAt: true },
     });
     if (signedContract) {
       throw new BadRequestException(
@@ -1208,18 +1213,38 @@ export class ContractPdfService {
     // ── Purge (best-effort, chaque étape protégée) ──────────────────────────
     const purged: Record<string, number> = {};
 
-    // 1. Candidature liée (HrCandidate a onDelete:SetNull sur staff → il faut
-    //    la supprimer EXPLICITEMENT sinon elle survivrait en orphelin « ÉLIGIBLE »
-    //    dans l'onglet Embauche ; ses HrApplication cascaden avec elle).
+    // 1. Candidature liée. ⭐ FIX 165 : le lien staff↔candidature vit désormais
+    //    sur HrApplication.staffId (HrCandidate n'a PLUS de staffId depuis la
+    //    reprise du recrutement) — l'ancien where { staffId } sur hrCandidate
+    //    levait une PrismaClientValidationError silencieusement avalée par ce
+    //    try/catch, laissant la candidature survivre en orphelin « ÉLIGIBLE »
+    //    dans l'onglet Embauche après l'abandon. On remonte donc les
+    //    applications liées au staff, et l'on supprime les candidats dont
+    //    TOUTES les applications appartiennent à cette embauche (candidature
+    //    pure du wizard) — leurs HrApplication cascaden avec eux. Un candidat
+    //    public multi-offres garde son historique : seule son application
+    //    liée est détachée (SetNull) au moment du DELETE staff.
     try {
-      const candidates = await this.prisma.hrCandidate.findMany({
+      const linkedApps = await this.prisma.hrApplication.findMany({
         where: { staffId, tenantId },
-        select: { id: true },
+        select: { id: true, candidateId: true },
       });
-      if (candidates.length > 0) {
-        await this.prisma.hrCandidate.deleteMany({ where: { staffId, tenantId } });
+      let purgedCandidates = 0;
+      if (linkedApps.length > 0) {
+        const candidateIds = [...new Set(linkedApps.map((a) => a.candidateId).filter(Boolean))];
+        const candidateRows = await this.prisma.hrCandidate.findMany({
+          where: { id: { in: candidateIds } },
+          select: { id: true, applications: { select: { id: true, staffId: true } } },
+        });
+        const pureCandidateIds = candidateRows
+          .filter((c) => c.applications.length > 0 && c.applications.every((a) => a.staffId === staffId))
+          .map((c) => c.id);
+        if (pureCandidateIds.length > 0) {
+          await this.prisma.hrCandidate.deleteMany({ where: { id: { in: pureCandidateIds } } });
+          purgedCandidates = pureCandidateIds.length;
+        }
       }
-      purged.candidates = candidates.length;
+      purged.candidates = purgedCandidates;
     } catch (err: any) {
       this.logger.warn(`[abortOnboarding] purge candidature ignorée : ${err?.message}`);
     }

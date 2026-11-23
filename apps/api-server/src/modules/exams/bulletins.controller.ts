@@ -722,10 +722,41 @@ export class BulletinsController {
         // Silent fail — le message part sans lien de repli (rare : storage ET DB indisponibles)
       }
     }
+    // ⭐ 2026-11-23 — Persistance + MARQUAGE PARENT_SENT : la direction a
+    //    déclenché l'envoi du bulletin au parent (bouton « Envoyer par
+    //    WhatsApp ») — le bulletin doit devenir VISIBLE dans le PORTAIL PARENT
+    //    (onglet Bulletins : items par matière + bouton PDF = l'archive
+    //    publique posée par persistBulletinDocument), sinon la requête parent
+    //    filtre status IN (VALIDATED, PUBLISHED, PARENT_SENT) et la ligne
+    //    resterait DRAFT/invisible bien qu'envoyée. Fonctionne pour toutes les
+    //    pistes (FR maternelle/primaire/secondaire + EN Report Book + vues par
+    //    matière trimestrielle/annuelle). Best-effort : l'échec de la
+    //    persistance ne bloque JAMAIS le lien wa.me.
+    let persistedReportCardId: string | null = null;
     try {
-      await this.persistBulletinDocument(resolvedTenantId, academicYearId, pdfData, buffer, studentId, schoolLevelId);
+      persistedReportCardId = await this.persistBulletinDocument(
+        resolvedTenantId, academicYearId, pdfData, buffer, studentId, schoolLevelId,
+        // fallbackFilePath : lien public /bulletin/[token] si l'archive R2/S3
+        // est indisponible — le parent conserve son bouton PDF (page publique
+        // qui streame les octets depuis bulletin_pdf_shares, 30 jours).
+        pdfUrl,
+      );
     } catch {
       // Silent fail — l'envoi WhatsApp ne doit jamais être bloqué par la persistance
+    }
+    if (persistedReportCardId) {
+      try {
+        await this.prisma.reportCard.update({
+          where: { id: persistedReportCardId },
+          data: {
+            status: 'PARENT_SENT',
+            sentToParentAt: new Date(),
+            sentToParentBy: user?.id || null,
+          },
+        });
+      } catch {
+        // Silent fail — le marquage ne bloque pas non plus le lien wa.me
+      }
     }
 
     // 3. Contacts du tuteur (tuteur principal en priorité, sinon 1er tuteur
@@ -1743,9 +1774,15 @@ export class BulletinsController {
    *    ligne par matière + bouton PDF → exactement le document généré par le
    *    directeur). Best-effort : aucun échec ici ne bloque le téléchargement.
    *
-   *    ⚠️ Ne touche JAMAIS au statut du workflow (DRAFT → DIRECTOR_SIGNED → …
-   *    → PARENT_SENT) — seuls filePath/generatedAt/overallAverage/rank/items
-   *    sont mis à jour ; la ligne est créée en DRAFT si elle n'existe pas.
+   *    ⭐ 2026-11-23 — fallbackFilePath : si l'archive R2/S3 est indisponible,
+   *    le lien public de repli (/bulletin/[token], 30 jours — octets dans
+   *    bulletin_pdf_shares) est utilisé comme filePath — le parent conserve
+   *    TOUJOURS son bouton PDF. Retourne l'ID de la ligne ReportCard (l'appelant
+   *    whatsapp-link marque alors PARENT_SENT + sentToParentAt).
+   *
+   *    ⚠️ Ne touche JAMAIS au statut du workflow — seuls
+   *    filePath/generatedAt/overallAverage/rank/items sont mis à jour ; la
+   *    ligne est créée en DRAFT si elle n'existe pas (l'appelant marque).
    */
   private async persistBulletinDocument(
     resolvedTenantId: string | undefined,
@@ -1754,8 +1791,9 @@ export class BulletinsController {
     buffer: Buffer,
     studentId: string | null,
     schoolLevelId: string | null,
-  ): Promise<void> {
-    if (!resolvedTenantId || !studentId || !pdfData?.periodId) return;
+    fallbackFilePath: string | null = null,
+  ): Promise<string | null> {
+    if (!resolvedTenantId || !studentId || !pdfData?.periodId) return null;
 
     // 1. Archiver le PDF (clé déterministe — une re-génération écrase l'ancien)
     let filePath: string | null = null;
@@ -1766,9 +1804,12 @@ export class BulletinsController {
       // pas téléchargeable depuis le portail parent.
       if (typeof stored === 'string' && /^https?:\/\//.test(stored)) filePath = stored;
     } catch {
-      return; // storage indisponible — rien à rattacher
+      // Storage indisponible — repli : lien public /bulletin/[token] fourni
+      //    par l'appelant (les octets sont déjà dans bulletin_pdf_shares).
+      filePath = fallbackFilePath && /^https?:\/\//.test(fallbackFilePath) ? fallbackFilePath : null;
     }
-    if (!filePath) return;
+    if (!filePath) filePath = fallbackFilePath && /^https?:\/\//.test(fallbackFilePath) ? fallbackFilePath : null;
+    if (!filePath) return null;
 
     // 2. Retrouver/créer la ligne ReportCard (clé du workflow : tenant + année
     //    + élève + période + type d'évaluation) SANS toucher au statut.
@@ -1806,7 +1847,7 @@ export class BulletinsController {
       });
       reportCardId = existing.id;
     } else {
-      if (!schoolLevelId) return; // impossible de créer la ligne sans niveau
+      if (!schoolLevelId) return null; // impossible de créer la ligne sans niveau
       const created = await this.prisma.reportCard.create({
         data: {
           tenantId: resolvedTenantId,
@@ -1874,6 +1915,11 @@ export class BulletinsController {
         })),
       }).catch(() => {});
     }
+
+    // ⭐ 2026-11-23 — Retourne l'ID de la ligne ReportCard (pour marquer
+    //    PARENT_SENT au moment de l'envoi WhatsApp — le parent doit voir le
+    //    bulletin ET son PDF dans son portail dès que la direction envoie).
+    return reportCardId;
   }
 
   /**

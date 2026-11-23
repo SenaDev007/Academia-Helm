@@ -26,9 +26,14 @@ export const dynamic = 'force-dynamic';
 /**
  * Extraction du branding depuis la réponse de /public/schools/with-jobs
  * Les données sont déjà pré-résolues par le backend (objet plat)
+ * ⭐ 2026-11-23 — tenantId AJOUTÉ : sans lui, le bandeau recrutement du site
+ *    institutionnel (TenantRecruitmentBanner) ne peut pas charger les offres
+ *    de l'école (l'API jobs exige le tenantId) — le bandeau restait invisible
+ *    quand la stratégie 1 (by-subdomain) échouait (timeout/indisponibilité).
  */
 function extractBrandingFromSchoolList(school: any) {
   return {
+    tenantId: school.tenantId || school.id || null,
     name: school.schoolName || school.name || null,
     slug: school.slug || null,
     logoUrl: school.logoUrl || null,

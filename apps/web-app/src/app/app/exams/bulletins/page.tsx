@@ -4281,6 +4281,30 @@ function MoyennesTab({
   const [loading, setLoading] = useState(true);
   const [trimesterData, setTrimesterData] = useState<any[]>([]);
   const [annualData, setAnnualData] = useState<any[]>([]);
+  // ⭐ 2026-11-23 — Envoi WhatsApp depuis la VUE GLOBALE : un clic sur une
+  //    ligne d'élève bascule en « Vue par matière » (le bulletin complet —
+  //    EM1/EM2/Moy.EM/EC par matière) et déclenche automatiquement l'envoi du
+  //    bulletin de CET élève (même payload/même PDF que le bouton direct).
+  //    L'envoi reste ainsi disponible dans les DEUX vues du sous-onglet
+  //    (globale + par matière), trimestriel comme annuel.
+  const [autoSend, setAutoSend] = useState<{ kind: 'trimestriel' | 'annuel'; studentId: string } | null>(null);
+
+  const isTeacher = ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'PEDAGOGIC_COORDINATOR'].includes(user?.role || '');
+  const canUseVueParMatiere = (isMaternelle || scopeLevel === 'PRIMAIRE');
+
+  const handleRowSendWhatsApp = (studentId: string) => {
+    if (isTeacher) return;
+    if (!canUseVueParMatiere) {
+      // Niveau sans vue par matière (ex. secondaire EN) : l'envoi du bulletin
+      // d'évaluation reste disponible dans l'onglet « Bulletin d'évaluation ».
+      toastError('Envoi WhatsApp', {
+        description: 'Pour ce niveau, ouvrez le bulletin de l\'élève dans l\'onglet « Bulletin d\'évaluation » puis cliquez sur « Envoyer par WhatsApp ».',
+      });
+      return;
+    }
+    setActiveVue('par-matiere');
+    setAutoSend({ kind: activeMoyenneTab, studentId });
+  };
 
   // ── Helper : compute per-student averages for a set of evaluations ──
   //   Returns: Map<studentId, { name, em1Avg, em2Avg, ecAvg, epAvg }>
@@ -4633,9 +4657,15 @@ function MoyennesTab({
             effectiveTenantId={effectiveTenantId}
             user={user}
             directorName={directorName}
+            autoSendStudentId={autoSend && autoSend.kind === 'trimestriel' ? autoSend.studentId : null}
+            onAutoSendDone={() => setAutoSend(null)}
           />
         ) : (
-          <MoyennesTrimestrielTable data={trimesterData} isMaternelle={isMaternelle} />
+          <MoyennesTrimestrielTable
+            data={trimesterData}
+            isMaternelle={isMaternelle}
+            onSendWhatsApp={isTeacher ? undefined : handleRowSendWhatsApp}
+          />
         )
       ) : (
         (isMaternelle || scopeLevel === 'PRIMAIRE') && activeVue === 'par-matiere' ? (
@@ -4649,9 +4679,15 @@ function MoyennesTab({
             effectiveTenantId={effectiveTenantId}
             user={user}
             directorName={directorName}
+            autoSendStudentId={autoSend && autoSend.kind === 'annuel' ? autoSend.studentId : null}
+            onAutoSendDone={() => setAutoSend(null)}
           />
         ) : (
-          <MoyennesAnnuelTable data={annualData} isMaternelle={isMaternelle} />
+          <MoyennesAnnuelTable
+            data={annualData}
+            isMaternelle={isMaternelle}
+            onSendWhatsApp={isTeacher ? undefined : handleRowSendWhatsApp}
+          />
         )
       )}
     </div>
@@ -4689,7 +4725,7 @@ function avgColor(value: number | null | undefined, isMaternelle: boolean, thres
 
 function VueParMatiereTrimestriel({
   academicYear, scopeLang, isMaternelle, classes, selectedClassId, school,
-  effectiveTenantId, user, directorName,
+  effectiveTenantId, user, directorName, autoSendStudentId, onAutoSendDone,
 }: {
   academicYear: any;
   scopeLang?: string;
@@ -4700,6 +4736,11 @@ function VueParMatiereTrimestriel({
   effectiveTenantId?: string;
   user?: any;
   directorName?: string | null;
+  // ⭐ 2026-11-23 — Envoi déclenché depuis la vue globale (trimestriel) :
+  //    après chargement des données, le bulletin de CET élève part
+  //    automatiquement par WhatsApp (même payload que le bouton direct).
+  autoSendStudentId?: string | null;
+  onAutoSendDone?: () => void;
 }) {
   const [periods, setPeriods] = useState<any[]>([]);
   const [selectedPeriodId, setSelectedPeriodId] = useState('');
@@ -4941,6 +4982,11 @@ function VueParMatiereTrimestriel({
         schoolSlogan: school?.slogan,
         academicYearName: academicYear?.label || '',
         periodName,
+        // ⭐ 2026-11-23 — periodId OBLIGATOIRE pour l'envoi WhatsApp : le backend
+        //    l'utilise pour la clé d'archive R2/S3 ET pour rattacher le bulletin
+        //    au ReportCard du parent (persistBulletinDocument exige periodId —
+        //    sans lui, le bulletin envoyé reste invisible dans le portail parent).
+        periodId: selectedPeriodId || undefined,
         evaluationTypeName: 'Vue par matière',
         className,
         studentName: student.studentName,
@@ -5038,6 +5084,22 @@ function VueParMatiereTrimestriel({
       setWhatsappLoading(null);
     }
   };
+
+  // ⭐ 2026-11-23 — AUTO-ENVOI déclenché depuis la VUE GLOBALE (trimestriel) :
+  //    quand le composant est monté avec autoSendStudentId (clic sur le bouton
+  //    WhatsApp d'une ligne de la vue globale), on attend que les données de la
+  //    classe soient chargées puis on déclenche l'envoi du bulletin de CET
+  //    élève (une seule fois — garde par ref).
+  const autoSendRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!autoSendStudentId || loading || students.length === 0) return;
+    if (autoSendRef.current === autoSendStudentId) return;
+    const student = students.find((s: any) => s.id === autoSendStudentId);
+    if (!student) { onAutoSendDone?.(); return; }
+    autoSendRef.current = autoSendStudentId;
+    handleSendWhatsApp(student).finally(() => onAutoSendDone?.());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSendStudentId, students, loading]);
 
   const handleGenerateAllPdf = async () => {
     for (const student of students) {
@@ -5294,7 +5356,7 @@ function VueParMatiereTrimestriel({
 
 function VueParMatiereAnnuel({
   academicYear, scopeLang, isMaternelle, classes, selectedClassId, school,
-  effectiveTenantId, user, directorName,
+  effectiveTenantId, user, directorName, autoSendStudentId, onAutoSendDone,
 }: {
   academicYear: any;
   scopeLang?: string;
@@ -5305,6 +5367,10 @@ function VueParMatiereAnnuel({
   effectiveTenantId?: string;
   user?: any;
   directorName?: string | null;
+  // ⭐ 2026-11-23 — Envoi déclenché depuis la vue globale (annuel) : après
+  //    chargement, le bulletin ANNUEL de CET élève part automatiquement.
+  autoSendStudentId?: string | null;
+  onAutoSendDone?: () => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [students, setStudents] = useState<any[]>([]);
@@ -5312,6 +5378,11 @@ function VueParMatiereAnnuel({
   const [generatingPdf, setGeneratingPdf] = useState<string | null>(null);
   // ⭐ 2026-11-23 — Envoi WhatsApp du bulletin annuel (un chargement par élève)
   const [whatsappLoading, setWhatsappLoading] = useState<string | null>(null);
+  // ⭐ 2026-11-23 — Dernière période de l'année : periodId passé au backend
+  //    (clé d'archive R2 + rattachement au ReportCard du portail parent —
+  //    persistBulletinDocument l'exige). Le bulletin ANNUEL est rattaché
+  //    à la dernière période de l'année.
+  const [lastPeriodId, setLastPeriodId] = useState<string | null>(null);
   const [expandedStudents, setExpandedStudents] = useState<Set<string>>(new Set());
   const isTeacher = ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'PEDAGOGIC_COORDINATOR'].includes(user?.role || '');
 
@@ -5330,6 +5401,9 @@ function VueParMatiereAnnuel({
       const periodsData = await periodsRes.json();
       const periods = Array.isArray(periodsData) ? periodsData : [];
       if (periods.length === 0) { setStudents([]); setSubjects([]); return; }
+      // ⭐ 2026-11-23 — Dernière période conservée pour le periodId du payload
+      //    d'envoi WhatsApp (persistance ReportCard + archive R2).
+      setLastPeriodId(periods.length > 0 ? periods[periods.length - 1].id : null);
 
       // Batch-load grading sheets
       const evalIds = allEvals.map((ev: any) => ev.id);
@@ -5527,6 +5601,10 @@ function VueParMatiereAnnuel({
         schoolSlogan: school?.slogan,
         academicYearName: academicYear?.label || '',
         periodName: 'Moyenne annuelle',
+        // ⭐ 2026-11-23 — periodId OBLIGATOIRE pour l'envoi WhatsApp (archive
+        //    R2 + rattachement au ReportCard du portail parent). Le bulletin
+        //    ANNUEL est rattaché à la DERNIÈRE période de l'année.
+        periodId: lastPeriodId || undefined,
         evaluationTypeName: 'Moyenne annuelle',
         className,
         studentName: student.studentName,
@@ -5609,6 +5687,21 @@ function VueParMatiereAnnuel({
       setWhatsappLoading(null);
     }
   };
+
+  // ⭐ 2026-11-23 — AUTO-ENVOI déclenché depuis la VUE GLOBALE (annuel) :
+  //    quand le composant est monté avec autoSendStudentId (clic sur le bouton
+  //    WhatsApp d'une ligne des moyennes annuelles), on attend le chargement
+  //    puis on déclenche l'envoi du bulletin ANNUEL de CET élève (une fois).
+  const autoSendRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!autoSendStudentId || loading || students.length === 0) return;
+    if (autoSendRef.current === autoSendStudentId) return;
+    const student = students.find((s: any) => s.id === autoSendStudentId);
+    if (!student) { onAutoSendDone?.(); return; }
+    autoSendRef.current = autoSendStudentId;
+    handleSendWhatsApp(student).finally(() => onAutoSendDone?.());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSendStudentId, students, loading]);
 
   const fmtQ = (val: number | null | undefined): string => {
     if (val === null || val === undefined) return '—';
@@ -5941,7 +6034,7 @@ function generateVueParMatiereHtml({
 //    Nom | EM1 | EM2 | Moy. EM | EC | Moyenne générale  (× nb trimestres)
 //    Bordures arrondies (border-radius) sur le conteneur et les en-têtes.
 
-function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMaternelle: boolean }) {
+function MoyennesTrimestrielTable({ data, isMaternelle, onSendWhatsApp }: { data: any[]; isMaternelle: boolean; onSendWhatsApp?: (studentId: string) => void }) {
   if (data.length === 0) {
     return (
       <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
@@ -5955,7 +6048,7 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
   const studentMap = new Map<string, any>();
   for (const row of data) {
     if (!studentMap.has(row.studentId)) {
-      studentMap.set(row.studentId, { studentName: row.studentName, periods: {} as Record<string, any> });
+      studentMap.set(row.studentId, { studentId: row.studentId, studentName: row.studentName, periods: {} as Record<string, any> });
     }
     studentMap.get(row.studentId)!.periods[row.periodName] = row;
   }
@@ -6018,7 +6111,23 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
               return (
               <tr key={student.studentName + idx}>
                 <td className={`border-r ${rowB} border-black px-3 py-1.5 font-medium text-slate-900 whitespace-nowrap sticky left-0 z-10 bg-white`}>
-                  {student.studentName}
+                  <span className="inline-flex items-center gap-1.5">
+                    {student.studentName}
+                    {/* ⭐ 2026-11-23 — Envoi WhatsApp du bulletin trimestriel au
+                        parent (pattern finance encaissement) depuis la vue
+                        globale : bascule en vue par matière et déclenche
+                        l'envoi pour CET élève. */}
+                    {onSendWhatsApp && (
+                      <button
+                        type="button"
+                        onClick={() => onSendWhatsApp(student.studentId)}
+                        title="Envoyer le bulletin trimestriel de cet élève au parent par WhatsApp"
+                        className="shrink-0 p-1 rounded-full bg-[#25D366] hover:bg-[#1EBE5B] text-white shadow-sm transition-colors"
+                      >
+                        <WhatsAppIcon className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </span>
                 </td>
                 {periodNames.map((p, pi) => {
                   const groupR = pi < periodNames.length - 1 ? 'border-r' : '';
@@ -6121,7 +6230,7 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
 //    EP = évaluation de passage (T3 uniquement, si présente)
 //    Moyenne annuelle = ((EM annuel + EC annuel) / 2 + EP) / 2 (si EP), sinon (EM annuel + EC annuel) / 2
 
-function MoyennesAnnuelTable({ data, isMaternelle }: { data: any[]; isMaternelle: boolean }) {
+function MoyennesAnnuelTable({ data, isMaternelle, onSendWhatsApp }: { data: any[]; isMaternelle: boolean; onSendWhatsApp?: (studentId: string) => void }) {
   if (data.length === 0) {
     return (
       <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
@@ -6162,7 +6271,25 @@ function MoyennesAnnuelTable({ data, isMaternelle }: { data: any[]; isMaternelle
               const rowB = idx === data.length - 1 ? '' : 'border-b';
               return (
               <tr key={row.studentId + idx}>
-                <td className={`border-r ${rowB} border-black px-3 py-1.5 font-medium text-slate-900 whitespace-nowrap`}>{row.studentName}</td>
+                <td className={`border-r ${rowB} border-black px-3 py-1.5 font-medium text-slate-900 whitespace-nowrap`}>
+                  <span className="inline-flex items-center gap-1.5">
+                    {row.studentName}
+                    {/* ⭐ 2026-11-23 — Envoi WhatsApp du bulletin ANNUEL au parent
+                        (pattern finance encaissement) depuis la vue globale :
+                        bascule en vue par matière (annuel) et déclenche l'envoi
+                        pour CET élève. */}
+                    {onSendWhatsApp && (
+                      <button
+                        type="button"
+                        onClick={() => onSendWhatsApp(row.studentId)}
+                        title="Envoyer le bulletin annuel de cet élève au parent par WhatsApp"
+                        className="shrink-0 p-1 rounded-full bg-[#25D366] hover:bg-[#1EBE5B] text-white shadow-sm transition-colors"
+                      >
+                        <WhatsAppIcon className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </span>
+                </td>
                 {isMaternelle ? (
                   <>
                     <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-bold`}>

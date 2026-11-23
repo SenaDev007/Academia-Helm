@@ -41,21 +41,39 @@ export default function TenantRecruitmentBanner({ tenantId, tenantSlug }: Props)
   const [isPaused, setIsPaused] = useState(false);
   const fetchedRef = useRef<string | null>(null);
 
+  // ⭐ 2026-11-23 — Robustesse : tenantId résolu ? on fetch ; sinon on n'affiche
+  //    PAS de bandeau « Chargement… » éternel (l'ancien code laissait
+  //    isLoading=true pour toujours quand le tenantId n'était pas résolu).
+  const fetchInFlight = !!tenantId && isLoading;
+
   useEffect(() => {
     // Ne pas re-fetcher si on a déjà fetché pour ce tenantId
     if (!tenantId || fetchedRef.current === tenantId) return;
     fetchedRef.current = tenantId;
 
+    // tenantId résolu → on peut quitter l'état « sans données » même en cas d'échec
     let cancelled = false;
     setIsLoading(true);
 
     async function fetchJobs() {
       try {
-        const res = await fetch(`/api/hr/recruitment/jobs?tenantId=${tenantId}`, { cache: 'no-store' });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch(`/api/hr/recruitment/jobs?tenantId=${tenantId}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
         if (!res.ok) { if (!cancelled) { setIsLoading(false); setHasFetched(true); } return; }
         const data = await res.json();
         if (Array.isArray(data) && !cancelled) {
-          const published = data.filter((j: any) => j.status === 'PUBLIÉE');
+          // ⭐ Statut PUBLIÉE (avec ou sans accent) + exclusion des offres
+          //    internes du flux d'embauche directe (ref=INTERNAL).
+          const published = data.filter((j: any) => {
+            const status = String(j.status || '').toUpperCase();
+            return (status === 'PUBLIÉE' || status === 'PUBLIEE' || status === 'PUBLISHED')
+              && (j.ref || '') !== 'INTERNAL';
+          });
           setJobs(published);
         }
       } catch { /* non-critical */ } finally {
@@ -66,8 +84,10 @@ export default function TenantRecruitmentBanner({ tenantId, tenantSlug }: Props)
     return () => { cancelled = true; };
   }, [tenantId]);
 
-  // Loading state — même design que le site principal
-  if (isLoading) {
+  // Loading state — même design que le site principal (UNIQUEMENT pendant le
+  // fetch réel — plus de bandeau fantôme « Chargement » si le tenantId
+  // n'est jamais résolu).
+  if (fetchInFlight) {
     return (
       <div className="overflow-hidden relative shadow-lg select-none z-[40]">
         <div className="absolute inset-0 bg-gradient-to-r from-[#0b2f73] via-[#103e91] to-[#1d4fa5]" />

@@ -43,6 +43,8 @@ import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
 // ⭐ 2026-11-13 — Identité du niveau secondaire (écoles combinées)
 import { LevelIdentityService } from './services/level-identity.service';
+// ⭐ 2026-11-23 — Palette du site institutionnel dérivée du logo (auto)
+import { LogoPaletteService } from './services/logo-palette.service';
 import { UpdateSecondaryIdentityDto } from './dto/secondary-identity.dto';
 import { StampsSignaturesService } from './services/stamps-signatures.service';
 import { SignatureTokenService } from './services/signature-token.service';
@@ -85,6 +87,8 @@ export class SettingsController {
     private readonly billingSettingsService: BillingSettingsService,
     private readonly identityProfileService: IdentityProfileService,
     private readonly levelIdentityService: LevelIdentityService,
+    // ⭐ 2026-11-23 — Palette du site institutionnel dérivée du logo (auto)
+    private readonly logoPaletteService: LogoPaletteService,
     private readonly stampsSignaturesService: StampsSignaturesService,
     private readonly signatureTokenService: SignatureTokenService,
     private readonly emailService: EmailService,
@@ -294,6 +298,56 @@ export class SettingsController {
       ipAddress,
       userAgent,
     );
+  }
+
+  /**
+   * ⭐ GET /settings/logo-palette   (2026-11-23)
+   *
+   * Palette de couleurs du site institutionnel dérivée du logo (tenant_
+   * websites.logoPalette — fallback automatique du CMS). Utilisée par
+   * l'interface Paramètres pour afficher le résultat de la dérivation.
+   */
+  @Get('logo-palette')
+  async getLogoPalette(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    const result = await this.logoPaletteService.getLogoPalette(tid);
+    return {
+      palette: result.palette,
+      colors: result.colors,
+      source: result.palette ? 'logo' : null,
+      // Priorité d'affichage du site institutionnel (documentée)
+      resolution: ['theme officiel', 'customColors (CMS)', 'logoPalette (logo)', 'palette Helm par défaut'],
+    };
+  }
+
+  /**
+   * ⭐ POST /settings/logo-palette/regenerate   (2026-11-23)
+   *
+   * Régénère MANUELLEMENT la palette du site institutionnel depuis le logo
+   * actif (utile après un changement de logo effectué hors du formulaire
+   * Identité, ou pour reprendre la main après un échec silencieux).
+   */
+  @Post('logo-palette/regenerate')
+  async regenerateLogoPalette(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    const result = await this.logoPaletteService.extractAndApplyLogoPalette(tid);
+    if (!result) {
+      return {
+        success: false,
+        message: 'Impossible de dériver la palette depuis le logo actif (logo absent, illisible ou format non décodable). Le site conserve sa configuration actuelle.',
+        palette: null,
+        colors: null,
+      };
+    }
+    return { success: true, palette: result.palette, colors: result.colors, generatedAt: result.generatedAt };
   }
 
   /**

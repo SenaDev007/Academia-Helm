@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Patch, Param, Query, Body,
-  UseGuards, Res, ForbiddenException, Headers,
+  UseGuards, Res, ForbiddenException, Headers, NotFoundException,
 } from '@nestjs/common';
 import { BulletinsService } from './services/bulletins.service';
 import { BulletinPdfService } from './services/bulletin-pdf.service';
@@ -16,16 +16,16 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 import { Permissions } from '../../auth/decorators/permissions.decorator';
+// ⭐ 2026-11-23 — Partage WhatsApp des bulletins : route publique /bulletin/[token]
+//    (repli quand l'archive R2/S3 est indisponible).
+import { Public } from '../../auth/decorators/public.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { AcademicYearId } from '../../common/decorators/academic-year-id.decorator';
 import { UserId } from '../../auth/decorators/user-id.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 // ⭐ 2026-11-23 — Identité secondaire : helper partagé (écoles combinées).
 import { resolveLevelIdentityOverlay, applyLevelIdentityOverlay } from '../../common/context/resolve-level-identity';
-// ⭐ 2026-11-23 — ENVOI RÉEL du bulletin par WhatsApp (numéro de l'école →
-//    WhatsApp du parent, PDF joint) — même mécanique que le module Finances
-//    (encaissement → « Envoi auto (API) » : template + document Gupshup).
-import { WhatsAppService } from '../../communication/services/whatsapp.service';
+import * as crypto from 'crypto';
 
 @Controller('institutional-exams/bulletins')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
@@ -36,7 +36,6 @@ export class BulletinsController {
     private readonly prisma: PrismaService,
     private readonly documentSealsService: DocumentSealsService,
     private readonly storageService: StorageService,
-    private readonly whatsappService: WhatsAppService,
   ) {}
 
   @Get('class/:classId')
@@ -637,16 +636,22 @@ export class BulletinsController {
   /**
    * ⭐ POST /institutional-exams/bulletins/whatsapp-link
    *
-   * Envoi du bulletin d'un élève aux parents par WhatsApp — message prédéfini
-   * professionnel (école, moyenne, rang, mention) + bulletin PDF archivé en
-   * URL publique. Le director UI appelle cet endpoint depuis le bouton
-   * « Envoyer par WhatsApp » de chaque élève ; il reçoit en retour :
+   * Envoi du bulletin d'un élève aux parents par WhatsApp — MÊME PATTERN QUE
+   * LE MODULE FINANCE / Encaissement (transactions → « lien wa.me ») :
+   * message prédéfini professionnel (école, moyenne, rang, mention) + bulletin
+   * PDF téléchargeable par LIEN PUBLIC. Le director UI appelle cet endpoint
+   * depuis le bouton « Envoyer par WhatsApp » de chaque élève ; il reçoit :
    *   - url       : lien wa.me avec le message pré-rempli (numéro du tuteur)
-   *   - message   : le message complet (pour copier/coller si pas de numéro)
-   *   - pdfBase64 : le bulletin PDF (téléchargé côté client pour être joint
-   *                 à la conversation WhatsApp en un geste)
-   *   - pdfUrl    : URL publique du même PDF (incluse dans le message —
-   *                 le parent peut le télécharger directement)
+   *                 → window.open → WhatsApp (app/Web du téléphone de l'école)
+   *                 s'ouvre, il ne reste qu'à cliquer Envoyer — depuis le
+   *                 numéro de l'école vers le numéro WhatsApp du parent
+   *   - message   : le message complet (débogage/confirmation)
+   *   - pdfUrl    : URL publique du PDF (incluse dans le message — le parent
+   *                 le télécharge directement ; archive R2/S3, sinon repli
+   *                 /bulletin/[token] valable 30 jours)
+   *   ⭐ PAS d'API WhatsApp directe (retour promoteur : « nous n'utilisons pas
+   *      l'API directe de WhatsApp, ça ne peut pas fonctionner par API
+   *      directe ») — plus de base64 à télécharger/joindre manuellement.
    *
    * Body : même payload que POST generate-pdf (le frontend calcule les
    * moyennes — le PDF est strictement identique à celui du bouton
@@ -670,13 +675,52 @@ export class BulletinsController {
     const buffer = await this.pdfService.generateBulletin(pdfData);
 
     // 2. Archiver en URL publique (R2/S3) + persister sur le ReportCard
+    //    ⭐ 2026-11-23 — RETOUR PROMOTEUR : « nous n'utilisons pas l'API directe
+    //       de WhatsApp, ça ne peut pas fonctionner par API directe — utilisez
+    //       le même pattern que le module finance (encaissement) ». Le PDF
+    //       n'est PLUS livré en base64 à télécharger/joindre manuellement :
+    //       le message contient TOUJOURS un lien public de téléchargement.
+    //       (a) archive R2/S3 (pdfUrl) ;
+    //       (b) REPLI : si l'archive est indisponible, les octets sont stockés
+    //           dans bulletin_pdf_shares avec un token public 30 jours — page
+    //           /bulletin/[token] (même garantie que /receipt/[token] du
+    //           module finance : le parent obtient toujours son PDF).
     let pdfUrl: string | null = null;
     try {
       const key = `bulletins/${resolvedTenantId}/${studentId || 'eleve'}/bulletin-${(body.periodId || 'periode')}${body.evaluationTypeId ? `-${body.evaluationTypeId}` : ''}.pdf`;
       const stored = await this.storageService.uploadBuffer(buffer, key);
       if (typeof stored === 'string' && /^https?:\/\//.test(stored)) pdfUrl = stored;
     } catch {
-      // Storage indisponible — le PDF reste livré en base64 au director UI
+      // Storage indisponible — repli bulletin_pdf_shares ci-dessous
+    }
+    if (!pdfUrl && studentId) {
+      try {
+        const shareToken = crypto.randomBytes(24).toString('hex');
+        const periodIdForShare = body.periodId || null;
+        await this.prisma.bulletinPdfShare.deleteMany({
+          where: { tenantId: resolvedTenantId, studentId, periodId: periodIdForShare },
+        }).catch(() => null);
+        await this.prisma.bulletinPdfShare.create({
+          data: {
+            tenantId: resolvedTenantId,
+            academicYearId,
+            studentId,
+            periodId: periodIdForShare,
+            shareToken,
+            fileName: filename,
+            pdf: buffer,
+            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          },
+        });
+        // Purge opportuniste des liens expirés (tous tenants — non bloquant)
+        this.prisma.bulletinPdfShare.deleteMany({
+          where: { expiresAt: { lt: new Date() } },
+        }).catch(() => null);
+        const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://academiahelm.com';
+        pdfUrl = `${frontendUrl}/bulletin/${shareToken}`;
+      } catch {
+        // Silent fail — le message part sans lien de repli (rare : storage ET DB indisponibles)
+      }
     }
     try {
       await this.persistBulletinDocument(resolvedTenantId, academicYearId, pdfData, buffer, studentId, schoolLevelId);
@@ -750,7 +794,6 @@ export class BulletinsController {
         parentName,
         hasPhone: !!parentPhone,
         message,
-        pdfBase64: buffer.toString('base64'),
         pdfUrl,
         filename,
         studentName,
@@ -774,7 +817,6 @@ export class BulletinsController {
       parentName,
       hasPhone: !!parentPhone,
       message,
-      pdfBase64: buffer.toString('base64'),
       pdfUrl,
       filename,
       studentName,
@@ -782,216 +824,48 @@ export class BulletinsController {
   }
 
   /**
-   * ⭐ 2026-11-23 — POST /institutional-exams/bulletins/whatsapp-send
+   * ⭐ 2026-11-23 — GET /institutional-exams/bulletins/public/:token — PUBLIC
    *
-   * ENVOI RÉEL du bulletin par WhatsApp — EXACTEMENT la mécanique du module
-   * Finances (onglet Encaissement → « Envoi auto (API) ») :
-   *   1. le bulletin PDF (strictement identique à « Générer PDF ») est rendu ;
-   *   2. le message professionnel (école, moyenne, rang, mention) est rédigé ;
-   *   3. le message + le PDF EN PIÈCE JOINTE sont envoyés par l'API WhatsApp
-   *      depuis le NUMÉRO DE TÉLÉPHONE DE L'ÉCOLE (WhatsApp Business configuré
-   *      — GUPSHUP_SOURCE_PHONE) vers le NUMÉRO WHATSAPP DU PARENT.
-   * Plus de presse-papiers ni de téléchargement manuel — un clic, tout part.
+   * Sert le PDF d'un bulletin partagé via WhatsApp (page publique
+   * /bulletin/[token] — même pattern que /receipt/[token]/[id] du module
+   * finance). Utilisé en REPLI quand l'archive R2/S3 est indisponible :
+   * whatsapp-link stocke alors les octets dans bulletin_pdf_shares avec un
+   * token secret (hex 48, expiration 30 jours) et met ce lien dans le
+   * message — le parent obtient toujours son PDF.
    *
-   * Chaîne d'envoi :
-   *   a. template pré-approuvé 'bulletin_periodique' (mêmes garanties que le
-   *      reçu de paiement) + document PDF juste après ;
-   *   b. si le template n'est pas encore approuvé sur le compte de l'école →
-   *      repli texte libre + PDF joint ;
-   *   c. si aucun numéro de tuteur → 'skipped' (raison retournée).
-   *
-   * Body : même payload que POST whatsapp-link.
-   * Response: { status: 'sent'|'failed'|'skipped', to, parentName, studentName,
-   *             mode: 'template'|'texte', messageId?, error?, message, filename, pdfUrl }
+   * ⚠️ POST /whatsapp-send (API WhatsApp directe Gupshup) a été RETIRÉ sur
+   *    retour promoteur : « nous n'utilisons pas l'API directe de WhatsApp,
+   *    ça ne peut pas fonctionner par API directe » — le bouton utilise
+   *    désormais le lien wa.me de whatsapp-link (pattern finance
+   *    encaissement), envoyé depuis le téléphone de l'école.
    */
-  @Post('whatsapp-send')
-  @Permissions('exams.read')
-  async sendWhatsAppBulletin(
-    @TenantId() tenantId: string,
-    @CurrentUser() user: any,
-    @Headers() headers: any,
-    @AcademicYearId() academicYearId: string,
-    @Body() body: any,
+  @Public()
+  @Get('public/:token')
+  async getPublicSharedBulletin(
+    @Param('token') token: string,
+    @Res() res: Response,
   ) {
-    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
-
-    const { pdfData, filename, studentId, schoolLevelId } =
-      await this.buildBulletinPdfPayload(resolvedTenantId, academicYearId, body);
-
-    // 1. Rendre le PDF (même gabarit que « Générer PDF »)
-    const buffer = await this.pdfService.generateBulletin(pdfData);
-
-    // 2. Archiver en URL publique (R2/S3) + persister sur le ReportCard
-    //    (le parent peut le retélécharger depuis son portail ; l'URL publique
-    //    est aussi reprise dans le message de repli texte libre).
-    let pdfUrl: string | null = null;
-    try {
-      const key = `bulletins/${resolvedTenantId}/${studentId || 'eleve'}/bulletin-${(body.periodId || 'periode')}${body.evaluationTypeId ? `-${body.evaluationTypeId}` : ''}.pdf`;
-      const stored = await this.storageService.uploadBuffer(buffer, key);
-      if (typeof stored === 'string' && /^https?:\/\//.test(stored)) pdfUrl = stored;
-    } catch {
-      // Storage indisponible — l'envoi WhatsApp reste possible (PDF en pièce jointe)
+    if (!token || !/^[0-9a-f]{16,64}$/i.test(token)) {
+      throw new NotFoundException('Lien de bulletin invalide.');
     }
-    try {
-      await this.persistBulletinDocument(resolvedTenantId, academicYearId, pdfData, buffer, studentId, schoolLevelId);
-    } catch {
-      // Silent fail — l'envoi ne doit jamais être bloqué par la persistance
+    const share = await this.prisma.bulletinPdfShare.findUnique({
+      where: { shareToken: token },
+    }).catch(() => null);
+    if (!share) throw new NotFoundException('Bulletin indisponible — lien inconnu.');
+    if (share.expiresAt.getTime() < Date.now()) {
+      // Purge opportuniste + message clair pour le parent
+      await this.prisma.bulletinPdfShare.deleteMany({
+        where: { expiresAt: { lt: new Date() } },
+      }).catch(() => null);
+      throw new NotFoundException('Ce lien de bulletin a expiré — demandez un nouvel envoi à l\'établissement.');
     }
 
-    // 3. Contacts du tuteur (tuteur principal en priorité, sinon 1er tuteur
-    //    avec téléphone — même résolution que le module Finances)
-    let parentPhone: string | null = null;
-    let parentName: string | null = null;
-    let guardianId: string | null = null;
-    if (studentId) {
-      try {
-        const sgs: any[] = await this.prisma.studentGuardian.findMany({
-          where: { studentId },
-          include: { guardian: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } } },
-        });
-        const primary = sgs.find((sg: any) => sg.isPrimary && sg.guardian?.phone)
-          || sgs.find((sg: any) => sg.guardian?.phone)
-          || sgs.find((sg: any) => sg.isPrimary && sg.guardian);
-        if (primary?.guardian) {
-          parentPhone = primary.guardian.phone || null;
-          parentName = `${primary.guardian.firstName || ''} ${primary.guardian.lastName || ''}`.trim() || null;
-          guardianId = primary.guardian.id || null;
-        }
-      } catch {
-        // Silent fail — bulletin sans tuteur renseigné
-      }
-    }
-
-    // 4. Données du message (moyenne/rang/mention — même contenu que
-    //    whatsapp-link, pour un texte professionnel cohérent)
-    const isEn = body.scopeLang === 'EN';
-    const isMaternelle = !!body.isMaternelle;
-    const totalStudents = body.totalStudents ?? null;
-    const generalAverage = typeof body.generalAverage === 'number' ? body.generalAverage : null;
-    const classRank = body.classRank ?? null;
-    const appreciation = body.appreciationGlobale || null;
-    const scaleLabel = isEn ? '/100' : '/20';
-    const avgLine = isMaternelle
-      ? (appreciation ? `Résultat global : ${appreciation}` : null)
-      : (generalAverage !== null ? `Moyenne générale : ${Number(generalAverage).toFixed(2)}${scaleLabel}` : null);
-    const rankLine = classRank && totalStudents
-      ? `Rang : ${classRank}${Number(classRank) === 1 ? 'er' : 'e'} sur ${totalStudents}`
-      : (classRank ? `Rang : ${classRank}` : null);
-    const mentionLine = !isMaternelle && appreciation ? `Mention : ${appreciation}` : null;
-    const resultsLine = [avgLine, rankLine, mentionLine].filter(Boolean).join('\n');
-
-    const schoolName = pdfData.schoolName || "l'établissement";
-    const studentName = body.studentName || 'l\'élève';
-    const className = body.className || '';
-    const periodPart = [
-      body.periodName,
-      body.evaluationTypeName ? `${isEn ? 'Evaluation' : 'Évaluation'} : ${body.evaluationTypeName}` : null,
-    ].filter(Boolean).join(' · ');
-    const contactLine = [
-      pdfData.schoolPhone ? `Tél : ${pdfData.schoolPhone}` : null,
-      pdfData.schoolEmail ? `Email : ${pdfData.schoolEmail}` : null,
-    ].filter(Boolean).join(' · ');
-    const caption = isEn
-      ? `Report card - ${studentName}${className ? ` (${className})` : ''}${periodPart ? ` - ${periodPart}` : ''}`
-      : `Bulletin - ${studentName}${className ? ` (${className})` : ''}${periodPart ? ` - ${periodPart}` : ''}`;
-
-    // 5. Aucun numéro de tuteur → skipped (le directeur est informé)
-    const normalizedPhone = this.normalizePhoneForWaMe(parentPhone);
-    if (!normalizedPhone) {
-      return {
-        status: 'skipped',
-        reason: isEn
-          ? 'No guardian phone number recorded for this student'
-          : 'Aucun numéro de téléphone de tuteur renseigné pour cet élève',
-        parentName,
-        studentName,
-        message: null,
-        filename,
-        pdfUrl,
-      };
-    }
-    const to = `+${normalizedPhone}`;
-
-    // 6. ENVOI RÉEL — template 'bulletin_periodique' puis repli texte libre.
-    //    (piste EN : template FR inadapté → texte libre EN directement)
-    const commonParams = {
-      tenantId: resolvedTenantId,
-      category: 'PEDAGOGIE' as const,
-      subCategory: 'BULLETIN',
-      module: 'exams',
-      to,
-      toName: parentName,
-      recipientType: 'PARENT' as const,
-      recipientId: guardianId,
-      triggeredBy: 'STAFF' as const,
-      relatedEntityId: studentId,
-      relatedEntityType: 'Student',
-      document: { content: buffer, filename },
-      documentCaption: caption,
-    };
-
-    if (!isEn) {
-      try {
-        const tplResult = await this.whatsappService.sendCategorized({
-          ...commonParams,
-          message: `Bulletin ${studentName} — ${periodPart || 'période'}`,
-          templateName: 'bulletin_periodique',
-          templateVariables: {
-            parent_name: parentName || 'Parent',
-            student_name: studentName,
-            class_name: className || '—',
-            period_name: periodPart || '—',
-            results_line: resultsLine || (isMaternelle ? '' : 'Resultats disponibles sur le bulletin.'),
-            school_name: schoolName,
-          },
-        } as any);
-        if (tplResult.success) {
-          return {
-            status: 'sent', mode: 'template', to, parentName, studentName,
-            messageId: tplResult.providerId, filename, pdfUrl,
-          };
-        }
-        // Template non approuvé sur le compte de l'école → repli texte libre
-      } catch {
-        // Idem — on tente le repli texte libre ci-dessous
-      }
-    }
-
-    // Repli (ou piste EN) : message texte libre complet + PDF joint
-    const message = isEn
-      ? `Hello${parentName ? ` ${parentName}` : ''},\n\n`
-        + `${schoolName} — Academic year ${body.academicYearName || ''}\n\n`
-        + `Please find below ${studentName}'s report card (${className || ''}) for ${periodPart || 'the current period'}.\n\n`
-        + (avgLine ? `${avgLine}\n` : '')
-        + (rankLine ? `${rankLine}\n` : '')
-        + (mentionLine ? `${mentionLine}\n` : '')
-        + `\nThe report card PDF (signed by the Head teacher and the class teacher) is attached to this message.`
-        + `\n\nKind regards,\nThe Management — ${schoolName}`
-      : `Bonjour${parentName ? ` ${parentName}` : ''},\n\n`
-        + `${schoolName} — Année scolaire ${body.academicYearName || ''}\n\n`
-        + `Nous vous transmettons le bulletin de ${studentName} (${className || 'classe non précisée'}) — ${periodPart || 'période courante'}.\n\n`
-        + (avgLine ? `Moyenne générale : ${Number(generalAverage ?? 0).toFixed(2)}${scaleLabel}\n` : '')
-        + (rankLine ? `${rankLine}\n` : '')
-        + (mentionLine ? `Mention : ${mentionLine}\n` : '')
-        + `\nLe bulletin PDF, visé par le directeur et l'enseignant titulaire, est joint à ce message.`
-        + (pdfUrl ? `\nVous pouvez également le télécharger ici :\n${pdfUrl}` : '')
-        + `\n\nNous restons à votre disposition pour toute information complémentaire${contactLine ? ` (${contactLine})` : ''}.\n\nCordialement,\nLa Direction — ${schoolName}`;
-
-    const textResult = await this.whatsappService.sendCategorized({
-      ...commonParams,
-      message,
-    } as any);
-
-    if (textResult.success) {
-      return {
-        status: 'sent', mode: 'texte', to, parentName, studentName,
-        messageId: textResult.providerId, message, filename, pdfUrl,
-      };
-    }
-    return {
-      status: 'failed', to, parentName, studentName,
-      error: textResult.error || 'Échec de l\'envoi WhatsApp', message, filename, pdfUrl,
-    };
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${share.fileName || 'bulletin.pdf'}"`,
+      'Content-Length': share.pdf.length,
+    });
+    res.end(share.pdf);
   }
 
   /**

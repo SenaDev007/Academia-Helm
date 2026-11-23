@@ -1,8 +1,10 @@
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
 import { CacheService } from '../../common/services/cache.service';
+// ⭐ 2026-11-23 — Palette du site institutionnel dérivée du logo (auto)
+import { LogoPaletteService } from './logo-palette.service';
 
 /**
  * ============================================================================
@@ -26,6 +28,9 @@ export class IdentityProfileService {
     private readonly prisma: PrismaService,
     private readonly historyService: SettingsHistoryService,
     private readonly cacheService: CacheService,
+    // ⭐ 2026-11-23 — Palette du site dérivée du logo : @Optional car ce service
+    //    est aussi instancié dans des contextes de test sans LogoPaletteService.
+    @Optional() private readonly logoPaletteService?: LogoPaletteService,
   ) {}
 
   /**
@@ -263,6 +268,23 @@ export class IdentityProfileService {
 
     // ⭐ FIX CAPACITÉ — le profil actif vient de changer → purge immédiate du cache
     await this.invalidateIdentityCache(tenantId);
+
+    // ⭐ 2026-11-23 — PALETTE DU SITE INSTITUTIONNEL DÉRIVÉE DU LOGO (demande
+    //    promoteur) : chaque enregistrement du logo (formulaire Identité ou
+    //    updateVisuals) recalcule automatiquement les couleurs du site du
+    //    sous-domaine (tenant_websites.logoPalette — fallback du CMS, la
+    //    palette Helm par défaut restant le plancher). Fire-and-forget :
+    //    l'enregistrement de l'identité ne doit JAMAIS échouer pour un souci
+    //    de palette (logo illisible, sharp indisponible…).
+    if (this.logoPaletteService && newProfile.logoUrl) {
+      this.logoPaletteService.extractAndApplyLogoPalette(tenantId).catch((paletteErr: any) => {
+        // silencieux — Log côté service
+        void paletteErr;
+      });
+    } else if (this.logoPaletteService && !newProfile.logoUrl) {
+      // Logo retiré → palette auto remise à null (retour palette Helm par défaut)
+      this.logoPaletteService.extractAndApplyLogoPalette(tenantId).catch(() => { /* silencieux */ });
+    }
 
     return this.formatProfile(newProfile);
   }

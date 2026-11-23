@@ -24,6 +24,8 @@ import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
 // ⭐ 2026-11-13 — Identité du niveau secondaire (écoles combinées)
 import { LevelIdentityService } from './services/level-identity.service';
+// ⭐ 2026-11-23 — Palette du site institutionnel dérivée automatiquement du logo
+import { LogoPaletteService } from './services/logo-palette.service';
 import { StampsSignaturesService } from './services/stamps-signatures.service';
 // ⭐ 2026-09-16 — Cachets/signatures automatiques sur les documents (bulletins,
 //    cahiers journaux, reçus) — même moteur de génération que RH > Administration
@@ -78,6 +80,7 @@ import { BilingualStructureService } from '../bilingual-structure/bilingual-stru
     BillingSettingsService,
     IdentityProfileService,
     LevelIdentityService,
+    LogoPaletteService,
     StampsSignaturesService,
     SignatureTokenService,
     GeolocationService,

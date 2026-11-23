@@ -8604,6 +8604,31 @@ model ReportCard {
   @@map("report_cards")
 }
 
+/// ⭐ 2026-11-23 — Partage WhatsApp des bulletins (module Examen).
+/// Quand un membre du staff prépare l'envoi du bulletin d'un élève à son
+/// parent via WhatsApp (lien wa.me — même pattern que le module finance
+/// encaissement), le PDF généré (même moteur Puppeteer que
+/// POST /institutional-exams/bulletins/generate-pdf) est stocké ici avec un
+/// token public. Le parent télécharge le PDF via la page publique
+/// /bulletin/[token] (route @Public). Une ligne par élève+période (la
+/// régénération remplace l'ancienne) + expiration 30 jours.
+model BulletinPdfShare {
+  id             String   @id @default(uuid())
+  tenantId       String
+  academicYearId String
+  studentId      String
+  periodId       String?
+  shareToken     String   @unique
+  fileName        String?
+  pdf            Bytes
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+
+  @@index([tenantId, studentId, periodId])
+  @@index([expiresAt])
+  @@map("bulletin_pdf_shares")
+}
+
 /// ⭐ Critères d'envoi des bulletins aux parents (config par tenant)
 model BulletinSendingCriteria {
   id                       String   @id @default(uuid())
@@ -16869,6 +16894,13 @@ model TenantWebsite {
   // Format JSON: [{ "name": "Primaire", "value": "#0b2f73" }, { "name": "Accent", "value": "#f5b335" }]
   // Si vide/null → utilise la palette Helm par défaut (Navy/Blue/Gold)
   customColors         Json?
+  // ⭐ 2026-11-23 — Palette AUTO dérivée du logo de l'école (module Paramètres →
+  //    Identité). Même format JSON que customColors (4 entrées : primary,
+  //    accent, secondary, dark — ordre resolveTenantColors). Générée par
+  //    LogoPaletteService à chaque sauvegarde du logo (extraction sharp).
+  //    Priorité d'affichage du site institutionnel : thème officiel >
+  //    customColors (choix manuel CMS) > logoPalette (auto logo) > défaut Helm.
+  logoPalette          Json?
   // ═══ Sections éditables via CMS (2026-09-20) ═══
   // Programmes (Maternelle/Primaire/Secondaire) — JSON array:
   // [{ id, title, description, iconName, levels }]

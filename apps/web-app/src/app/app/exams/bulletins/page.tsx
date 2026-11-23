@@ -1464,19 +1464,25 @@ function BulletinsContent() {
     }
   };
 
-  // ⭐ 2026-11-23 — ENVOI RÉEL DU BULLETIN PAR WHATSAPP (bouton par élève —
-  //    maternelle, primaire et secondaire). EXACTEMENT la mécanique du module
-  //    Finances (onglet Encaissement → « Envoi auto (API) ») : un clic et
-  //    le système envoie, depuis le NUMÉRO DE TÉLÉPHONE DE L'ÉCOLE (WhatsApp
-  //    Business configuré) vers le NUMÉRO WHATSAPP DU PARENT :
-  //      1. le message professionnel (école, moyenne, rang, mention) est
-  //         rédigé et envoyé ;
-  //      2. le bulletin PDF (strictement identique à « Générer PDF ») est
-  //         envoyé EN PIÈCE JOINTE dans la même conversation ;
-  //      3. le tout est tracé (whatsapp_logs) — fin du presse-papiers et du
-  //         téléchargement manuel, l'école n'a plus RIEN à faire.
-  //    Réponses gérées : sent (message + PDF partis), skipped (aucun numéro
-  //    de tuteur renseigné), failed (erreur provider affichée).
+  // ⭐ 2026-11-23 — ENVOI DU BULLETIN AU PARENT PAR WHATSAPP (bouton par élève —
+  //    maternelle, primaire et secondaire). MÊME PATTERN QUE LE MODULE FINANCE
+  //    (onglet Encaissement → option « lien wa.me ») — retour promoteur :
+  //    « nous n'utilisons pas l'API directe de WhatsApp, ça ne peut pas
+  //    fonctionner par API directe » :
+  //      1. POST /institutional-exams/bulletins/whatsapp-link : le backend
+  //         rédige le message professionnel (école, moyenne, rang, mention),
+  //         archive le PDF (URL publique R2/S3 — repli /bulletin/[token]
+  //         30 jours) et renvoie le lien wa.me pré-rempli vers le numéro du
+  //         tuteur ;
+  //      2. window.open(wa.me) → WhatsApp (application / WhatsApp Web du
+  //         téléphone de l'école) s'ouvre avec le message DÉJÀ RÉDIGÉ et le
+  //         LIEN DE TÉLÉCHARGEMENT DU PDF — envoyé depuis le numéro de
+  //         l'école vers le numéro WhatsApp du parent, il ne reste qu'à
+  //         cliquer Envoyer (aucune API directe, aucun presse-papiers, aucun
+  //         téléchargement manuel).
+  //    Réponses gérées : hasPhone=false (aucun numéro de tuteur renseigné),
+  //    succès (WhatsApp ouvert — cliquez Envoyer), erreur backend (dont
+  //    « Envoi bloqué : arriérés de scolarité »).
   const [whatsappSending, setWhatsappSending] = useState<string | null>(null);
   const handleWhatsAppBulletin = async (student: StudentResult) => {
     if (!bulletinData) return;
@@ -1488,34 +1494,34 @@ function BulletinsContent() {
         parentSig: null as string | null,
       };
       const payload = await buildBulletinPayload(student, sigs);
-      const response = await apiClient.post('/institutional-exams/bulletins/whatsapp-send', payload, {
-        timeout: 180000, // génération PDF + envoi WhatsApp (provider) — généreux
+      const response = await apiClient.post('/institutional-exams/bulletins/whatsapp-link', payload, {
+        timeout: 120000, // génération PDF (Puppeteer) + archive — même budget que « Générer PDF »
       });
       const data: any = response.data || {};
-      const toLabel = data.to || '';
-      const who = (data.parentName || student.studentName || "le parent");
+      const who = data.parentName || student.studentName || 'le parent';
+      const toLabel = data.phone || '';
 
-      if (data.status === 'sent') {
-        toastSuccess(isEN ? 'Report card sent by WhatsApp' : 'Bulletin envoyé par WhatsApp', {
-          description: (isEN
-            ? `Message and report card PDF sent to ${who}${toLabel ? ` (${toLabel})` : ''} from the school's WhatsApp number.`
-            : `Message et bulletin PDF envoyés à ${who}${toLabel ? ` (${toLabel})` : ''} depuis le numéro WhatsApp de l'école.`),
-        });
-      } else if (data.status === 'skipped') {
+      if (!data.hasPhone || !data.url) {
         toastError(isEN ? 'No guardian phone number' : 'Numéro de tuteur manquant', {
-          description: data.reason || (isEN
-            ? 'No guardian phone number is recorded for this student — add one from the student record first.'
-            : "Aucun numéro de téléphone de tuteur n'est renseigné pour cet élève — renseignez-le depuis la fiche de l'élève."),
+          description: (isEN
+            ? `${who} — no guardian WhatsApp number is recorded. Add one from Élèves > Familles.`
+            : `${who} — aucun numéro de téléphone WhatsApp n'est renseigné pour le tuteur. Ajoutez-le dans Élèves et scolarité > Familles.`),
         });
-      } else {
-        toastError(isEN ? 'WhatsApp send failed' : 'Échec de l\'envoi WhatsApp', {
-          description: data.error || (isEN
-            ? 'The WhatsApp API rejected the send — check the WhatsApp configuration (provider, school number).'
-            : "L'API WhatsApp a refusé l'envoi — vérifiez la configuration WhatsApp (provider, numéro de l'école)."),
-        });
+        return;
       }
+
+      // WhatsApp s'ouvre avec le message pré-rédigé + le lien du PDF —
+      // l'école clique simplement sur Envoyer (pattern finance encaissement).
+      window.open(data.url, '_blank');
+      toastSuccess(isEN ? 'WhatsApp opened' : 'WhatsApp ouvert', {
+        description: (isEN
+          ? `Message ready for ${who}${toLabel ? ` (${toLabel})` : ''} — click Send in WhatsApp to deliver the report card (PDF link included) from the school's number.`
+          : `Message prêt pour ${who}${toLabel ? ` (${toLabel})` : ''} — cliquez sur Envoyer dans WhatsApp pour transmettre le bulletin (lien PDF inclus) depuis le numéro de l'école.`),
+      });
     } catch (err: any) {
-      toastError('Erreur WhatsApp', { description: err.response?.data?.message || err.message });
+      toastError(isEN ? 'WhatsApp send failed' : 'Échec de l\'envoi WhatsApp', {
+        description: err.response?.data?.message || err.message,
+      });
     } finally { setWhatsappSending(null); }
   };
 
@@ -1794,10 +1800,12 @@ function BulletinsContent() {
                   {/* ⭐ 2026-11-23 — BOUTON « ENVOYER LE BULLETIN PAR WHATSAPP »
                       (directeur/promoteur) : disponible directement sur la
                       ligne de CHAQUE élève — maternelle, primaire et
-                      secondaire. Un clic : le système envoie RÉELLEMENT le
-                      message professionnel + le bulletin PDF EN PIÈCE JOINTE
-                      depuis le numéro WhatsApp de l'école vers le WhatsApp du
-                      parent (même mécanique que l'encaissement Finances). */}
+                      secondaire. MÊME PATTERN QUE LE MODULE FINANCE
+                      (encaissement → « lien wa.me ») : le backend rédige le
+                      message (école, moyenne, rang, mention) + archive le PDF
+                      (URL publique), et WhatsApp s'ouvre avec le message prêt
+                      + le lien du PDF — envoyé depuis le téléphone de l'école
+                      vers le WhatsApp du parent, il reste à cliquer Envoyer. */}
                   {!isTeacher && (
                     <button
                       type="button"
@@ -2068,17 +2076,18 @@ function BulletinTwoPage({
       {/* PDF + WhatsApp buttons — hidden for teachers (anti-download protection) */}
       {canDownload && (
       <div className="flex justify-end gap-2 flex-wrap">
-        {/* ⭐ 2026-11-23 — Envoi RÉEL du bulletin par WhatsApp au parent :
-            message professionnel + PDF EN PIÈCE JOINTE, du numéro de l'école
-            vers le WhatsApp du parent (icône officielle WhatsApp). */}
+        {/* ⭐ 2026-11-23 — Envoi du bulletin au parent par WhatsApp — pattern
+            finance encaissement (lien wa.me) : WhatsApp s'ouvre avec le
+            message professionnel prêt + le lien public du PDF (icône
+            OFFICIELLE WhatsApp). */}
         {onWhatsAppBulletin && (
           <Button
             onClick={() => onWhatsAppBulletin(student)}
             disabled={whatsappSending || generatingPdf}
-            title="Envoyer le bulletin par WhatsApp au parent (message professionnel + PDF joint automatiquement)"
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
+            title="Envoyer le bulletin par WhatsApp au parent (message professionnel prêt + lien PDF — cliquez Envoyer dans WhatsApp)"
+            className="bg-[#25D366] hover:bg-[#1EBE5B] text-white text-sm font-bold shadow-sm"
           >
-            {whatsappSending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{isEn ? 'Sending…' : 'Envoi…'}</> : <><WhatsAppIcon className="w-4 h-4 mr-2" />{isEn ? 'Send by WhatsApp' : 'Envoyer par WhatsApp'}</>}
+            {whatsappSending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{isEn ? 'Preparing…' : 'Préparation…'}</> : <><WhatsAppIcon className="w-4 h-4 mr-2" />{isEn ? 'Send by WhatsApp' : 'Envoyer par WhatsApp'}</>}
           </Button>
         )}
         <Button onClick={() => onGeneratePdf({ teacherSig, directorSig, parentSig })} disabled={generatingPdf || whatsappSending} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
@@ -4699,6 +4708,8 @@ function VueParMatiereTrimestriel({
   const [subjects, setSubjects] = useState<any[]>([]);
   const [expandedStudents, setExpandedStudents] = useState<Set<string>>(new Set());
   const [generatingPdf, setGeneratingPdf] = useState<string | null>(null);
+  // ⭐ 2026-11-23 — Envoi WhatsApp du bulletin par matière (un chargement par élève)
+  const [whatsappLoading, setWhatsappLoading] = useState<string | null>(null);
   const isTeacher = ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'PEDAGOGIC_COORDINATOR'].includes(user?.role || '');
 
   // ── Charge les périodes ──────────────────────────────────────────────
@@ -4911,17 +4922,17 @@ function VueParMatiereTrimestriel({
   // mais avec isVueParMatiere=true pour déclencher buildHtmlVueParMatiere
   // côté backend. Les valeurs em1/em2/moyEm/ec/moyenne par matière sont
   // envoyées dans subject.vueParMatiere.
-  const handleGeneratePdf = async (student: any) => {
-    setGeneratingPdf(student.id);
-    try {
-      const periodName = periods.find(p => p.id === selectedPeriodId)?.name || '';
-      const className = classes.find(c => c.id === selectedClassId)?.name || '';
+  // ⭐ 2026-11-23 — Builder de payload partagé entre « Générer PDF » et
+  //    l'envoi WhatsApp au parent (POST whatsapp-link — même PDF).
+  const buildVueParMatierePayload = (student: any): any => {
+    const periodName = periods.find(p => p.id === selectedPeriodId)?.name || '';
+    const className = classes.find(c => c.id === selectedClassId)?.name || '';
 
-      // Stats classe (moyenne + min/max) pour la synthèse PDF
-      const validAvgs = students.map(s => s.generalAverage).filter((a: number | null): a is number => a !== null);
-      const classAverage = validAvgs.length > 0 ? validAvgs.reduce((a, b) => a + b, 0) / validAvgs.length : null;
+    // Stats classe (moyenne + min/max) pour la synthèse PDF
+    const validAvgs = students.map(s => s.generalAverage).filter((a: number | null): a is number => a !== null);
+    const classAverage = validAvgs.length > 0 ? validAvgs.reduce((a, b) => a + b, 0) / validAvgs.length : null;
 
-      const payload: any = {
+    return {
         schoolName: school?.schoolName,
         schoolLogo: school?.logoUrl,
         schoolAddress: school?.address,
@@ -4964,7 +4975,14 @@ function VueParMatiereTrimestriel({
         totalStudents: students.length,
         appreciationGlobale: student.appreciationGlobale,
         directorName,
-      };
+    };
+  };
+
+  const handleGeneratePdf = async (student: any) => {
+    setGeneratingPdf(student.id);
+    try {
+      const periodName = periods.find(p => p.id === selectedPeriodId)?.name || '';
+      const payload = buildVueParMatierePayload(student);
 
       const response = await apiClient.post('/institutional-exams/bulletins/generate-pdf', payload, {
         responseType: 'blob',
@@ -4988,6 +5006,36 @@ function VueParMatiereTrimestriel({
       toastError('Erreur PDF', { description: err.response?.data?.message || err.message });
     } finally {
       setGeneratingPdf(null);
+    }
+  };
+
+  // ⭐ 2026-11-23 — Envoi WhatsApp au parent (pattern finance encaissement —
+  //    lien wa.me) : même payload que « Générer PDF », le parent reçoit le
+  //    même bulletin par matière avec un lien public de téléchargement.
+  const handleSendWhatsApp = async (student: any) => {
+    setWhatsappLoading(student.id);
+    try {
+      const periodName = periods.find(p => p.id === selectedPeriodId)?.name || '';
+      const payload = buildVueParMatierePayload(student);
+      const response = await apiClient.post('/institutional-exams/bulletins/whatsapp-link', payload, {
+        timeout: 120000,
+      });
+      const data: any = response.data || {};
+      const who = data.parentName || student.studentName || 'le parent';
+      if (!data.hasPhone || !data.url) {
+        toastError('Numéro de tuteur manquant', {
+          description: `${who} — aucun numéro de téléphone WhatsApp n'est renseigné pour le tuteur. Ajoutez-le dans Élèves et scolarité > Familles.`,
+        });
+        return;
+      }
+      window.open(data.url, '_blank');
+      toastSuccess('WhatsApp ouvert', {
+        description: `Message prêt pour ${who}${data.phone ? ` (${data.phone})` : ''} — cliquez sur Envoyer dans WhatsApp pour transmettre le bulletin (lien PDF inclus) depuis le numéro de l'école.`,
+      });
+    } catch (err: any) {
+      toastError('Échec de l\'envoi WhatsApp', { description: err.response?.data?.message || err.message });
+    } finally {
+      setWhatsappLoading(null);
     }
   };
 
@@ -5194,17 +5242,33 @@ function VueParMatiereTrimestriel({
                           <span>Formule : Moy. EM = (EM1 + EM2) / 2 · Moyenne gén. = (Moy. EM + EC) / 2</span>
                         </div>
                         {!isTeacher && (
-                          <Button
-                            onClick={() => handleGeneratePdf(student)}
-                            disabled={generatingPdf === student.id}
-                            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-lg shadow-sm"
-                          >
-                            {generatingPdf === student.id ? (
-                              <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Génération…</>
-                            ) : (
-                              <><Printer className="w-4 h-4 mr-2" />Générer PDF</>
-                            )}
-                          </Button>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* ⭐ 2026-11-23 — Envoi au parent par WhatsApp (pattern
+                                finance encaissement — icône OFFICIELLE). */}
+                            <Button
+                              onClick={() => handleSendWhatsApp(student)}
+                              disabled={whatsappLoading === student.id || generatingPdf === student.id}
+                              title="Envoyer le bulletin au parent par WhatsApp (message prêt + lien PDF — cliquez Envoyer dans WhatsApp)"
+                              className="bg-[#25D366] hover:bg-[#1EBE5B] text-white text-sm font-bold px-4 py-2 rounded-lg shadow-sm"
+                            >
+                              {whatsappLoading === student.id ? (
+                                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Préparation…</>
+                              ) : (
+                                <><WhatsAppIcon className="w-4 h-4 mr-2" />Envoyer par WhatsApp</>
+                              )}
+                            </Button>
+                            <Button
+                              onClick={() => handleGeneratePdf(student)}
+                              disabled={generatingPdf === student.id}
+                              className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-lg shadow-sm"
+                            >
+                              {generatingPdf === student.id ? (
+                                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Génération…</>
+                              ) : (
+                                <><Printer className="w-4 h-4 mr-2" />Générer PDF</>
+                              )}
+                            </Button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -5246,6 +5310,8 @@ function VueParMatiereAnnuel({
   const [students, setStudents] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
   const [generatingPdf, setGeneratingPdf] = useState<string | null>(null);
+  // ⭐ 2026-11-23 — Envoi WhatsApp du bulletin annuel (un chargement par élève)
+  const [whatsappLoading, setWhatsappLoading] = useState<string | null>(null);
   const [expandedStudents, setExpandedStudents] = useState<Set<string>>(new Set());
   const isTeacher = ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'PEDAGOGIC_COORDINATOR'].includes(user?.role || '');
 
@@ -5445,14 +5511,14 @@ function VueParMatiereAnnuel({
     setExpandedStudents(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   };
 
-  const handleGeneratePdf = async (student: any) => {
-    setGeneratingPdf(student.id);
-    try {
-      const className = classes.find(c => c.id === selectedClassId)?.name || '';
-      const validAvgs = students.map(s => s.generalAverage).filter((a: number | null): a is number => a !== null);
-      const classAverage = validAvgs.length > 0 ? validAvgs.reduce((a, b) => a + b, 0) / validAvgs.length : null;
+  // ⭐ 2026-11-23 — Builder de payload partagé entre « Générer PDF » et
+  //    l'envoi WhatsApp au parent (POST whatsapp-link — même PDF annuel).
+  const buildAnnualPayload = (student: any): any => {
+    const className = classes.find(c => c.id === selectedClassId)?.name || '';
+    const validAvgs = students.map(s => s.generalAverage).filter((a: number | null): a is number => a !== null);
+    const classAverage = validAvgs.length > 0 ? validAvgs.reduce((a, b) => a + b, 0) / validAvgs.length : null;
 
-      const payload: any = {
+    return {
         schoolName: school?.schoolName,
         schoolLogo: school?.logoUrl,
         schoolAddress: school?.address,
@@ -5491,8 +5557,13 @@ function VueParMatiereAnnuel({
         totalStudents: students.length,
         appreciationGlobale: student.appreciationGlobale,
         directorName,
-      };
+    };
+  };
 
+  const handleGeneratePdf = async (student: any) => {
+    setGeneratingPdf(student.id);
+    try {
+      const payload = buildAnnualPayload(student);
       const response = await apiClient.post('/institutional-exams/bulletins/generate-pdf', payload, {
         responseType: 'blob', timeout: 120000,
       });
@@ -5509,6 +5580,34 @@ function VueParMatiereAnnuel({
     } catch (err: any) {
       toastError('Erreur PDF', { description: err.response?.data?.message || err.message });
     } finally { setGeneratingPdf(null); }
+  };
+
+  // ⭐ 2026-11-23 — Envoi WhatsApp au parent (pattern finance encaissement —
+  //    lien wa.me) : le parent reçoit le même bulletin annuel par lien public.
+  const handleSendWhatsApp = async (student: any) => {
+    setWhatsappLoading(student.id);
+    try {
+      const payload = buildAnnualPayload(student);
+      const response = await apiClient.post('/institutional-exams/bulletins/whatsapp-link', payload, {
+        timeout: 120000,
+      });
+      const data: any = response.data || {};
+      const who = data.parentName || student.studentName || 'le parent';
+      if (!data.hasPhone || !data.url) {
+        toastError('Numéro de tuteur manquant', {
+          description: `${who} — aucun numéro de téléphone WhatsApp n'est renseigné pour le tuteur. Ajoutez-le dans Élèves et scolarité > Familles.`,
+        });
+        return;
+      }
+      window.open(data.url, '_blank');
+      toastSuccess('WhatsApp ouvert', {
+        description: `Message prêt pour ${who}${data.phone ? ` (${data.phone})` : ''} — cliquez sur Envoyer dans WhatsApp pour transmettre le bulletin annuel (lien PDF inclus) depuis le numéro de l'école.`,
+      });
+    } catch (err: any) {
+      toastError('Échec de l\'envoi WhatsApp', { description: err.response?.data?.message || err.message });
+    } finally {
+      setWhatsappLoading(null);
+    }
   };
 
   const fmtQ = (val: number | null | undefined): string => {
@@ -5616,10 +5715,24 @@ function VueParMatiereAnnuel({
                           Formule : Moyenne annuelle = ((EM annuel + EC annuel) / 2 + EP) / 2
                         </div>
                         {!isTeacher && (
-                          <Button onClick={() => handleGeneratePdf(student)} disabled={generatingPdf === student.id}
-                            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-lg shadow-sm">
-                            {generatingPdf === student.id ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Génération…</> : <><Printer className="w-4 h-4 mr-2" />Générer PDF</>}
-                          </Button>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* ⭐ 2026-11-23 — Envoi au parent par WhatsApp (pattern
+                                finance encaissement — icône OFFICIELLE). */}
+                            <Button
+                              onClick={() => handleSendWhatsApp(student)}
+                              disabled={whatsappLoading === student.id || generatingPdf === student.id}
+                              title="Envoyer le bulletin annuel au parent par WhatsApp (message prêt + lien PDF — cliquez Envoyer dans WhatsApp)"
+                              className="bg-[#25D366] hover:bg-[#1EBE5B] text-white text-sm font-bold px-4 py-2 rounded-lg shadow-sm"
+                            >
+                              {whatsappLoading === student.id
+                                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Préparation…</>
+                                : <><WhatsAppIcon className="w-4 h-4 mr-2" />Envoyer par WhatsApp</>}
+                            </Button>
+                            <Button onClick={() => handleGeneratePdf(student)} disabled={generatingPdf === student.id}
+                              className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-lg shadow-sm">
+                              {generatingPdf === student.id ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Génération…</> : <><Printer className="w-4 h-4 mr-2" />Générer PDF</>}
+                            </Button>
+                          </div>
                         )}
                       </div>
                     </div>

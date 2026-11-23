@@ -615,10 +615,15 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   // Stratégie de résolution (par priorité) :
   //   1. activeTheme (themeId officiel configuré via tenantThemeService) → themeToColors
   //   2. customColors (CMS — 2 à 4 couleurs personnalisées) → resolveTenantColors
-  //   3. Palette Helm par défaut (fallback NAVY/BLUE/GOLD)
+  //   3. ⭐ 2026-11-23 — logoPalette : palette AUTO dérivée du logo de l'école
+  //      (Paramètres → Identité — extraction sharp côté backend, écrite dans
+  //      tenant_websites.logoPalette au même format que customColors). Le site
+  //      institutionnel du sous-domaine s'adapte automatiquement aux couleurs
+  //      du logo dès que celui-ci est paramétré.
+  //   4. Palette Helm par défaut (fallback NAVY/BLUE/GOLD)
   const colors: TenantColors = activeTheme
     ? themeToColors(activeTheme, themeMode)
-    : resolveTenantColors(rawWebsite?.customColors);
+    : resolveTenantColors(rawWebsite?.customColors || rawWebsite?.logoPalette);
   const NAVY = colors.primary;
   const BLUE = colors.secondary;
   const GOLD = colors.accent;

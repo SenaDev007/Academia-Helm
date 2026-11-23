@@ -124,6 +124,22 @@ const levelCategoryOf = (label?: string): 'MATERNEL_PRIMAIRE' | 'SECONDAIRE' | '
   return 'AUTRE';
 };
 
+// ── ⭐ 2026-11-23 — TITRES des enseignants (postes RH) ───────────────────
+//    « Professeur de Français », « Professeur d'Anglais »… : postes définis
+//    dans le module Personnel → Onglet Administration (sous-onglet du
+//    niveau), synchronisés vers le miroir Teacher.position par updateStaff.
+//    Les valeurs génériques n'apportent aucune information → non affichées.
+const GENERIC_POSITIONS = new Set([
+  '', 'professeur', 'enseignant', 'enseignant(e)', 'enseignant(e) du secondaire',
+  'teacher', 'prof', 'educateur', 'éducateur',
+]);
+
+/** Titre significatif d'un enseignant (poste RH) — '' si générique/absent. */
+const meaningfulPosition = (position?: string | null): string => {
+  const pos = (position || '').trim();
+  return GENERIC_POSITIONS.has(pos.toLowerCase()) ? '' : pos;
+};
+
 // ── ⭐ Matières « itinérantes » (Anglais / Informatique) ─────────────────────
 // Écoles NON bilingues (maternel/primaire) : un enseignant spécialiste parcourt
 // toutes les classes (maternelle → CM2) pour ces matières, exactement comme un
@@ -937,6 +953,15 @@ export default function AssignmentsWorkspace() {
     return t?.assignedLanguages || [];
   };
 
+  // ⭐ 2026-11-23 — TITRE de l'enseignant (poste « Professeur de X » défini
+  //    dans Personnel → Administration) : affiché devant/au nom dans les
+  //    sélecteurs d'affectation. Source = miroir GET /api/teachers
+  //    (Teacher.position, synchronisé depuis Staff.position par updateStaff).
+  const getTeacherPosition = (teacherId: string): string => {
+    const mirror = teachersWithPhotos.find(t => t.id === teacherId) as any;
+    return meaningfulPosition(mirror?.position);
+  };
+
   // Filtrer les enseignants éligibles
   // En mode bilingue, filtrer par la langue de l'enseignant (FR ou EN)
   // La langue vient de teachersWithPhotos (GET /api/teachers) qui inclut
@@ -1410,6 +1435,12 @@ export default function AssignmentsWorkspace() {
                       {currentMainTeacher ? (
                         <p className="text-base font-bold text-slate-900">
                           {currentMainTeacher.lastName} {currentMainTeacher.firstName}
+                          {/* ⭐ 2026-11-23 — titre (poste RH « Professeur de X ») */}
+                          {getTeacherPosition(currentMainTeacher.id) && (
+                            <span className="ml-2 text-[11px] font-semibold align-middle" style={{ color: PRIMARY }}>
+                              {getTeacherPosition(currentMainTeacher.id)}
+                            </span>
+                          )}
                         </p>
                       ) : (
                         <p className="text-base font-bold text-slate-400">Non désigné</p>
@@ -1578,6 +1609,7 @@ export default function AssignmentsWorkspace() {
                 .map(t => {
                   const isSelected = selectedTeacherInModal === t.teacher.id;
                   const photoUrl = getTeacherPhoto(t.teacher.id);
+                  const titre = getTeacherPosition(t.teacher.id);
                   return (
                     <button
                       key={t.id}
@@ -1599,6 +1631,10 @@ export default function AssignmentsWorkspace() {
                       )}
                       <div>
                         <p className="font-bold text-slate-800 text-sm">{t.teacher.lastName} {t.teacher.firstName}</p>
+                        {/* ⭐ 2026-11-23 — titre (poste RH « Professeur de X ») */}
+                        {titre && (
+                          <p className="text-[11px] font-semibold" style={{ color: PRIMARY }}>{titre}</p>
+                        )}
                         <p className="text-[10px] text-slate-400 font-medium">
                           {t.teacher.matricule} · {t.maxWeeklyHours}h/sem max
                           {t.__withoutProfile && (
@@ -1688,6 +1724,7 @@ export default function AssignmentsWorkspace() {
               .map(t => {
                 const isSelected = selectedTeacherInModal === t.teacher.id;
                 const photoUrl = getTeacherPhoto(t.teacher.id);
+                const titre = getTeacherPosition(t.teacher.id);
                 return (
                   <button
                     key={t.id}
@@ -1708,6 +1745,10 @@ export default function AssignmentsWorkspace() {
                     )}
                     <div>
                       <p className="font-bold text-slate-800 text-sm">{t.teacher.lastName} {t.teacher.firstName}</p>
+                      {/* ⭐ 2026-11-23 — titre (poste RH « Professeur de X ») */}
+                      {titre && (
+                        <p className="text-[11px] font-semibold" style={{ color: PRIMARY }}>{titre}</p>
+                      )}
                       <p className="text-[10px] text-slate-400 font-medium">{t.teacher.matricule}</p>
                     </div>
                     {isSelected && <CheckCircle2 className="w-4 h-4 ml-auto" style={{ color: PRIMARY }} />}
@@ -1861,6 +1902,7 @@ export default function AssignmentsWorkspace() {
                   const isSelected = selectedTeacherInModal === t.teacher.id;
                   const photoUrl = getTeacherPhoto(t.teacher.id);
                   const qual = itinerantQualification(t, activeItinerantSubject?.subject);
+                  const titre = getTeacherPosition(t.teacher.id);
                   return (
                     <button
                       key={t.id}
@@ -1889,6 +1931,10 @@ export default function AssignmentsWorkspace() {
                             </span>
                           )}
                         </p>
+                        {/* ⭐ 2026-11-23 — titre (poste RH « Professeur de X ») */}
+                        {titre && (
+                          <p className="text-[11px] font-semibold" style={{ color: PRIMARY }}>{titre}</p>
+                        )}
                         <p className="text-[10px] text-slate-400 font-medium">
                           {t.teacher.matricule} · {t.maxWeeklyHours}h/sem max
                           {t.__withoutProfile && (
@@ -1984,8 +2030,13 @@ export default function AssignmentsWorkspace() {
 
       {/* ⭐ 2026-09-29 — Modal: Professeur Principal (Secondaire) */}
       {mainTeacherModalOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex justify-center" style={{ paddingTop: '80px' }}>
-          <div className="my-8 bg-white rounded-xl shadow-2xl max-w-md w-full">
+        /* ⭐ FIX 2026-11-23 — le modal « se rallongeait à l'infini » : le
+           backdrop flex n'avait pas d'items-* → align-items:stretch par
+           défaut → le panneau blanc prenait TOUTE la hauteur de l'écran,
+           d'autant plus grand que la fenêtre était grande. Désormais :
+           items-start + hauteur auto (le panneau se limite à son contenu). */
+        <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex justify-center items-start" style={{ paddingTop: '80px' }}>
+          <div className="my-8 mx-4 bg-white rounded-xl shadow-2xl max-w-md w-full">
             <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
               <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2">
                 <Star className="w-5 h-5" /> Professeur Principal
@@ -2001,20 +2052,31 @@ export default function AssignmentsWorkspace() {
               <select
                 id="main-teacher-select"
                 defaultValue={selectedOfficialClass?.mainTeacherId || ''}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">— Sélectionner un enseignant —</option>
                 {/* ⭐ 169 — Professeur Principal = fonction du SECONDAIRE : seuls
                     les enseignants du secondaire sont proposés (aucun mélange
                     avec maternel-primaire). ⭐ 2026-11-23 — liste = UNION
                     profils + sans profil (embauches récentes affectables). */}
-                {eligibleTeachers.filter(t => getTeacherCategory(t.teacherId) === 'SECONDAIRE').map(t => (
-                  <option key={t.teacherId} value={t.teacherId}>
-                    {t.teacher.lastName} {t.teacher.firstName}
-                    {t.__withoutProfile ? ' (profil à initialiser)' : ''}
-                  </option>
-                ))}
+                {eligibleTeachers.filter(t => getTeacherCategory(t.teacherId) === 'SECONDAIRE').map(t => {
+                  const titre = getTeacherPosition(t.teacherId);
+                  return (
+                    <option key={t.teacherId} value={t.teacherId}>
+                      {t.teacher.lastName} {t.teacher.firstName}
+                      {titre ? ` — ${titre}` : ''}
+                      {t.__withoutProfile ? ' (profil à initialiser)' : ''}
+                    </option>
+                  );
+                })}
               </select>
+              {/* ⭐ 2026-11-23 — titre = poste RH (Personnel → Administration),
+                  ex: « Professeur de Français » */}
+              <p className="text-[10px] text-slate-400">
+                Seuls les enseignants du secondaire sont listés. Le titre affiché après le nom
+                (ex: Professeur de Français, Professeur d'Anglais) est le poste défini dans
+                Personnel → Administration.
+              </p>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t">
               <Button variant="outline" onClick={() => setMainTeacherModalOpen(false)}>Annuler</Button>

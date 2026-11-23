@@ -78,6 +78,12 @@ import {
   ADMIN_ROLE_LABELS, ROLES_BY_UNIT, ADMIN_UNIT_LABELS, LEVEL_CODE_TO_UNIT,
   type AdminRole,
 } from '@/lib/constants/admin-roles';
+// ⭐ 2026-11-23 — postes « Professeur de <matière> » dérivés des matières
+//    suggérées du catalogue Pédagogie → Matières & programmes (secondaire).
+import {
+  teachingPostesForLevel,
+  OTHER_POSTE_VALUE,
+} from '@/lib/pedagogy/subject-catalogue';
 
 // ── Palette Academia Helm ───────────────────────────────────────────────────
 const PRIMARY = '#1A2BA6'; // Royal Blue
@@ -180,6 +186,69 @@ const EMPTY_FORM: AssignmentFormState = {
   signatureUploadedUrl: null,
   sendCredentials: true,
 };
+
+// ── ⭐ 2026-11-23 — Sélecteur « Poste / Matière enseignée » ──────────────────
+//    Avant : simple champ texte libre (« Ex: Instituteur(trice) du Primaire,
+//    Professeur d'Anglais… »). Désormais : un SÉLECTEUR COMPLET alimenté par
+//    les matières suggérées au niveau du module Pédagogie → Matières &
+//    programmes (secondaire : Professeur de Français, Professeur d'Anglais,
+//    Professeur de Mathématiques…), + un repli « Autre (saisie libre) » et la
+//    conservation de la valeur courante si elle n'est pas dans la liste.
+//    Le titre choisi est ensuite visible devant le nom de l'enseignant dans
+//    Pédagogie → Enseignants & Affectations (modals d'affectation).
+function TeachingPosteSelect({
+  value,
+  onChange,
+  levelName,
+  selectId,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  levelName?: string | null;
+  selectId?: string;
+}) {
+  const options = useMemo(() => teachingPostesForLevel(levelName), [levelName]);
+  const isKnown = !value || options.includes(value);
+  const [customMode, setCustomMode] = useState(!isKnown);
+  const selectValue = customMode ? OTHER_POSTE_VALUE : (value || '');
+  return (
+    <div className="space-y-2">
+      <select
+        id={selectId}
+        value={selectValue}
+        onChange={(e) => {
+          if (e.target.value === OTHER_POSTE_VALUE) {
+            setCustomMode(true);
+          } else {
+            setCustomMode(false);
+            onChange(e.target.value);
+          }
+        }}
+        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+      >
+        <option value="">— Sélectionner le poste / la matière enseignée —</option>
+        {/* Valeur courante conservée si elle n'est pas dans la liste proposée
+            (ex: ancien poste « Professeur » générique, poste métier…) */}
+        {!customMode && value && !options.includes(value) && (
+          <option value={value}>{value}</option>
+        )}
+        {options.map((p) => (
+          <option key={p} value={p}>{p}</option>
+        ))}
+        <option value={OTHER_POSTE_VALUE}>Autre (saisie libre)</option>
+      </select>
+      {customMode && (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Précisez le poste (ex: Professeur d'Espagnol, Instituteur bilingue…)"
+          className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        />
+      )}
+    </div>
+  );
+}
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 async function authedFetch<T>(
@@ -3041,20 +3110,29 @@ export default function UnifiedAdministrationWorkspace() {
               )}
             </div>
 
-            {/* Poste enseignant (optionnel) */}
+            {/* Poste enseignant (optionnel) — ⭐ 2026-11-23 : SÉLECTEUR
+                alimenté par les matières suggérées du catalogue Pédagogie
+                (Matières & programmes, niveau de l'onglet courant) */}
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
                 Poste / Matière enseignée (optionnel)
               </label>
-              <input
-                type="text"
+              <TeachingPosteSelect
+                key={`assign-${teacherAssignForm.staffId || 'new'}`}
                 value={teacherAssignForm.position}
-                onChange={(e) => setTeacherAssignForm((prev) => ({ ...prev, position: e.target.value }))}
-                placeholder="Ex: Instituteur(trice) du Primaire, Professeur d'Anglais..."
-                className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                onChange={(v) => setTeacherAssignForm((prev) => ({ ...prev, position: v }))}
+                levelName={
+                  adminGroups.find((g) => g.unit === selectedUnit)?.levelCodes?.join(' ')
+                  || ADMIN_UNIT_LABELS[selectedUnit || '']
+                  || ''
+                }
+                selectId="teacher-assign-poste"
               />
               <p className="text-[10px] text-slate-400 mt-1">
-                Si le staff a déjà un poste administratif (ex: Comptable), ce champ précise sa matière d'enseignement.
+                Sélecteur complet : les matières suggérées du module Pédagogie → « Matières &amp; programmes »
+                y sont listées (Professeur de Français, d'Anglais, de Mathématiques…). « Autre » permet
+                une saisie libre. Si le staff a déjà un poste administratif (ex: Comptable), ce champ
+                précise sa matière d'enseignement.
               </p>
             </div>
 
@@ -3147,18 +3225,29 @@ export default function UnifiedAdministrationWorkspace() {
               </p>
             </div>
 
-            {/* Poste / matière enseignée */}
+            {/* Poste / matière enseignée — ⭐ 2026-11-23 : SÉLECTEUR (suit le
+                niveau sélectionné ci-dessus) alimenté par les matières suggérées
+                du catalogue Pédagogie → Matières & programmes */}
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
                 Poste / Matière enseignée
               </label>
-              <input
-                type="text"
+              <TeachingPosteSelect
+                key={`edit-${teacherEditForm.staffId || 'edit'}`}
                 value={teacherEditForm.position}
-                onChange={(e) => setTeacherEditForm((prev) => ({ ...prev, position: e.target.value }))}
-                placeholder="Ex: Instituteur(trice) du Primaire, Professeur d'Anglais..."
-                className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                onChange={(v) => setTeacherEditForm((prev) => ({ ...prev, position: v }))}
+                levelName={(() => {
+                  const lvl = schoolLevels.find((l) => l.id === teacherEditForm.schoolLevelId);
+                  return (lvl as any)?.name || (lvl as any)?.code || '';
+                })()}
+                selectId="teacher-edit-poste"
               />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Le sélecteur s'adapte au niveau choisi ci-dessus — au secondaire, chaque matière suggérée
+                du catalogue « Matières &amp; programmes » devient un poste (Professeur de Français,
+                d'Anglais, de Mathématiques…). Le titre s'affiche ensuite devant le nom de
+                l'enseignant dans Pédagogie → Enseignants &amp; Affectations.
+              </p>
             </div>
 
             {/* Langues (si bilingue) */}

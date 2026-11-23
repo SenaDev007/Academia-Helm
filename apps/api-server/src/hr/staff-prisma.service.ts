@@ -657,10 +657,87 @@ export class StaffPrismaService {
     delete updateData.tenantMatricule;
     delete updateData.tenantId;
 
-    return this.prisma.staff.update({
-      where: { id },
-      data: { ...prismaUpdateDefaults(), ...updateData },
+    return this.prisma.staff
+      .update({
+        where: { id },
+        data: { ...prismaUpdateDefaults(), ...updateData },
+      })
+      .then(async (updated) => {
+        // ⭐ 2026-11-23 — MIROIR PÉDAGOGIE : quand le poste (ou le niveau) d'un
+        //    enseignant change (module Personnel → Administration → affectation
+        //    enseignante, modals « Affecter un enseignant » / « Modifier
+        //    l'affectation »), le miroir Teacher utilisé par Pédagogie (titre
+        //    « Professeur de X » affiché devant le nom dans les modals
+        //    d'affectation par classe) doit suivre immédiatement — sinon il
+        //    garderait l'ancienne valeur jusqu'à la prochaine synchronisation
+        //    manuelle. Best-effort : JAMAIS bloquant pour la mise à jour RH.
+        if (
+          updated.roleType === 'TEACHER' &&
+          (updateData.position !== undefined ||
+            updateData.schoolLevelId !== undefined ||
+            updateData.roleType !== undefined)
+        ) {
+          try {
+            await this.syncTeacherMirrorOnUpdate(updated, tenantId, updateData);
+          } catch (err: any) {
+            this.logger.warn(
+              `syncTeacherMirrorOnUpdate(${id}) non bloquant : ${err?.message}`,
+            );
+          }
+        }
+        return updated;
+      });
+  }
+
+  /**
+   * ⭐ 2026-11-23 — Met à jour le MIROIR Teacher (module Pédagogie) d'un staff
+   * enseignant après updateStaff (best-effort, jamais bloquant).
+   * Même logique d'appariement que syncTeachersToPedagogy : par email, sinon
+   * par matricule (tenantMatricule/employeeNumber).
+   */
+  private async syncTeacherMirrorOnUpdate(
+    staff: any,
+    tenantId: string,
+    updateData: any,
+  ) {
+    const matricule = staff.tenantMatricule || staff.employeeNumber;
+    const orConditions: any[] = [];
+    if (staff.email) orConditions.push({ email: staff.email });
+    if (matricule) orConditions.push({ matricule });
+    if (orConditions.length === 0) return;
+
+    const mirror = await this.prisma.teacher.findFirst({
+      where: { tenantId, OR: orConditions },
+      select: { id: true },
     });
+    if (!mirror) return;
+
+    const mirrorData: any = {};
+    // Poste (« Professeur de Français », « Instituteur(trice) du Primaire »…) :
+    // suit le staff, y compris l'effacement (chaîne vide → null → pas de titre).
+    if (updateData.position !== undefined) {
+      const pos =
+        typeof updateData.position === 'string' ? updateData.position.trim() : updateData.position;
+      mirrorData.position = pos || null;
+    }
+    // Niveau : Teacher.schoolLevelId est NOT NULL — on ne recopie qu'une
+    // valeur NON NULLE (désaffectation niveau → le miroir garde son niveau).
+    if (updateData.schoolLevelId) {
+      mirrorData.schoolLevelId = updateData.schoolLevelId;
+    }
+    // Nouvel enseignant (roleType passé à TEACHER) : le miroir reste actif.
+    if (updateData.roleType === 'TEACHER') {
+      mirrorData.status = 'active';
+    }
+    if (Object.keys(mirrorData).length === 0) return;
+
+    await this.prisma.teacher.update({
+      where: { id: mirror.id },
+      data: mirrorData,
+    });
+    this.logger.log(
+      `Miroir Teacher ${mirror.id} synchronisé (poste: ${mirrorData.position ?? 'inchangé'})`,
+    );
   }
 
   /**

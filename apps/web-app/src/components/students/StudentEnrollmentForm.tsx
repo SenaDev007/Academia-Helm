@@ -465,6 +465,10 @@ export default function StudentEnrollmentForm({
   };
 
   const handleSubmit = async () => {
+    // ⭐ 2026-11-23 — MODE ÉDITION « Terminer à cette étape » : la soumission
+    //    peut désormais partir de N'IMPORTE QUELLE étape (pas seulement la
+    //    validation finale) → l'identité de base est revérifiée ici aussi.
+    if (!validateStep1()) return;
     // ⭐ FIX 16/11/2026 (bug 4) : protection au moment de la soumission — seuls
     // les parents avec prénom ET nom complets sont envoyés (le backend exige
     // les deux). Si une saisie partiale subsiste, on l'explique au lieu de
@@ -593,6 +597,20 @@ export default function StudentEnrollmentForm({
           </div>
         ))}
       </div>
+
+      {/* ⭐ 2026-11-23 — MODE ÉDITION : fin anticipée possible (retour
+          promoteur) — bannière explicite pour que l'utilisateur sache qu'il
+          n'a PAS à parcourir toutes les étapes après sa modification. */}
+      {isEditMode && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 flex items-start gap-2">
+          <CheckCircle className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-emerald-800 leading-relaxed">
+            Mode <strong>modification</strong> : corrigez ce que vous voulez, à l'étape de votre choix,
+            puis cliquez sur <strong>« Terminer à cette étape »</strong> — inutile de poursuivre les
+            étapes suivantes : la mise à jour est enregistrée immédiatement.
+          </p>
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2">
@@ -1015,23 +1033,42 @@ export default function StudentEnrollmentForm({
       )}
 
       {/* ─── Navigation ─── */}
-      <div className="flex justify-between pt-4 border-t border-gray-100">
+      <div className="flex flex-wrap justify-between items-center gap-2 pt-4 border-t border-gray-100">
         <button onClick={step === 1 ? onCancel : handleBack}
           className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition">
           {step === 1 ? 'Annuler' : '← Retour'}
         </button>
-        {step < 5 ? (
-          <button onClick={handleNext}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition">
-            Suivant →
-          </button>
-        ) : (
-          <button onClick={handleSubmit} disabled={isSubmitting}
-            className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium transition disabled:opacity-50">
-            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2 inline" /> : null}
-            Enregistrer l'inscription
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* ⭐ 2026-11-23 — MODE ÉDITION : « Terminer à cette étape ».
+              Retour promoteur : après avoir modifié une information, il ne
+              faut PAS être obligé de terminer tout le processus — on valide
+              ici sans poursuivre inutilement. Toutes les données du
+              formulaire (celles des étapes déjà vues ET celles pré-remplies
+              des étapes restantes) sont enregistrées en l'état. */}
+          {isEditMode && step < 5 && (
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-lg hover:bg-emerald-100 text-sm font-semibold transition disabled:opacity-50"
+              title="Enregistrer maintenant, sans parcourir les étapes suivantes"
+            >
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+              Terminer à cette étape
+            </button>
+          )}
+          {step < 5 ? (
+            <button onClick={handleNext}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition">
+              Suivant →
+            </button>
+          ) : (
+            <button onClick={handleSubmit} disabled={isSubmitting}
+              className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium transition disabled:opacity-50">
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2 inline" /> : null}
+              Enregistrer l'inscription
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

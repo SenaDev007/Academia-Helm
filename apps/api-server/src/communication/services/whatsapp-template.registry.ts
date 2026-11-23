@@ -762,6 +762,37 @@ La Direction`,
     // Pas de boutons pour le moment (seront ajoutés ultérieurement)
   },
 
+  // ─── 21-bis. Bulletin périodique (Examens — envoi WhatsApp au parent) ─────
+  // ⭐ 2026-11-23 — Même pattern que 'recu_paiement' : message texte via
+  //    template pré-approuvé + bulletin PDF envoyé en document WhatsApp juste
+  //    après (sendDocumentViaGupshup). Le texte reste sobre/accents-free
+  //    (règle Meta : pas d'accents dans les templates approuvés).
+  {
+    elementName: 'bulletin_periodique',
+    category: 'UTILITY',
+    templateType: 'TEXT',
+    useCase: 'Report card notification',
+    module: 'pedagogy',
+    header: 'Bulletin disponible',
+    body: `Bonjour {{parent_name}},
+
+Nous vous transmettons le bulletin de {{student_name}} ({{class_name}}) — {{period_name}}.
+
+{{results_line}}
+
+Le bulletin PDF, vise par le directeur et l'enseignant titulaire, est joint a ce message.
+
+Cordialement,
+La Direction de {{school_name}}`,
+    footer: FOOTER,
+    language: 'fr',
+    bodyVariables: ["parent_name", "student_name", "class_name", "period_name", "results_line", "school_name"],
+    bodyPlaceholderCount: 6,
+    callerParamCount: 5,
+    sampleBody: '[M. ADANDE],[Aicha ADANDE],[CM1 A],[Trimestre 1],[Moyenne generale : 14,50/20],[CSPEB]',
+    // Pas de boutons (le PDF est joint en document juste après le texte)
+  },
+
   // ─── 22. Sanction disciplinaire (Vie Scolaire — Surveillant Général) ─────
   // Notifie le parent quand une sanction comportementale est saisie par le SG.
   // Différenciateur marché : aucun concurrent béninois ne notifie WhatsApp sur sanction.

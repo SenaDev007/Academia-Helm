@@ -40,8 +40,11 @@ import { useEffect, useState, useCallback, useMemo, useRef, Suspense, Fragment }
 import {
   FileText, Loader2, ChevronDown, ChevronRight, Download,
   Users, BookOpen, Award, Calendar, Printer, AlertCircle,
-  Calculator, Shield, PenTool, Send, Mail, Undo, CheckCircle, ShieldAlert, Settings, Save, Sparkles, MessageCircle,
+  Calculator, Shield, PenTool, Send, Mail, Undo, CheckCircle, ShieldAlert, Settings, Save, Sparkles,
 } from 'lucide-react';
+// ⭐ 2026-11-23 — ICÔNE OFFICIELLE WhatsApp (logo vert #25D366) — fin de
+//    l'icône générique MessageCircle sur les boutons « Envoyer par WhatsApp ».
+import { WhatsAppIcon } from '@/components/finance/OfficialIcons';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -1461,16 +1464,19 @@ function BulletinsContent() {
     }
   };
 
-  // ⭐ 2026-11-23 — ENVOI DU BULLETIN PAR WHATSAPP (bouton par élève —
-  //    maternelle, primaire et secondaire). Un clic :
-  //    1. le bulletin PDF (strictement identique à « Générer PDF » — mêmes
-  //       données, auto-annotations comprises) est TÉLÉCHARGÉ : prêt à être
-  //       JOINT à la conversation WhatsApp ;
-  //    2. WhatsApp s'ouvre sur la conversation du tuteur avec le MESSAGE
-  //       PRÉDÉFINI PROFESSIONNEL (école, moyenne, rang, mention, lien de
-  //       téléchargement du PDF pour le parent) ;
-  //    3. si aucun numéro de tuteur n'est renseigné : le message est copié
-  //       (coller dans WhatsApp) et le PDF reste téléchargé.
+  // ⭐ 2026-11-23 — ENVOI RÉEL DU BULLETIN PAR WHATSAPP (bouton par élève —
+  //    maternelle, primaire et secondaire). EXACTEMENT la mécanique du module
+  //    Finances (onglet Encaissement → « Envoi auto (API) ») : un clic et
+  //    le système envoie, depuis le NUMÉRO DE TÉLÉPHONE DE L'ÉCOLE (WhatsApp
+  //    Business configuré) vers le NUMÉRO WHATSAPP DU PARENT :
+  //      1. le message professionnel (école, moyenne, rang, mention) est
+  //         rédigé et envoyé ;
+  //      2. le bulletin PDF (strictement identique à « Générer PDF ») est
+  //         envoyé EN PIÈCE JOINTE dans la même conversation ;
+  //      3. le tout est tracé (whatsapp_logs) — fin du presse-papiers et du
+  //         téléchargement manuel, l'école n'a plus RIEN à faire.
+  //    Réponses gérées : sent (message + PDF partis), skipped (aucun numéro
+  //    de tuteur renseigné), failed (erreur provider affichée).
   const [whatsappSending, setWhatsappSending] = useState<string | null>(null);
   const handleWhatsAppBulletin = async (student: StudentResult) => {
     if (!bulletinData) return;
@@ -1482,74 +1488,31 @@ function BulletinsContent() {
         parentSig: null as string | null,
       };
       const payload = await buildBulletinPayload(student, sigs);
-      const response = await apiClient.post('/institutional-exams/bulletins/whatsapp-link', payload, {
-        timeout: 180000, // génération PDF + archivage — généreux
+      const response = await apiClient.post('/institutional-exams/bulletins/whatsapp-send', payload, {
+        timeout: 180000, // génération PDF + envoi WhatsApp (provider) — généreux
       });
       const data: any = response.data || {};
+      const toLabel = data.to || '';
+      const who = (data.parentName || student.studentName || "le parent");
 
-      // 1. Télécharger le bulletin PDF (base64 → blob) pour le JOINDRE à la
-      //    conversation qui s'ouvre — « le fichier PDF même du bulletin doit
-      //    être directement joint ».
-      if (data.pdfBase64) {
-        try {
-          const bin = atob(data.pdfBase64);
-          const bytes = new Uint8Array(bin.length);
-          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          const url = window.URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = data.filename || `bulletin_${(student.studentName || 'eleve').replace(/\s+/g, '_')}.pdf`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          window.URL.revokeObjectURL(url);
-        } catch {
-          // Non bloquant — l'envoi WhatsApp reste possible sans le téléchargement
-        }
-      }
-
-      // 2. Ouvrir WhatsApp (wa.me) avec le message prédéfini — ou, si aucun
-      //    numéro de tuteur n'est renseigné, ouvrir WhatsApp avec le message
-      //    pré-rempli SANS destinataire (le directeur choisit le contact) et
-      //    copier le message en secours.
-      const waUrl = data.url
-        || (data.message ? `https://wa.me/?text=${encodeURIComponent(data.message)}` : '');
-      if (waUrl) {
-        const win = window.open(waUrl, '_blank', 'noopener,noreferrer');
-        if (!win) {
-          // Popup bloqué par le navigateur (appel après des awaits) — repli :
-          // message copié + PDF déjà téléchargé.
-          try {
-            await navigator.clipboard.writeText(data.message || '');
-            toastSuccess('Message copié', {
-              description: 'Le navigateur a bloqué l\'ouverture de WhatsApp — le message est copié (collez-le dans WhatsApp) et le PDF est téléchargé, joignez-le.',
-            });
-          } catch {
-            toastError('Ouverture bloquée', {
-              description: 'Le navigateur a bloqué l\'ouverture de WhatsApp — le PDF est téléchargé (joignez-le manuellement).',
-            });
-          }
-        } else if (data.url) {
-          toastSuccess('WhatsApp ouvert', {
-            description: 'Bulletin PDF téléchargé — joignez-le à la conversation ouverte (le message mentionne aussi son lien de téléchargement).',
-          });
-        } else {
-          toastSuccess('WhatsApp ouvert', {
-            description: "Aucun numéro de tuteur renseigné — sélectionnez le contact du parent dans WhatsApp (le PDF est téléchargé, joignez-le ; le message est aussi copié).",
-          });
-          try { await navigator.clipboard.writeText(data.message || ''); } catch {}
-        }
+      if (data.status === 'sent') {
+        toastSuccess(isEN ? 'Report card sent by WhatsApp' : 'Bulletin envoyé par WhatsApp', {
+          description: (isEN
+            ? `Message and report card PDF sent to ${who}${toLabel ? ` (${toLabel})` : ''} from the school's WhatsApp number.`
+            : `Message et bulletin PDF envoyés à ${who}${toLabel ? ` (${toLabel})` : ''} depuis le numéro WhatsApp de l'école.`),
+        });
+      } else if (data.status === 'skipped') {
+        toastError(isEN ? 'No guardian phone number' : 'Numéro de tuteur manquant', {
+          description: data.reason || (isEN
+            ? 'No guardian phone number is recorded for this student — add one from the student record first.'
+            : "Aucun numéro de téléphone de tuteur n'est renseigné pour cet élève — renseignez-le depuis la fiche de l'élève."),
+        });
       } else {
-        try {
-          await navigator.clipboard.writeText(data.message || '');
-          toastSuccess('Message copié', {
-            description: "Aucun numéro de tuteur renseigné — collez le message dans WhatsApp (le PDF est téléchargé, joignez-le).",
-          });
-        } catch {
-          toastError('Numéro de tuteur manquant', {
-            description: "Aucun numéro de téléphone de tuteur n'est renseigné pour cet élève.",
-          });
-        }
+        toastError(isEN ? 'WhatsApp send failed' : 'Échec de l\'envoi WhatsApp', {
+          description: data.error || (isEN
+            ? 'The WhatsApp API rejected the send — check the WhatsApp configuration (provider, school number).'
+            : "L'API WhatsApp a refusé l'envoi — vérifiez la configuration WhatsApp (provider, numéro de l'école)."),
+        });
       }
     } catch (err: any) {
       toastError('Erreur WhatsApp', { description: err.response?.data?.message || err.message });
@@ -1831,9 +1794,10 @@ function BulletinsContent() {
                   {/* ⭐ 2026-11-23 — BOUTON « ENVOYER LE BULLETIN PAR WHATSAPP »
                       (directeur/promoteur) : disponible directement sur la
                       ligne de CHAQUE élève — maternelle, primaire et
-                      secondaire. Un clic : PDF téléchargé (à joindre) +
-                      WhatsApp ouvert sur la conversation du tuteur avec le
-                      message professionnel prédéfini. */}
+                      secondaire. Un clic : le système envoie RÉELLEMENT le
+                      message professionnel + le bulletin PDF EN PIÈCE JOINTE
+                      depuis le numéro WhatsApp de l'école vers le WhatsApp du
+                      parent (même mécanique que l'encaissement Finances). */}
                   {!isTeacher && (
                     <button
                       type="button"
@@ -1844,7 +1808,7 @@ function BulletinsContent() {
                     >
                       {whatsappSending === student.id
                         ? <Loader2 className="w-4 h-4 animate-spin" />
-                        : <MessageCircle className="w-4 h-4" />}
+                        : <WhatsAppIcon className="w-4 h-4" />}
                     </button>
                   )}
                 </div>
@@ -2104,16 +2068,17 @@ function BulletinTwoPage({
       {/* PDF + WhatsApp buttons — hidden for teachers (anti-download protection) */}
       {canDownload && (
       <div className="flex justify-end gap-2 flex-wrap">
-        {/* ⭐ 2026-11-23 — Envoi du bulletin par WhatsApp au parent (message
-            professionnel prédéfini + PDF téléchargé pour être joint). */}
+        {/* ⭐ 2026-11-23 — Envoi RÉEL du bulletin par WhatsApp au parent :
+            message professionnel + PDF EN PIÈCE JOINTE, du numéro de l'école
+            vers le WhatsApp du parent (icône officielle WhatsApp). */}
         {onWhatsAppBulletin && (
           <Button
             onClick={() => onWhatsAppBulletin(student)}
             disabled={whatsappSending || generatingPdf}
-            title="Envoyer le bulletin par WhatsApp au parent (message professionnel prédéfini + PDF joint)"
+            title="Envoyer le bulletin par WhatsApp au parent (message professionnel + PDF joint automatiquement)"
             className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
           >
-            {whatsappSending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{isEn ? 'Preparing…' : 'Préparation…'}</> : <><MessageCircle className="w-4 h-4 mr-2" />{isEn ? 'Send by WhatsApp' : 'Envoyer par WhatsApp'}</>}
+            {whatsappSending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{isEn ? 'Sending…' : 'Envoi…'}</> : <><WhatsAppIcon className="w-4 h-4 mr-2" />{isEn ? 'Send by WhatsApp' : 'Envoyer par WhatsApp'}</>}
           </Button>
         )}
         <Button onClick={() => onGeneratePdf({ teacherSig, directorSig, parentSig })} disabled={generatingPdf || whatsappSending} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">

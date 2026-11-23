@@ -75,10 +75,23 @@ interface TeacherProfile {
   id: string;
   teacherId: string;
   maxWeeklyHours: number;
-  teacher: { id: string; firstName: string; lastName: string; matricule: string };
+  teacher: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    matricule: string;
+    // ⭐ 2026-11-23 — niveau de l'enseignant (inclus par le backend depuis le
+    // profil académique) : la catégorisation Maternelle & Primaire /
+    // Secondaire ne dépend plus uniquement du miroir /teachers (filtré par le
+    // sélecteur de niveau global).
+    schoolLevel?: { id?: string; name?: string; code?: string } | null;
+  };
   subjectQualifications: { subjectId: string }[];
   levelAuthorizations: { levelId: string }[];
   assignedLanguages?: string[] | null;
+  /** ⭐ 2026-11-23 — enseignant sans profil académique initialisé : entrée
+   * synthétique (18h/sem max par défaut) pour rester AFFECTABLE. */
+  __withoutProfile?: boolean;
 }
 
 // ⭐ Sujet du catalogue (GET /api/subjects) — utilisé pour proposer les matières
@@ -928,8 +941,14 @@ export default function AssignmentsWorkspace() {
   // En mode bilingue, filtrer par la langue de l'enseignant (FR ou EN)
   // La langue vient de teachersWithPhotos (GET /api/teachers) qui inclut
   // assignedLanguages — TeacherProfile ne l'inclut pas.
+  // ⭐ 2026-11-23 — UNION : un enseignant SANS profil académique (embauche
+  //    récente — import Excel, wizard RH…) reste AFFECTABLE : il apparaît avec
+  //    les valeurs par défaut (18h/sem max, badge « profil à initialiser »)
+  //    au lieu d'être invisible dans les modals d'affectation (retour
+  //    promoteur : les enseignants du secondaire ajoutés via Excel
+  //    n'apparaissaient pas pour affecter les classes du secondaire).
   const eligibleTeachers = useMemo(() => {
-    return teachers.filter(t => {
+    const withProfile = teachers.filter(t => {
       if (isBilingual) {
         const langs = getTeacherLanguages(t.teacher.id);
         const teacherLang = langs.length > 0 ? langs[0] : null;
@@ -938,6 +957,29 @@ export default function AssignmentsWorkspace() {
       }
       return true;
     });
+    // Enseignants actifs du miroir /teachers qui n'ont PAS de profil pour
+    // l'année : entrées synthétiques (clé `no-profile-<id>`) — affectables,
+    // catégorisables par leur Teacher.schoolLevel.
+    const profiledIds = new Set(teachers.map(t => t.teacher.id));
+    const withoutProfile: TeacherProfile[] = teachersWithPhotos
+      .filter(t => !profiledIds.has(t.id) && (t.status || 'active') === 'active')
+      .map(t => ({
+        id: `no-profile-${t.id}`,
+        teacherId: t.id,
+        teacher: {
+          id: t.id,
+          firstName: t.firstName || '',
+          lastName: t.lastName || '',
+          matricule: t.matricule || '',
+          schoolLevel: t.schoolLevel || null,
+        },
+        maxWeeklyHours: 18,
+        subjectQualifications: [],
+        levelAuthorizations: [],
+        assignedLanguages: t.assignedLanguages || null,
+        __withoutProfile: true,
+      }));
+    return [...withProfile, ...withoutProfile];
   }, [teachers, isBilingual, currentTrack, teachersWithPhotos]);
 
   // ⭐ 169 — FILTRE PAR NIVEAU DE LA CLASSE (retour promoteur) : quand une
@@ -945,10 +987,19 @@ export default function AssignmentsWorkspace() {
   // d'affectation ne doivent lister QUE les enseignants du secondaire ; une
   // classe maternelle/primaire ne propose que les enseignants maternel-
   // primaire — AUCUN MÉLANGE. Le niveau de chaque enseignant vient de
-  // GET /api/teachers (Teacher.schoolLevel name/code — teachersWithPhotos).
+  // GET /api/teachers (Teacher.schoolLevel name/code — teachersWithPhotos),
+  // ⭐ 2026-11-23 — avec repli sur le schoolLevel du PROFIL académique (le
+  // miroir /teachers est filtré par le sélecteur de niveau global : un
+  // enseignant hors sélecteur courant restait catégorisé AUTRE et
+  // disparaissait à tort des modals).
   const getTeacherCategory = (teacherId: string): 'MATERNEL_PRIMAIRE' | 'SECONDAIRE' | 'AUTRE' => {
-    const t = teachersWithPhotos.find(x => x.id === teacherId);
-    return levelCategoryOf(`${t?.schoolLevel?.name || ''} ${t?.schoolLevel?.code || ''}`);
+    const mirror = teachersWithPhotos.find(x => x.id === teacherId);
+    const fromMirror = levelCategoryOf(`${mirror?.schoolLevel?.name || ''} ${mirror?.schoolLevel?.code || ''}`);
+    if (fromMirror !== 'AUTRE') return fromMirror;
+    const profile = teachers.find(x => x.teacher?.id === teacherId);
+    return levelCategoryOf(
+      `${profile?.teacher?.schoolLevel?.name || ''} ${profile?.teacher?.schoolLevel?.code || ''}`,
+    );
   };
   const selectedClassCategory = levelCategoryOf(
     selectedOfficialClass?.level?.name || selectedPhysicalClass?.name || '',
@@ -1548,7 +1599,12 @@ export default function AssignmentsWorkspace() {
                       )}
                       <div>
                         <p className="font-bold text-slate-800 text-sm">{t.teacher.lastName} {t.teacher.firstName}</p>
-                        <p className="text-[10px] text-slate-400 font-medium">{t.teacher.matricule} · {t.maxWeeklyHours}h/sem max</p>
+                        <p className="text-[10px] text-slate-400 font-medium">
+                          {t.teacher.matricule} · {t.maxWeeklyHours}h/sem max
+                          {t.__withoutProfile && (
+                            <span className="ml-1 text-amber-600">· profil académique à initialiser</span>
+                          )}
+                        </p>
                       </div>
                       {isSelected && <CheckCircle2 className="w-4 h-4 ml-auto" style={{ color: PRIMARY }} />}
                     </button>
@@ -1835,6 +1891,9 @@ export default function AssignmentsWorkspace() {
                         </p>
                         <p className="text-[10px] text-slate-400 font-medium">
                           {t.teacher.matricule} · {t.maxWeeklyHours}h/sem max
+                          {t.__withoutProfile && (
+                            <span className="ml-1 text-amber-600">· profil académique à initialiser</span>
+                          )}
                         </p>
                       </div>
                       {isSelected && <CheckCircle2 className="w-4 h-4 ml-auto" style={{ color: PRIMARY }} />}
@@ -1947,10 +2006,12 @@ export default function AssignmentsWorkspace() {
                 <option value="">— Sélectionner un enseignant —</option>
                 {/* ⭐ 169 — Professeur Principal = fonction du SECONDAIRE : seuls
                     les enseignants du secondaire sont proposés (aucun mélange
-                    avec maternel-primaire). */}
-                {teachers.filter(t => getTeacherCategory(t.teacherId) === 'SECONDAIRE').map(t => (
+                    avec maternel-primaire). ⭐ 2026-11-23 — liste = UNION
+                    profils + sans profil (embauches récentes affectables). */}
+                {eligibleTeachers.filter(t => getTeacherCategory(t.teacherId) === 'SECONDAIRE').map(t => (
                   <option key={t.teacherId} value={t.teacherId}>
                     {t.teacher.lastName} {t.teacher.firstName}
+                    {t.__withoutProfile ? ' (profil à initialiser)' : ''}
                   </option>
                 ))}
               </select>

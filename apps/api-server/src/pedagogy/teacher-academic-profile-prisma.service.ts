@@ -13,7 +13,17 @@ export class TeacherAcademicProfilePrismaService {
   constructor(private readonly prisma: PrismaService) {}
 
   private readonly profileInclude = {
-    teacher: { select: { id: true, firstName: true, lastName: true, matricule: true, email: true } },
+    // ⭐ 2026-11-23 — schoolLevel inclus : le module Affectations par Classe
+    //    catégorise les enseignants Maternelle & Primaire / Secondaire depuis
+    //    Teacher.schoolLevel (le miroir /teachers est filtré par le sélecteur
+    //    de niveau global — sans ce champ, un enseignant absent du miroir était
+    //    classé « AUTRE » et disparaissait des modals d'affectation).
+    teacher: {
+      select: {
+        id: true, firstName: true, lastName: true, matricule: true, email: true,
+        schoolLevel: { select: { id: true, name: true, code: true } },
+      },
+    },
     academicYear: { select: { id: true, label: true } },
     subjectQualifications: { include: { subject: { select: { id: true, name: true, code: true } } } },
     levelAuthorizations: { include: { level: { select: { id: true, name: true } } } },

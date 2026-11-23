@@ -686,6 +686,30 @@ export class WhatsAppService {
       this.logger.log(
         `✅ WhatsApp envoyé via Gupshup (texte) à ${destination}: ${messageId}`,
       );
+
+      // ⭐ 2026-11-23 — Document PDF en envoi texte libre : même comportement
+      //    que le chemin template (upload média puis envoi type=document),
+      //    best-effort — l'échec du document ne fait pas échouer le message.
+      //    Sert à joindre le PDF du bulletin quand le template dédié n'est
+      //    pas encore approuvé sur le compte Gupshup (repli texte libre).
+      if (request.document?.content) {
+        try {
+          const docResult = await this.sendDocumentViaGupshup(
+            source,
+            destination,
+            appName,
+            apiKey,
+            apiUrl,
+            request.document.content,
+            request.document.filename,
+            request.documentCaption || 'Document',
+          );
+          this.logger.log(`✅ WhatsApp document envoyé via Gupshup (texte) à ${destination}: ${docResult.messageId}`);
+        } catch (docErr: any) {
+          this.logger.warn(`⚠️ Échec envoi document WhatsApp (texte libre, non bloquant): ${docErr.message}`);
+        }
+      }
+
       return { success: true, messageId };
     }
 

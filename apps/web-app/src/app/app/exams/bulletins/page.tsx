@@ -40,15 +40,16 @@ import { useEffect, useState, useCallback, useMemo, useRef, Suspense, Fragment }
 import {
   FileText, Loader2, ChevronDown, ChevronRight, Download,
   Users, BookOpen, Award, Calendar, Printer, AlertCircle,
-  Calculator, Shield, PenTool, Send, Mail, Undo, CheckCircle, ShieldAlert, Settings, Save, Sparkles,
+  Calculator, Shield, PenTool, Send, Mail, Undo, CheckCircle, ShieldAlert, Settings, Save, Sparkles, MessageCircle,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import { useSchoolIdentity } from '@/hooks/useSchoolIdentity';
-import * as settingsService from '@/services/settings.service';
+import { useSchoolIdentity, useSchoolIdentityForLevel } from '@/hooks/useSchoolIdentity';
+// ⭐ 2026-11-23 — En-tête d'identité école COMPLET (exige promoteur) partagé avec le registre des notes.
+import { SchoolIdentityHeader } from '@/components/exams/SchoolIdentityHeader';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import apiClient from '@/lib/api/client';
 import { enComponentForCode, translatePeriodName } from '@/lib/exam-anglophone-config';
@@ -451,43 +452,14 @@ function BulletinsContent() {
   const user = session?.user;
   const effectiveTenantId = session?.tenant?.id;
 
-  // ⭐ 2026-11-15 — IDENTITÉ DU NIVEAU SECONDAIRE (écoles combinées) : le module
-  //    Paramètres → onglet Identité → « Identité école secondaire » peut définir
-  //    un nom/logo/contacts DIFFÉRENTS du global (maternelle/primaire). Les
-  //    documents du secondaire (bulletins d'évaluation, trimestriels, annuels,
-  //    Report Book EN) doivent porter CETTE identité — l'identité globale ne
-  //    convient que pour maternelle/primaire. Fusion non destructive : chaque
-  //    champ non vide du profil secondaire remplace le champ global.
+  // ⭐ 2026-11-23 — IDENTITÉ DU NIVEAU courant — maternelle/primaire → identité
+  //    PAR DÉFAUT de l'école ; secondaire → profil « Identité école secondaire »
+  //    (Paramètres → Identité) fusionné champ à champ. Résolution désormais
+  //    partagée avec l'onglet Registre des notes via le hook
+  //    useSchoolIdentityForLevel, et l'identité est COMPLÈTE (téléphone 1/2,
+  //    WhatsApp, email, site web, localisation — exigence promoteur).
   const isSecondaire = scopeLevel === 'SECONDAIRE';
-  const [secondaryIdentityProfile, setSecondaryIdentityProfile] = useState<any | null>(null);
-  useEffect(() => {
-    if (!isSecondaire) { setSecondaryIdentityProfile(null); return; }
-    let cancelled = false;
-    settingsService.getSecondaryIdentity(effectiveTenantId ?? undefined)
-      .then((res: any) => {
-        if (!cancelled) setSecondaryIdentityProfile(res?.configured && res?.profile ? res.profile : null);
-      })
-      .catch(() => { if (!cancelled) setSecondaryIdentityProfile(null); });
-    return () => { cancelled = true; };
-  }, [isSecondaire, effectiveTenantId]);
-  const schoolForLevel = useMemo(() => {
-    const sec = secondaryIdentityProfile;
-    if (!isSecondaire || !sec) return school;
-    const merged: any = { ...school };
-    if (sec.schoolName) merged.schoolName = sec.schoolName;
-    if (sec.schoolAcronym) merged.schoolAcronym = sec.schoolAcronym;
-    if (sec.slogan) merged.slogan = sec.slogan;
-    if (sec.logoUrl) merged.logoUrl = sec.logoUrl;
-    if (sec.address) merged.address = sec.address;
-    if (sec.city) merged.city = sec.city;
-    if (sec.department) merged.department = sec.department;
-    if (sec.phonePrimary) merged.phone = sec.phonePrimary;
-    if (sec.phoneSecondary) merged.phoneSecondary = sec.phoneSecondary;
-    if (sec.whatsapp) merged.whatsapp = sec.whatsapp;
-    if (sec.email) merged.email = sec.email;
-    if (sec.website) merged.website = sec.website;
-    return merged;
-  }, [school, isSecondaire, secondaryIdentityProfile]);
+  const { identity: schoolForLevel } = useSchoolIdentityForLevel(scopeLevel, effectiveTenantId);
 
   const [classes, setClasses] = useState<any[]>([]);
   const [periods, setPeriods] = useState<any[]>([]);
@@ -1230,161 +1202,203 @@ function BulletinsContent() {
     });
   };
 
+  // ⭐ 2026-11-23 — Construction du PAYLOAD du bulletin, partagée par « Générer
+  //    PDF », « Toute la classe » et « Envoyer par WhatsApp ».
+  //    ⭐ AUTO-GÉNÉRATION AU MOMENT DE LA GÉNÉRATION (exigence promoteur :
+  //    « dès qu'on clique sur le bouton générer PDF, tous les champs qui
+  //    devaient être auto-générés doivent être auto-générés pour apparaître
+  //    dans le fichier PDF ») — AVANT, l'auto-génération (assiduité,
+  //    discipline, défauts majeurs, qualités remarquables, analyse/
+  //    recommandations, visa directeur) ne se déclenchait qu'au MONTAGE DE LA
+  //    PAGE 2 : sans visiter la page 2, le PDF sortait avec les champs vides.
+  //    Désormais, si aucune annotation n'a jamais été enregistrée pour l'élève,
+  //    on la demande au backend (auto-annotations), on la PERSISTE, et elle
+  //    figure dans le PDF — quel que soit le bouton utilisé.
+  const buildBulletinPayload = async (
+    student: StudentResult,
+    signatures?: { teacherSig: string | null; directorSig: string | null; parentSig: string | null },
+  ): Promise<any> => {
+    const isEn = scopeLang === 'EN';
+    const selectedPeriod = periods.find((p: any) => p.id === selectedPeriodId);
+    const periodEndDate = selectedPeriod?.endDate ? format(new Date(selectedPeriod.endDate), 'EEEE, MMMM d, yyyy', { locale: enUSLocale }) : null;
+    // Next period start date (look for the next period in the same academic year)
+    const sortedPeriods = [...periods].sort((a: any, b: any) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+    const currentIdx = sortedPeriods.findIndex((p: any) => p.id === selectedPeriodId);
+    const nextPeriod = currentIdx >= 0 && currentIdx < sortedPeriods.length - 1 ? sortedPeriods[currentIdx + 1] : null;
+    const nextTermStart = nextPeriod?.startDate ? format(new Date(nextPeriod.startDate), 'EEEE, MMMM d, yyyy', { locale: enUSLocale }) : null;
+
+    const payload: any = {
+      // ⭐ schoolForLevel : identité du NIVEAU courant — pour le
+      //    secondaire, l'override « Identité école secondaire » (module
+      //    Paramètres → Identité) remplace nom/logo/adresse/tél/email/slogan.
+      schoolName: schoolForLevel?.schoolName,
+      schoolLogo: schoolForLevel?.logoUrl,
+      schoolAddress: schoolForLevel?.address,
+      schoolPhone: schoolForLevel?.phone,
+      schoolEmail: schoolForLevel?.email,
+      schoolSlogan: schoolForLevel?.slogan,
+      academicYearName: academicYear?.label || '',
+      periodName: selectedPeriodName,
+      // ⭐ periodId envoyé au backend pour qu'il puisse résoudre
+      //    la conduite depuis conduct_ledger WHERE quarterId = periodId
+      //    (au lieu de isCurrent=true qui peut ne pas être marqué).
+      periodId: selectedPeriodId,
+      evaluationTypeId: selectedEvalTypeId || null,
+      evaluationTypeName: selectedEvalTypeName,
+      evaluationTypeCode: selectedEvalTypeCode,
+      className: selectedClassName,
+      studentName: student.studentName,
+      studentMatricule: student.matricule,
+      studentGender: student.gender,
+      // ⭐ V10h — âge + date de naissance pour le formulaire Report Book
+      studentAge: student.age ?? null,
+      studentBirthDate: student.birthDate ?? null,
+      admissionNumber: student.matricule || null,
+      isMaternelle,
+      // ⭐ isSecondaryLevel : vrai pour TOUS les bulletins
+      //    secondaires (FR trimestriel, FR évaluation, ET EN Report Book).
+      //    Utilisé par le backend pour résoudre la conduite depuis
+      //    conduct_ledger + sanctions (module Vie Scolaire) — source de vérité
+      //    côté backend. Sans ce flag, le backend ignorait la conduite pour
+      //    les bulletins EN (car isSecondary/isSecondaryEval étaient false).
+      isSecondaryLevel: isSecondaire,
+      // ⭐ SECONDAIRE « Bulletin trimestriel » uniquement — modèle CEG (Interrogation
+      //    écrite 1/2 + Devoir surveillé 1/2 + Moyenne + Coefficient + Note coefficient).
+      isSecondary: secondaryConsolidated,
+      // ⭐ SECONDAIRE « Bulletin d'évaluation » — même standard graphique que le
+      //    bulletin secondaire MAIS un seul type d'évaluation : tableau
+      //    Discipline | Note /20 | Rang | Appréciation + moyenne de l'évaluation.
+      isSecondaryEval: isSecondaryTrack && !secondaryConsolidated ? true : undefined,
+      secJunior: secondaryConsolidated
+        ? isJuniorSecondaryClass2(selectedClassName || '')
+        : undefined,
+      // ⭐ EN-specific fields
+      scopeLang: scopeLang || null,
+      sessionYear: academicYear?.label || null,
+      termEndingDate: periodEndDate,
+      nextTermStartDate: nextTermStart,
+      numberOfSubjects: bulletinData!.subjects.length,
+      subjects: bulletinData!.subjects.map(s => {
+        const sc = student.subjectScores[s.id];
+        // ⭐ V10h — stats par matière (Highest/Lowest in class + Position)
+        const stats = isEn ? enSubjectClassStats(bulletinData!, s.id, student.id) : null;
+        return {
+          // ⭐ id (subjectId) envoyé au backend pour qu'il
+          //    puisse résoudre le nom de l'enseignant de la matière via
+          //    TeacherClassAssignment (classe × matière). Affiché dans la
+          //    colonne « Professeur » du bulletin secondaire.
+          id: s.id,
+          name: s.name,
+          score: sc?.score ?? null,
+          qualitativeCode: sc?.qualitativeCode ?? null,
+          isAbsent: sc?.isAbsent ?? false,
+          appreciation: sc?.appreciation ?? '—',
+          // ⭐ Primaire — CM/CP envoyés par le frontend (valeurs réelles depuis le grade)
+          cm: !isEn && !secondaryConsolidated && !isMaternelle ? (sc?.cm ?? null) : undefined,
+          cp: !isEn && !secondaryConsolidated && !isMaternelle ? (sc?.cp ?? null) : undefined,
+          // ⭐ EN: 3-component scores per subject
+          firstCA: isEn ? (sc?.firstCA ?? null) : undefined,
+          secondCA: isEn ? (sc?.secondCA ?? null) : undefined,
+          exam: isEn ? (sc?.exam ?? null) : undefined,
+          total: isEn ? (sc?.total ?? null) : undefined,
+          // ⭐ V10h — colonnes Report Book : Grade + Remark + stats classe
+          grade: isEn ? enGradeFor(sc?.total ?? null) : undefined,
+          remark: isEn ? (enTierFor(sc?.total ?? null)?.label ?? '—') : undefined,
+          highestInClass: isEn ? stats?.highest ?? null : undefined,
+          lowestInClass: isEn ? stats?.lowest ?? null : undefined,
+          subjectPosition: (isEn || (isSecondaryTrack && !secondaryConsolidated))
+            ? (isEn ? (stats?.position ?? null) : (sc?.subjectRank ?? null))
+            : undefined,
+          // ⭐ SECONDAIRE (Bulletin trimestriel) — slots + moyennes + coefficient
+          //    + rang (modèle CEG). undefined = évaluation sans donnée pour
+          //    l'élève → clé absente du JSON ; null = absent → ABS ; number = note
+          secInt1: secondaryConsolidated ? sc?.int1 : undefined,
+          secInt2: secondaryConsolidated ? sc?.int2 : undefined,
+          secDs1: secondaryConsolidated ? sc?.ds1 : undefined,
+          secDs2: secondaryConsolidated ? sc?.ds2 : undefined,
+          secMoyInter: secondaryConsolidated ? (sc?.moyInter ?? null) : undefined,
+          secMoyenne: secondaryConsolidated ? (sc?.moyenne ?? null) : undefined,
+          secCoef: secondaryConsolidated ? (sc?.coefficient ?? s.coefficient ?? null) : undefined,
+          secNoteCoef: secondaryConsolidated ? (sc?.noteCoef ?? null) : undefined,
+          secRank: secondaryConsolidated ? (sc?.subjectRank ?? null) : undefined,
+          secHasSlot: secondaryConsolidated ? (sc?.secHasSlot ?? false) : undefined,
+        };
+      }),
+      // ⭐ SECONDAIRE (Bulletin trimestriel) — totaux + récap T3 (moyennes
+      //    T1/T2 + moyenne annuelle)
+      secTotalCoef: secondaryConsolidated
+        ? bulletinData!.subjects.reduce((sum, s) => {
+            const sc = student.subjectScores[s.id];
+            return sum + (sc?.moyenne != null ? (sc?.coefficient ?? s.coefficient ?? 1) : 0);
+          }, 0)
+        : undefined,
+      secTotalNotesCoef: secondaryConsolidated
+        ? bulletinData!.subjects.reduce((sum, s) => sum + (student.subjectScores[s.id]?.noteCoef ?? 0), 0)
+        : undefined,
+      secRecap: secondaryConsolidated ? (student.secondaryRecap ?? null) : undefined,
+      generalAverage: student.generalAverage,
+      classRank: student.classRank,
+      classAverage: bulletinData!.stats.classAverage,
+      highestAverage: bulletinData!.results.length > 0 ? Math.max(...bulletinData!.results.map(r => r.generalAverage || 0)) : null,
+      lowestAverage: bulletinData!.results.length > 0 ? Math.min(...bulletinData!.results.map(r => r.generalAverage || 0)) : null,
+      totalStudents: bulletinData!.results.length,
+      appreciationGlobale: student.appreciationGlobale,
+    };
+
+    // ⭐ Charger les annotations enregistrées, puis AUTO-GÉNÉRER si vide
+    //    (voir commentaire d'en-tête — plus besoin de visiter la page 2).
+    let ann: any = {};
+    try {
+      const annRes = await apiClient.get(`/institutional-exams/bulletins/annotations?studentId=${student.id}&periodId=${selectedPeriodId}`);
+      ann = annRes.data || {};
+    } catch {}
+
+    if (!ann.analyseRecommandations && !ann.assiduite) {
+      try {
+        const autoRes = await apiClient.get(`/institutional-exams/bulletins/auto-annotations?studentId=${student.id}&periodId=${selectedPeriodId}`);
+        const autoData = autoRes.data || {};
+        if (autoData.analyseRecommandations || autoData.assiduite) {
+          ann = { ...ann, ...autoData };
+          // Persister (même logique que la page 2) — non bloquant
+          apiClient.patch('/institutional-exams/bulletins/annotations', {
+            studentId: student.id,
+            periodId: selectedPeriodId,
+            analyseRecommandations: autoData.analyseRecommandations || '',
+            assiduite: autoData.assiduite || '',
+            discipline: autoData.discipline || '',
+            defautsMajeurs: autoData.defautsMajeurs || '',
+            qualitesRemarquables: autoData.qualitesRemarquables || '',
+            directorVisa: autoData.directorVisa || student.appreciationGlobale || '',
+          }).catch(() => {});
+        }
+      } catch {}
+    }
+
+    payload.assiduite = ann.assiduite || null;
+    payload.discipline = ann.discipline || null;
+    payload.defautsMajeurs = ann.defautsMajeurs || null;
+    payload.qualitesRemarquables = ann.qualitesRemarquables || null;
+    payload.analyseRecommandations = ann.analyseRecommandations || null;
+    payload.directorVisa = ann.directorVisa || null;
+    // ⭐ Champs anglophones
+    payload.enTeacherComment = ann.enTeacherComment || null;
+    payload.enDirectorComment = ann.enDirectorComment || null;
+    payload.enAffectiveAssessment = ann.enAffectiveAssessment || null;
+    payload.enPsychomotorAssessment = ann.enPsychomotorAssessment || null;
+
+    payload.teacherSignature = signatures?.teacherSig ?? null;
+    payload.directorSignature = signatures?.directorSig ?? null;
+    payload.parentSignature = signatures?.parentSig ?? null;
+
+    return payload;
+  };
+
   const handleGeneratePdf = async (student: StudentResult, signatures?: { teacherSig: string | null; directorSig: string | null; parentSig: string | null }) => {
     setGeneratingPdf(student.id);
     try {
       // ⭐ Call backend PDF generation endpoint (same pattern as Module Élèves)
       // Backend uses Puppeteer + official header (République, drapeau, ministère, école)
-      const isEn = scopeLang === 'EN';
-      const selectedPeriod = periods.find((p: any) => p.id === selectedPeriodId);
-      const periodEndDate = selectedPeriod?.endDate ? format(new Date(selectedPeriod.endDate), 'EEEE, MMMM d, yyyy', { locale: enUSLocale }) : null;
-      // Next period start date (look for the next period in the same academic year)
-      const sortedPeriods = [...periods].sort((a: any, b: any) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
-      const currentIdx = sortedPeriods.findIndex((p: any) => p.id === selectedPeriodId);
-      const nextPeriod = currentIdx >= 0 && currentIdx < sortedPeriods.length - 1 ? sortedPeriods[currentIdx + 1] : null;
-      const nextTermStart = nextPeriod?.startDate ? format(new Date(nextPeriod.startDate), 'EEEE, MMMM d, yyyy', { locale: enUSLocale }) : null;
-
-      const payload: any = {
-        // ⭐ 2026-11-15 — schoolForLevel : identité du NIVEAU courant — pour le
-        //    secondaire, l'override « Identité école secondaire » (module
-        //    Paramètres → Identité) remplace nom/logo/adresse/tél/email/slogan.
-        schoolName: schoolForLevel?.schoolName,
-        schoolLogo: schoolForLevel?.logoUrl,
-        schoolAddress: schoolForLevel?.address,
-        schoolPhone: schoolForLevel?.phone,
-        schoolEmail: schoolForLevel?.email,
-        schoolSlogan: schoolForLevel?.slogan,
-        academicYearName: academicYear?.label || '',
-        periodName: selectedPeriodName,
-        // ⭐ 2026-09-29 — periodId envoyé au backend pour qu'il puisse résoudre
-        //    la conduite depuis conduct_ledger WHERE quarterId = periodId
-        //    (au lieu de isCurrent=true qui peut ne pas être marqué).
-        periodId: selectedPeriodId,
-        evaluationTypeName: selectedEvalTypeName,
-        evaluationTypeCode: selectedEvalTypeCode,
-        className: selectedClassName,
-        studentName: student.studentName,
-        studentMatricule: student.matricule,
-        studentGender: student.gender,
-        // ⭐ V10h — âge + date de naissance pour le formulaire Report Book
-        studentAge: student.age ?? null,
-        studentBirthDate: student.birthDate ?? null,
-        admissionNumber: student.matricule || null,
-        isMaternelle,
-        // ⭐ 2026-09-29 — isSecondaryLevel : vrai pour TOUS les bulletins
-        //    secondaires (FR trimestriel, FR évaluation, ET EN Report Book).
-        //    Utilisé par le backend pour résoudre la conduite depuis
-        //    conduct_ledger + sanctions (module Vie Scolaire) — source de vérité
-        //    côté backend. Sans ce flag, le backend ignorait la conduite pour
-        //    les bulletins EN (car isSecondary/isSecondaryEval étaient false).
-        isSecondaryLevel: isSecondaire,
-        // ⭐ SECONDAIRE « Bulletin trimestriel » uniquement — modèle CEG (Interrogation
-        //    écrite 1/2 + Devoir surveillé 1/2 + Moyenne + Coefficient + Note coefficient).
-        isSecondary: secondaryConsolidated,
-        // ⭐ SECONDAIRE « Bulletin d'évaluation » — même standard graphique que le
-        //    bulletin secondaire MAIS un seul type d'évaluation : tableau
-        //    Discipline | Note /20 | Rang | Appréciation + moyenne de l'évaluation.
-        isSecondaryEval: isSecondaryTrack && !secondaryConsolidated ? true : undefined,
-        secJunior: secondaryConsolidated
-          ? isJuniorSecondaryClass2(selectedClassName || '')
-          : undefined,
-        // ⭐ EN-specific fields
-        scopeLang: scopeLang || null,
-        sessionYear: academicYear?.label || null,
-        termEndingDate: periodEndDate,
-        nextTermStartDate: nextTermStart,
-        numberOfSubjects: bulletinData!.subjects.length,
-        subjects: bulletinData!.subjects.map(s => {
-          const sc = student.subjectScores[s.id];
-          // ⭐ V10h — stats par matière (Highest/Lowest in class + Position)
-          const stats = isEn ? enSubjectClassStats(bulletinData!, s.id, student.id) : null;
-          return {
-            // ⭐ 2026-09-28 — id (subjectId) envoyé au backend pour qu'il
-            //    puisse résoudre le nom de l'enseignant de la matière via
-            //    TeacherClassAssignment (classe × matière). Affiché dans la
-            //    colonne « Professeur » du bulletin secondaire.
-            id: s.id,
-            name: s.name,
-            score: sc?.score ?? null,
-            qualitativeCode: sc?.qualitativeCode ?? null,
-            isAbsent: sc?.isAbsent ?? false,
-            appreciation: sc?.appreciation ?? '—',
-            // ⭐ Primaire — CM/CP envoyés par le frontend (valeurs réelles depuis le grade)
-            cm: !isEn && !secondaryConsolidated && !isMaternelle ? (sc?.cm ?? null) : undefined,
-            cp: !isEn && !secondaryConsolidated && !isMaternelle ? (sc?.cp ?? null) : undefined,
-            // ⭐ EN: 3-component scores per subject
-            firstCA: isEn ? (sc?.firstCA ?? null) : undefined,
-            secondCA: isEn ? (sc?.secondCA ?? null) : undefined,
-            exam: isEn ? (sc?.exam ?? null) : undefined,
-            total: isEn ? (sc?.total ?? null) : undefined,
-            // ⭐ V10h — colonnes Report Book : Grade + Remark + stats classe
-            grade: isEn ? enGradeFor(sc?.total ?? null) : undefined,
-            remark: isEn ? (enTierFor(sc?.total ?? null)?.label ?? '—') : undefined,
-            highestInClass: isEn ? stats?.highest ?? null : undefined,
-            lowestInClass: isEn ? stats?.lowest ?? null : undefined,
-            subjectPosition: (isEn || (isSecondaryTrack && !secondaryConsolidated))
-              ? (isEn ? (stats?.position ?? null) : (sc?.subjectRank ?? null))
-              : undefined,
-            // ⭐ SECONDAIRE (Bulletin trimestriel) — slots + moyennes + coefficient
-            //    + rang (modèle CEG). undefined = évaluation sans donnée pour
-            //    l'élève → clé absente du JSON ; null = absent → ABS ; number = note
-            secInt1: secondaryConsolidated ? sc?.int1 : undefined,
-            secInt2: secondaryConsolidated ? sc?.int2 : undefined,
-            secDs1: secondaryConsolidated ? sc?.ds1 : undefined,
-            secDs2: secondaryConsolidated ? sc?.ds2 : undefined,
-            secMoyInter: secondaryConsolidated ? (sc?.moyInter ?? null) : undefined,
-            secMoyenne: secondaryConsolidated ? (sc?.moyenne ?? null) : undefined,
-            secCoef: secondaryConsolidated ? (sc?.coefficient ?? s.coefficient ?? null) : undefined,
-            secNoteCoef: secondaryConsolidated ? (sc?.noteCoef ?? null) : undefined,
-            secRank: secondaryConsolidated ? (sc?.subjectRank ?? null) : undefined,
-            secHasSlot: secondaryConsolidated ? (sc?.secHasSlot ?? false) : undefined,
-          };
-        }),
-        // ⭐ SECONDAIRE (Bulletin trimestriel) — totaux + récap T3 (moyennes
-        //    T1/T2 + moyenne annuelle)
-        secTotalCoef: secondaryConsolidated
-          ? bulletinData!.subjects.reduce((sum, s) => {
-              const sc = student.subjectScores[s.id];
-              return sum + (sc?.moyenne != null ? (sc?.coefficient ?? s.coefficient ?? 1) : 0);
-            }, 0)
-          : undefined,
-        secTotalNotesCoef: secondaryConsolidated
-          ? bulletinData!.subjects.reduce((sum, s) => sum + (student.subjectScores[s.id]?.noteCoef ?? 0), 0)
-          : undefined,
-        secRecap: secondaryConsolidated ? (student.secondaryRecap ?? null) : undefined,
-        generalAverage: student.generalAverage,
-        classRank: student.classRank,
-        classAverage: bulletinData!.stats.classAverage,
-        highestAverage: bulletinData!.results.length > 0 ? Math.max(...bulletinData!.results.map(r => r.generalAverage || 0)) : null,
-        lowestAverage: bulletinData!.results.length > 0 ? Math.min(...bulletinData!.results.map(r => r.generalAverage || 0)) : null,
-        totalStudents: bulletinData!.results.length,
-        appreciationGlobale: student.appreciationGlobale,
-        assiduite: (window as any).__bulletinAnnotations?.[student.id]?.assiduite || null,
-        discipline: (window as any).__bulletinAnnotations?.[student.id]?.discipline || null,
-        defautsMajeurs: (window as any).__bulletinAnnotations?.[student.id]?.defautsMajeurs || null,
-        qualitesRemarquables: (window as any).__bulletinAnnotations?.[student.id]?.qualitesRemarquables || null,
-        analyseRecommandations: (window as any).__bulletinAnnotations?.[student.id]?.analyseRecommandations || null,
-        teacherSignature: signatures?.teacherSig ?? null,
-        directorSignature: signatures?.directorSig ?? null,
-        parentSignature: signatures?.parentSig ?? null,
-      };
-
-      // ⭐ Load annotations from backend before generating PDF
-      try {
-        const annRes = await apiClient.get(`/institutional-exams/bulletins/annotations?studentId=${student.id}&periodId=${selectedPeriodId}`);
-        const ann = annRes.data || {};
-        payload.assiduite = ann.assiduite || null;
-        payload.discipline = ann.discipline || null;
-        payload.defautsMajeurs = ann.defautsMajeurs || null;
-        payload.qualitesRemarquables = ann.qualitesRemarquables || null;
-        payload.analyseRecommandations = ann.analyseRecommandations || null;
-        payload.directorVisa = ann.directorVisa || null;
-        // ⭐ Champs anglophones
-        payload.enTeacherComment = ann.enTeacherComment || null;
-        payload.enDirectorComment = ann.enDirectorComment || null;
-        payload.enAffectiveAssessment = ann.enAffectiveAssessment || null;
-        payload.enPsychomotorAssessment = ann.enPsychomotorAssessment || null;
-      } catch {}
+      const payload = await buildBulletinPayload(student, signatures);
 
       const response = await apiClient.post('/institutional-exams/bulletins/generate-pdf', payload, {
         responseType: 'blob',
@@ -1417,7 +1431,15 @@ function BulletinsContent() {
     let failed = 0;
     for (const student of bulletinData.results) {
       try {
-        await handleGeneratePdf(student, { teacherSig: null, directorSig: null, parentSig: null });
+        // ⭐ 2026-11-23 — signatures du workflow (directeur/enseignant) reprises
+        //    pour chaque élève : le PDF « Toute la classe » naît avec les
+        //    vraies signatures quand le workflow a déjà été signé.
+        const sigs = {
+          teacherSig: workflowSignatures[student.id]?.teacherSig ?? null,
+          directorSig: workflowSignatures[student.id]?.directorSig ?? null,
+          parentSig: null as string | null,
+        };
+        await handleGeneratePdf(student, sigs);
         success++;
       } catch (err) {
         console.error('PDF generation failed for student:', student.id, err);
@@ -1437,6 +1459,101 @@ function BulletinsContent() {
           : `${success} bulletins générés.`,
       });
     }
+  };
+
+  // ⭐ 2026-11-23 — ENVOI DU BULLETIN PAR WHATSAPP (bouton par élève —
+  //    maternelle, primaire et secondaire). Un clic :
+  //    1. le bulletin PDF (strictement identique à « Générer PDF » — mêmes
+  //       données, auto-annotations comprises) est TÉLÉCHARGÉ : prêt à être
+  //       JOINT à la conversation WhatsApp ;
+  //    2. WhatsApp s'ouvre sur la conversation du tuteur avec le MESSAGE
+  //       PRÉDÉFINI PROFESSIONNEL (école, moyenne, rang, mention, lien de
+  //       téléchargement du PDF pour le parent) ;
+  //    3. si aucun numéro de tuteur n'est renseigné : le message est copié
+  //       (coller dans WhatsApp) et le PDF reste téléchargé.
+  const [whatsappSending, setWhatsappSending] = useState<string | null>(null);
+  const handleWhatsAppBulletin = async (student: StudentResult) => {
+    if (!bulletinData) return;
+    setWhatsappSending(student.id);
+    try {
+      const sigs = {
+        teacherSig: workflowSignatures[student.id]?.teacherSig ?? null,
+        directorSig: workflowSignatures[student.id]?.directorSig ?? null,
+        parentSig: null as string | null,
+      };
+      const payload = await buildBulletinPayload(student, sigs);
+      const response = await apiClient.post('/institutional-exams/bulletins/whatsapp-link', payload, {
+        timeout: 180000, // génération PDF + archivage — généreux
+      });
+      const data: any = response.data || {};
+
+      // 1. Télécharger le bulletin PDF (base64 → blob) pour le JOINDRE à la
+      //    conversation qui s'ouvre — « le fichier PDF même du bulletin doit
+      //    être directement joint ».
+      if (data.pdfBase64) {
+        try {
+          const bin = atob(data.pdfBase64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const url = window.URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = data.filename || `bulletin_${(student.studentName || 'eleve').replace(/\s+/g, '_')}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(url);
+        } catch {
+          // Non bloquant — l'envoi WhatsApp reste possible sans le téléchargement
+        }
+      }
+
+      // 2. Ouvrir WhatsApp (wa.me) avec le message prédéfini — ou, si aucun
+      //    numéro de tuteur n'est renseigné, ouvrir WhatsApp avec le message
+      //    pré-rempli SANS destinataire (le directeur choisit le contact) et
+      //    copier le message en secours.
+      const waUrl = data.url
+        || (data.message ? `https://wa.me/?text=${encodeURIComponent(data.message)}` : '');
+      if (waUrl) {
+        const win = window.open(waUrl, '_blank', 'noopener,noreferrer');
+        if (!win) {
+          // Popup bloqué par le navigateur (appel après des awaits) — repli :
+          // message copié + PDF déjà téléchargé.
+          try {
+            await navigator.clipboard.writeText(data.message || '');
+            toastSuccess('Message copié', {
+              description: 'Le navigateur a bloqué l\'ouverture de WhatsApp — le message est copié (collez-le dans WhatsApp) et le PDF est téléchargé, joignez-le.',
+            });
+          } catch {
+            toastError('Ouverture bloquée', {
+              description: 'Le navigateur a bloqué l\'ouverture de WhatsApp — le PDF est téléchargé (joignez-le manuellement).',
+            });
+          }
+        } else if (data.url) {
+          toastSuccess('WhatsApp ouvert', {
+            description: 'Bulletin PDF téléchargé — joignez-le à la conversation ouverte (le message mentionne aussi son lien de téléchargement).',
+          });
+        } else {
+          toastSuccess('WhatsApp ouvert', {
+            description: "Aucun numéro de tuteur renseigné — sélectionnez le contact du parent dans WhatsApp (le PDF est téléchargé, joignez-le ; le message est aussi copié).",
+          });
+          try { await navigator.clipboard.writeText(data.message || ''); } catch {}
+        }
+      } else {
+        try {
+          await navigator.clipboard.writeText(data.message || '');
+          toastSuccess('Message copié', {
+            description: "Aucun numéro de tuteur renseigné — collez le message dans WhatsApp (le PDF est téléchargé, joignez-le).",
+          });
+        } catch {
+          toastError('Numéro de tuteur manquant', {
+            description: "Aucun numéro de téléphone de tuteur n'est renseigné pour cet élève.",
+          });
+        }
+      }
+    } catch (err: any) {
+      toastError('Erreur WhatsApp', { description: err.response?.data?.message || err.message });
+    } finally { setWhatsappSending(null); }
   };
 
   const selectedClassName = classes.find(c => c.id === selectedClassId)?.name || '';
@@ -1678,38 +1795,59 @@ function BulletinsContent() {
             const isExpanded = expandedStudents.has(student.id);
             return (
               <div key={student.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                <button onClick={() => toggleStudent(student.id)}
-                  className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors">
-                  <div className="flex items-center gap-3">
-                    {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-500" /> : <ChevronRight className="w-5 h-5 text-slate-500" />}
-                    <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">{scopeLang === 'EN' ? enOrdinal(student.classRank) : formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')}</div>
-                    <div className="text-left">
-                      <div className="text-sm font-bold text-slate-900 whitespace-nowrap">{student.studentName}</div>
-                      <div className="text-xs text-slate-500">
-                        {student.matricule || '—'} · {scopeLang === 'EN' ? 'Position' : 'Rang'} {scopeLang === 'EN' ? enOrdinal(student.classRank) : formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')}
-                        {!isMaternelle && student.generalAverage !== null && ` · ${student.generalAverage.toFixed(2)}${scopeLang === 'EN' ? '/100' : '/20'}`}
-                        {isMaternelle && student.appreciationGlobale && ` · ${student.appreciationGlobale}`}
+                <div className="flex items-stretch">
+                  <button onClick={() => toggleStudent(student.id)}
+                    className="flex-1 min-w-0 px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors text-left">
+                    <div className="flex items-center gap-3">
+                      {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-500" /> : <ChevronRight className="w-5 h-5 text-slate-500" />}
+                      <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">{scopeLang === 'EN' ? enOrdinal(student.classRank) : formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')}</div>
+                      <div className="text-left">
+                        <div className="text-sm font-bold text-slate-900 whitespace-nowrap">{student.studentName}</div>
+                        <div className="text-xs text-slate-500">
+                          {student.matricule || '—'} · {scopeLang === 'EN' ? 'Position' : 'Rang'} {scopeLang === 'EN' ? enOrdinal(student.classRank) : formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')}
+                          {!isMaternelle && student.generalAverage !== null && ` · ${student.generalAverage.toFixed(2)}${scopeLang === 'EN' ? '/100' : '/20'}`}
+                          {isMaternelle && student.appreciationGlobale && ` · ${student.appreciationGlobale}`}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {!isMaternelle && student.generalAverage !== null && (
-                      <span className={cn('px-2 py-1 rounded text-xs font-bold',
-                        scopeLang === 'EN'
-                          ? ((student.generalAverage ?? 0) >= 50 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')
-                          : (student.generalAverage >= 10 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'))}>
-                        {student.generalAverage.toFixed(2)}{scopeLang === 'EN' ? '/100' : '/20'}
-                      </span>
-                    )}
-                    {isMaternelle && student.appreciationGlobale && (
-                      <span className={cn('px-2 py-1 rounded text-xs font-bold',
-                        student.appreciationGlobale === 'Très Satisfaisant' && 'bg-emerald-100 text-emerald-700',
-                        student.appreciationGlobale === 'Satisfaisant' && 'bg-blue-100 text-blue-700',
-                        student.appreciationGlobale === 'Peu Satisfaisant' && 'bg-amber-100 text-amber-700',
-                      )}>{student.appreciationGlobale}</span>
-                    )}
-                  </div>
-                </button>
+                    <div className="flex items-center gap-2">
+                      {!isMaternelle && student.generalAverage !== null && (
+                        <span className={cn('px-2 py-1 rounded text-xs font-bold',
+                          scopeLang === 'EN'
+                            ? ((student.generalAverage ?? 0) >= 50 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')
+                            : (student.generalAverage >= 10 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'))}>
+                          {student.generalAverage.toFixed(2)}{scopeLang === 'EN' ? '/100' : '/20'}
+                        </span>
+                      )}
+                      {isMaternelle && student.appreciationGlobale && (
+                        <span className={cn('px-2 py-1 rounded text-xs font-bold',
+                          student.appreciationGlobale === 'Très Satisfaisant' && 'bg-emerald-100 text-emerald-700',
+                          student.appreciationGlobale === 'Satisfaisant' && 'bg-blue-100 text-blue-700',
+                          student.appreciationGlobale === 'Peu Satisfaisant' && 'bg-amber-100 text-amber-700',
+                        )}>{student.appreciationGlobale}</span>
+                      )}
+                    </div>
+                  </button>
+                  {/* ⭐ 2026-11-23 — BOUTON « ENVOYER LE BULLETIN PAR WHATSAPP »
+                      (directeur/promoteur) : disponible directement sur la
+                      ligne de CHAQUE élève — maternelle, primaire et
+                      secondaire. Un clic : PDF téléchargé (à joindre) +
+                      WhatsApp ouvert sur la conversation du tuteur avec le
+                      message professionnel prédéfini. */}
+                  {!isTeacher && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleWhatsAppBulletin(student); }}
+                      disabled={whatsappSending === student.id || generatingPdf === student.id}
+                      title={isEN ? 'Send report card by WhatsApp to the parent' : 'Envoyer le bulletin par WhatsApp au parent'}
+                      className="px-3 border-l border-slate-100 flex items-center justify-center text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-40"
+                    >
+                      {whatsappSending === student.id
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <MessageCircle className="w-4 h-4" />}
+                    </button>
+                  )}
+                </div>
 
                 {isExpanded && (
                   <div className="border-t border-slate-100 p-4">
@@ -1735,6 +1873,8 @@ function BulletinsContent() {
                       isSecondaire={secondaryConsolidated}
                       isSecondaryTrack={isSecondaryTrack}
                       directorName={directorName}
+                      onWhatsAppBulletin={handleWhatsAppBulletin}
+                      whatsappSending={whatsappSending === student.id}
                     />
                   </div>
                 )}
@@ -1792,6 +1932,7 @@ function BulletinTwoPage({
   selectedPeriodName, selectedClassName, selectedEvalTypeCode, selectedEvalTypeName,
   onGeneratePdf, generatingPdf, canDownload = true, directorSignature, teacherSignature,
   selectedPeriodId, scopeLang, nextTermStartDate, termEndingDate, isSecondaire, isSecondaryTrack, directorName,
+  onWhatsAppBulletin, whatsappSending,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
@@ -1811,6 +1952,9 @@ function BulletinTwoPage({
   scopeLang?: string;
   nextTermStartDate?: string | null;
   termEndingDate?: string | null;   // ⭐ V10h — TERM ENDING du Report Book
+  // ⭐ 2026-11-23 — Envoi du bulletin par WhatsApp (bouton par élève)
+  onWhatsAppBulletin?: (student: StudentResult) => void;
+  whatsappSending?: boolean;
   isSecondaire?: boolean;           // ⭐ SECONDAIRE « Bulletin trimestriel » (consolidé CEG) — sinon standard primaire
   isSecondaryTrack?: boolean;       // ⭐ SECONDAIRE piste FR (les 2 onglets) — page 2 modèle secondaire
   directorName?: string | null;     // ⭐ Nom du directeur résolu depuis le module RH (administration)
@@ -1861,15 +2005,17 @@ function BulletinTwoPage({
 
   return (
     <div className="space-y-3" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-      {/* Bulletin header (école) — ⭐ V10h : libellés EN pour la piste anglophone */}
-      <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-200">
-        <div className="flex items-center justify-center gap-3 mb-1">
-          {school?.logoUrl && <img src={school.logoUrl} alt="logo" className="h-10 w-10 rounded object-cover" />}
-          <div>
-            <h3 className="text-xs font-bold text-slate-900">{school?.schoolName || (isEn ? 'School' : 'École')}</h3>
-            <p className="text-[10px] text-slate-500">{school?.address || ''} · {isEn ? 'Tel' : 'Tél'}: {school?.phone || ''}</p>
-          </div>
-        </div>
+      {/* ⭐ 2026-11-23 — EN-TÊTE D'IDENTITÉ ÉCOLE COMPLET (exige promoteur :
+          « toutes les informations de l'école ne figurent pas… les adresses
+          mail et les contacts sont bien mentionnés dans le module paramètres
+          onglet identité ») — logo, nom, sigle, devise, localisation,
+          téléphones 1/2, WhatsApp, email, site web — résolu par niveau
+          (maternelle/primaire → identité par défaut ; secondaire → identité
+          du secondaire telle que définie dans Paramètres → Identité). */}
+      <SchoolIdentityHeader school={school} lang={isEn ? 'EN' : 'FR'} />
+
+      {/* Bulletin header (période/classe/élève) — ⭐ V10h : libellés EN pour la piste anglophone */}
+      <div className="bg-slate-50 rounded-lg p-2 text-center border border-slate-200">
         <div className="text-[10px] text-slate-600">
           {isEn ? <>Session: <strong>{academicYear?.label || ''}</strong> · {translatePeriodName(selectedPeriodName, 'EN')} · Class: <strong>{translateClassName(selectedClassName)}</strong></>
             : <>Année: <strong>{academicYear?.label || ''}</strong> · {selectedPeriodName} · Classe: <strong>{selectedClassName}</strong></>}
@@ -1955,10 +2101,22 @@ function BulletinTwoPage({
         </div>
       </div>
 
-      {/* PDF button — hidden for teachers (anti-download protection) */}
+      {/* PDF + WhatsApp buttons — hidden for teachers (anti-download protection) */}
       {canDownload && (
-      <div className="flex justify-end">
-        <Button onClick={() => onGeneratePdf({ teacherSig, directorSig, parentSig })} disabled={generatingPdf} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
+      <div className="flex justify-end gap-2 flex-wrap">
+        {/* ⭐ 2026-11-23 — Envoi du bulletin par WhatsApp au parent (message
+            professionnel prédéfini + PDF téléchargé pour être joint). */}
+        {onWhatsAppBulletin && (
+          <Button
+            onClick={() => onWhatsAppBulletin(student)}
+            disabled={whatsappSending || generatingPdf}
+            title="Envoyer le bulletin par WhatsApp au parent (message professionnel prédéfini + PDF joint)"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
+          >
+            {whatsappSending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{isEn ? 'Preparing…' : 'Préparation…'}</> : <><MessageCircle className="w-4 h-4 mr-2" />{isEn ? 'Send by WhatsApp' : 'Envoyer par WhatsApp'}</>}
+          </Button>
+        )}
+        <Button onClick={() => onGeneratePdf({ teacherSig, directorSig, parentSig })} disabled={generatingPdf || whatsappSending} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
           {generatingPdf ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{isEn ? 'Generating…' : 'Génération…'}</> : <><Download className="w-4 h-4 mr-2" />{isEn ? 'Generate PDF' : 'Générer PDF'}</>}
         </Button>
       </div>

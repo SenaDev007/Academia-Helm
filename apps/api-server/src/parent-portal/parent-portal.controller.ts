@@ -886,6 +886,16 @@ export class ParentPortalController {
   /**
    * GET /parent/results/:studentId?academicYearId=Y
    * Bulletins d'un enfant (depuis ReportCard).
+   *
+   * ⭐ 2026-11-23 — WORKFLOW DE SIGNATURE : le flux « Signer (Directeur) →
+   *    Activer → Signer (Enseignant) → Renvoyer → Envoyer aux parents »
+   *    aboutit au statut PARENT_SENT (jamais VALIDATED/PUBLISHED) — le filtre
+   *    précédent rendait donc invisibles pour le parent les bulletins qui
+   *    venaient de lui être envoyés. PARENT_SENT est désormais inclus.
+   *    ⭐ Le nom de la période est résolu via academic_periods (le workflow
+   *    stocke l'AcademicPeriod.id dans quarterId — le join sur quarters
+   *    seul renvoyait quarterName = null) et le type d'évaluation
+   *    (EM1, EC, EP…) est exposé pour l'affichage.
    */
   @Get('results/:studentId')
   async getResults(
@@ -898,13 +908,16 @@ export class ParentPortalController {
 
     const reportCards: any = await this.prisma.$queryRawUnsafe(
       `SELECT rc."id", rc."type", rc."overallAverage", rc."rank", rc."status",
-              rc."filePath", rc."publishedAt", rc."createdAt",
-              q."name" as "quarterName", q."number" as "quarterNumber"
+              rc."filePath", rc."publishedAt", rc."createdAt", rc."sentToParentAt",
+              rc."evaluationTypeId", rc."evaluationTypeName", rc."evaluationTypeCode",
+              COALESCE(ap."name", q."name") as "quarterName",
+              COALESCE(ap."periodOrder", q."number") as "quarterNumber"
        FROM "report_cards" rc
+       LEFT JOIN "academic_periods" ap ON ap."id" = rc."quarterId" AND ap."tenantId" = rc."tenantId"
        LEFT JOIN "quarters" q ON q."id" = rc."quarterId"
        WHERE rc."studentId" = $1 AND rc."tenantId" = $2
        AND rc."academicYearId" = $3
-       AND rc."status" IN ('VALIDATED', 'PUBLISHED')
+       AND rc."status" IN ('VALIDATED', 'PUBLISHED', 'PARENT_SENT')
        ORDER BY rc."createdAt" DESC`,
       studentId, tenantId, academicYearId,
     ).catch(() => []);
@@ -973,6 +986,18 @@ export class ParentPortalController {
     // Jointures :
     //   grades → evaluations → evaluation_types, academic_periods, subjects
     //   grades → quarters (grades.periodId → quarters.id)
+    //
+    // ⭐ 2026-11-23 — FIX GROUPING « TEL TRIMESTRE, TELLE ÉVALUATION » : les
+    //    grades sont créés avec periodId = NULL (le flux de saisie copie
+    //    l'évaluation, pas la période — voir grades.service : « periodId du
+    //    Grade référence Quarter… laisser null pour éviter P2003 »). Le join
+    //    quarters sur g."periodId" renvoyait donc NULL → TOUTES les notes se
+    //    regroupaient sous un unique trimestre « Non spécifié » dans le portail
+    //    parent, au lieu d'un trimestre réel par période. Désormais la période
+    //    de GROUPEMENT est celle de l'ÉVALUATION (evaluations.periodId →
+    //    academic_periods — la vraie source « trimestre » du module Examen,
+    //    exactement comme l'onglet Registre des notes), avec repli sur le
+    //    quarters legacy pour les anciennes lignes.
     const grades: any = await this.prisma.$queryRawUnsafe(
       `SELECT
          g.id AS grade_id,
@@ -996,9 +1021,9 @@ export class ParentPortalController {
          c.id AS "classId",
          c.name AS "className",
          sl.code AS "schoolLevelCode",
-         q.id AS "quarterId",
-         q.name AS "quarterName",
-         q.number AS "quarterNumber",
+         COALESCE(ap.id, q.id) AS "quarterId",
+         COALESCE(ap.name, q.name) AS "quarterName",
+         COALESCE(ap.periodOrder, q.number) AS "quarterNumber",
          ap.name AS "periodName"
        FROM grades g
        JOIN evaluations e ON e.id = g."evaluationId"
@@ -1012,7 +1037,7 @@ export class ParentPortalController {
          AND g."tenantId" = $2
          AND e."academicYearId" = $3
          AND e.status = 'VALIDATED'
-       ORDER BY q.number ASC, et.code ASC, s.name ASC`,
+       ORDER BY COALESCE(ap.periodOrder, q.number) ASC, et.code ASC, s.name ASC`,
       studentId, tenantId, academicYearId,
     ).catch(() => []);
 

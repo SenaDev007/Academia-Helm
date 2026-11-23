@@ -8,6 +8,9 @@ import { PrismaService } from '../../database/prisma.service';
 // ⭐ 2026-09-16 — Cachets (circulaire nominatif + rectangulaire) et signature
 //    du directeur appliqués automatiquement sur TOUS les bulletins.
 import { DocumentSealsService } from '../../settings/services/document-seals.service';
+// ⭐ 2026-11-23 — Archivage des bulletins PDF (R2/S3 → URL publique) pour
+//    l'envoi WhatsApp aux parents + téléchargement depuis le portail parent.
+import { StorageService } from '../../common/services/storage.service';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -28,6 +31,7 @@ export class BulletinsController {
     private readonly pdfService: BulletinPdfService,
     private readonly prisma: PrismaService,
     private readonly documentSealsService: DocumentSealsService,
+    private readonly storageService: StorageService,
   ) {}
 
   @Get('class/:classId')
@@ -597,24 +601,218 @@ export class BulletinsController {
     // ⭐ Robust tenantId resolution (same pattern as exams-prisma.controller)
     const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
 
+    // ⭐ 2026-11-23 — Toute la logique de résolution (branding, titulaire,
+    //    directeur, cachets, conduite, identité secondaire…) est partagée avec
+    //    l'endpoint whatsapp-link via buildBulletinPdfPayload().
+    const { pdfData, filename, studentId, schoolLevelId } =
+      await this.buildBulletinPdfPayload(resolvedTenantId, academicYearId, body);
+
+    const buffer = await this.pdfService.generateBulletin(pdfData);
+
+    // ⭐ 2026-11-23 — PERSISTANCE best-effort (non bloquant) : le bulletin
+    //    généré est archivé (R2/S3 → URL publique) et rattaché au ReportCard
+    //    (filePath + moyenne/rang + items par matière) pour que le parent
+    //    puisse le télécharger depuis son portail (bouton « PDF » de la ligne
+    //    du bulletin) — exactement le document que le directeur a généré.
+    try {
+      await this.persistBulletinDocument(resolvedTenantId, academicYearId, pdfData, buffer, studentId, schoolLevelId);
+    } catch {
+      // Silent fail — le téléchargement du directeur reste servi même si l'archive échoue
+    }
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
+  }
+
+  /**
+   * ⭐ POST /institutional-exams/bulletins/whatsapp-link
+   *
+   * Envoi du bulletin d'un élève aux parents par WhatsApp — message prédéfini
+   * professionnel (école, moyenne, rang, mention) + bulletin PDF archivé en
+   * URL publique. Le director UI appelle cet endpoint depuis le bouton
+   * « Envoyer par WhatsApp » de chaque élève ; il reçoit en retour :
+   *   - url       : lien wa.me avec le message pré-rempli (numéro du tuteur)
+   *   - message   : le message complet (pour copier/coller si pas de numéro)
+   *   - pdfBase64 : le bulletin PDF (téléchargé côté client pour être joint
+   *                 à la conversation WhatsApp en un geste)
+   *   - pdfUrl    : URL publique du même PDF (incluse dans le message —
+   *                 le parent peut le télécharger directement)
+   *
+   * Body : même payload que POST generate-pdf (le frontend calcule les
+   * moyennes — le PDF est strictement identique à celui du bouton
+   * « Générer PDF »).
+   */
+  @Post('whatsapp-link')
+  @Permissions('exams.read')
+  async getWhatsAppLink(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @AcademicYearId() academicYearId: string,
+    @Body() body: any,
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
+
+    const { pdfData, filename, studentId, schoolLevelId } =
+      await this.buildBulletinPdfPayload(resolvedTenantId, academicYearId, body);
+
+    // 1. Rendre le PDF (même gabarit que « Générer PDF »)
+    const buffer = await this.pdfService.generateBulletin(pdfData);
+
+    // 2. Archiver en URL publique (R2/S3) + persister sur le ReportCard
+    let pdfUrl: string | null = null;
+    try {
+      const key = `bulletins/${resolvedTenantId}/${studentId || 'eleve'}/bulletin-${(body.periodId || 'periode')}${body.evaluationTypeId ? `-${body.evaluationTypeId}` : ''}.pdf`;
+      const stored = await this.storageService.uploadBuffer(buffer, key);
+      if (typeof stored === 'string' && /^https?:\/\//.test(stored)) pdfUrl = stored;
+    } catch {
+      // Storage indisponible — le PDF reste livré en base64 au director UI
+    }
+    try {
+      await this.persistBulletinDocument(resolvedTenantId, academicYearId, pdfData, buffer, studentId, schoolLevelId);
+    } catch {
+      // Silent fail — l'envoi WhatsApp ne doit jamais être bloqué par la persistance
+    }
+
+    // 3. Contacts du tuteur (tuteur principal en priorité, sinon 1er tuteur
+    //    avec téléphone — même résolution que le module Finances)
+    let parentPhone: string | null = null;
+    let parentName: string | null = null;
+    if (studentId) {
+      try {
+        const sgs: any[] = await this.prisma.studentGuardian.findMany({
+          where: { studentId },
+          include: { guardian: { select: { firstName: true, lastName: true, phone: true, email: true } } },
+        });
+        const primary = sgs.find((sg: any) => sg.isPrimary && sg.guardian?.phone)
+          || sgs.find((sg: any) => sg.guardian?.phone)
+          || sgs.find((sg: any) => sg.isPrimary && sg.guardian);
+        if (primary?.guardian) {
+          parentPhone = primary.guardian.phone || null;
+          parentName = `${primary.guardian.firstName || ''} ${primary.guardian.lastName || ''}`.trim() || null;
+        }
+      } catch {
+        // Silent fail — bulletin sans tuteur renseigné
+      }
+    }
+
+    // 4. Message WhatsApp prédéfini — structuré et professionnel
+    const isEn = body.scopeLang === 'EN';
+    const isMaternelle = !!body.isMaternelle;
+    const totalStudents = body.totalStudents ?? null;
+    const generalAverage = typeof body.generalAverage === 'number' ? body.generalAverage : null;
+    const classRank = body.classRank ?? null;
+    const appreciation = body.appreciationGlobale || null;
+    const scaleLabel = isEn ? '/100' : '/20';
+    const avgLine = isMaternelle
+      ? (appreciation ? `Résultat global : ${appreciation}` : null)
+      : (generalAverage !== null ? `Moyenne générale : ${Number(generalAverage).toFixed(2)}${scaleLabel}` : null);
+    const rankLine = classRank && totalStudents
+      ? `Rang : ${classRank}${Number(classRank) === 1 ? 'er' : 'e'} sur ${totalStudents}`
+      : (classRank ? `Rang : ${classRank}` : null);
+    const mentionLine = !isMaternelle && appreciation ? `Mention : ${appreciation}` : null;
+
+    const schoolName = pdfData.schoolName || "l'établissement";
+    const studentName = body.studentName || 'l\'élève';
+    const periodPart = [
+      body.periodName,
+      body.evaluationTypeName ? `${isEn ? 'Evaluation' : 'Évaluation'} : ${body.evaluationTypeName}` : null,
+    ].filter(Boolean).join(' · ');
+    const contactLine = [
+      pdfData.schoolPhone ? `Tél : ${pdfData.schoolPhone}` : null,
+      pdfData.schoolEmail ? `Email : ${pdfData.schoolEmail}` : null,
+    ].filter(Boolean).join(' · ');
+
+    if (isEn) {
+      const message = `Hello${parentName ? ` ${parentName}` : ''},\n\n`
+        + `${schoolName} — Academic year ${body.academicYearName || ''}\n\n`
+        + `Please find below ${studentName}'s report card (${body.className || ''}) for ${periodPart || 'the current period'}.\n\n`
+        + (avgLine ? `📊 ${avgLine}\n` : '')
+        + (rankLine ? `🏅 ${rankLine}\n` : '')
+        + (mentionLine ? `⭐ ${mentionLine}\n` : '')
+        + `\nThe report card PDF (signed by the Head teacher and the class teacher) is attached to this message.`
+        + (pdfUrl ? `\nYou may also download it here:\n${pdfUrl}` : '')
+        + `\n\nWe remain at your disposal for any further information.\n\nKind regards,\nThe Management — ${schoolName}`;
+      const phoneForWaMe = this.normalizePhoneForWaMe(parentPhone);
+      return {
+        url: phoneForWaMe ? `https://wa.me/${phoneForWaMe}?text=${encodeURIComponent(message)}` : '',
+        phone: parentPhone,
+        parentName,
+        hasPhone: !!parentPhone,
+        message,
+        pdfBase64: buffer.toString('base64'),
+        pdfUrl,
+        filename,
+        studentName,
+      };
+    }
+
+    const message = `Bonjour${parentName ? ` ${parentName}` : ''},\n\n`
+      + `${schoolName} — Année scolaire ${body.academicYearName || ''}\n\n`
+      + `Nous vous transmettons le bulletin de ${studentName} (${body.className || 'classe non précisée'}) — ${periodPart || 'période courante'}.\n\n`
+      + (avgLine ? `📊 ${avgLine}\n` : '')
+      + (rankLine ? `🏅 ${rankLine}\n` : '')
+      + (mentionLine ? `⭐ ${mentionLine}\n` : '')
+      + `\nLe bulletin PDF, visé par le directeur et l'enseignant titulaire, est joint à ce message.`
+      + (pdfUrl ? `\nVous pouvez également le télécharger ici :\n${pdfUrl}` : '')
+      + `\n\nNous restons à votre disposition pour toute information complémentaire${contactLine ? ` (${contactLine})` : ''}.\n\nCordialement,\nLa Direction — ${schoolName}`;
+
+    const phoneForWaMe = this.normalizePhoneForWaMe(parentPhone);
+    return {
+      url: phoneForWaMe ? `https://wa.me/${phoneForWaMe}?text=${encodeURIComponent(message)}` : '',
+      phone: parentPhone,
+      parentName,
+      hasPhone: !!parentPhone,
+      message,
+      pdfBase64: buffer.toString('base64'),
+      pdfUrl,
+      filename,
+      studentName,
+    };
+  }
+
+  /**
+   * ⭐ Normalisation du numéro de tuteur pour wa.me — même règle que le module
+   *    Finances (reçus) : « 01XXXXXXXX » (Bénin) → 229XXXXXXXX, +XXX → XXX…
+   */
+  private normalizePhoneForWaMe(phone: string | null): string {
+    if (!phone) return '';
+    let cleaned = phone.replace(/[\s\-().]/g, '').trim();
+    if (/^01\d{8}$/.test(cleaned)) {
+      cleaned = '229' + cleaned.substring(2);
+    } else if (/^\d{8}$/.test(cleaned) && !cleaned.startsWith('00')) {
+      cleaned = '229' + cleaned;
+    } else if (cleaned.startsWith('+')) {
+      cleaned = cleaned.substring(1);
+    } else if (cleaned.startsWith('00')) {
+      cleaned = cleaned.substring(2);
+    }
+    return cleaned;
+  }
+
+  /**
+   * ⭐ private buildBulletinPdfPayload — résolution COMPLÈTE des données d'un
+   *    bulletin PDF à partir du payload frontend (mêmes résolutions backend
+   *    qu'avant la refactorisation : branding, titulaire multi-tier, directeur,
+   *    cachets, conduite/distinctions/assiduité, enseignants par matière,
+   *    identité secondaire). Partagé par generate-pdf et whatsapp-link pour
+   *    garantir que le PDF WhatsApp est strictement identique au PDF généré.
+   */
+  private async buildBulletinPdfPayload(
+    resolvedTenantId: string | undefined,
+    academicYearId: string,
+    body: any,
+  ): Promise<{ pdfData: any; filename: string; studentId: string | null; schoolLevelId: string | null }> {
     // ⭐ 2026-10-05 — OPTIMISATION 504 : paralléliser les requêtes indépendantes
     //    pour réduire le temps de réponse. Avant : getTenantBranding (1-2
     //    requêtes) PUIS student findFirst (1 requête) → 3 requêtes séquentielles
     //    juste pour démarrer. Désormais : 1 vague parallèle de 2 requêtes
     //    (branding + student), puis 1 vague parallèle pour les dépendances.
-    //
-    //    ⚠️ Chronologie :
-    //    - Vague 1 (parallèle) : branding + student.findFirst({matricule})
-    //    - Vague 2 (parallèle, après student.id) : enrollment + studentPhoto
-    //      + conductSettings + (school_directors query — non, dépend de
-    //      schoolLevelId qui vient de enrollment)
-    //    - Vague 3 (parallèle, après enrollment.classId + schoolLevelId) :
-    //      teacherClassAssignment + schoolLevel + academicTrack
-    //    - Vague 4 (parallèle, après teacherClassAssignment) : teacher
-    //    - Vague 5 (parallèle, après schoolLevel + trackUuid) :
-    //      staffAdminAssignment + school_directors
-    //
-    //    Sur Neon cold start : 3-5s économisés (passage de 5-10s → 2-4s).
     let [branding, student] = await Promise.all([
       this.getTenantBranding(resolvedTenantId),
       body.studentMatricule && resolvedTenantId
@@ -1431,20 +1629,159 @@ export class BulletinsController {
       directorSeals,
     };
 
-    const buffer = await this.pdfService.generateBulletin(pdfData);
-
     // ⭐ Nom du fichier : bulletin_[élève]_[type éval]_[trimestre].pdf
     const safeName = (body.studentName || 'eleve').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
     const safeEvalType = (body.evaluationTypeCode || body.evaluationTypeName || 'eval').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
     const safePeriod = (body.periodName || 'periode').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
     const filename = `bulletin_${safeName}_${safeEvalType}_${safePeriod}.pdf`;
 
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${filename}"`,
-      'Content-Length': buffer.length,
-    });
-    res.end(buffer);
+    return {
+      pdfData,
+      filename,
+      studentId: student?.id ?? null,
+      schoolLevelId: studentSchoolLevelId ?? null,
+    };
+  }
+
+  /**
+   * ⭐ private persistBulletinDocument — rattache le bulletin PDF généré au
+   *    ReportCard de l'élève (filePath = URL publique de l'archive R2/S3) et
+   *    alimente les données de synthèse (moyenne générale, rang, items par
+   *    matière) pour l'affichage dans le PORTAIL PARENT (onglet « Bulletins » :
+   *    ligne par matière + bouton PDF → exactement le document généré par le
+   *    directeur). Best-effort : aucun échec ici ne bloque le téléchargement.
+   *
+   *    ⚠️ Ne touche JAMAIS au statut du workflow (DRAFT → DIRECTOR_SIGNED → …
+   *    → PARENT_SENT) — seuls filePath/generatedAt/overallAverage/rank/items
+   *    sont mis à jour ; la ligne est créée en DRAFT si elle n'existe pas.
+   */
+  private async persistBulletinDocument(
+    resolvedTenantId: string | undefined,
+    academicYearId: string,
+    pdfData: any,
+    buffer: Buffer,
+    studentId: string | null,
+    schoolLevelId: string | null,
+  ): Promise<void> {
+    if (!resolvedTenantId || !studentId || !pdfData?.periodId) return;
+
+    // 1. Archiver le PDF (clé déterministe — une re-génération écrase l'ancien)
+    let filePath: string | null = null;
+    try {
+      const key = `bulletins/${resolvedTenantId}/${studentId}/bulletin-${pdfData.periodId}${pdfData.evaluationTypeId ? `-${pdfData.evaluationTypeId}` : ''}.pdf`;
+      const stored = await this.storageService.uploadBuffer(buffer, key);
+      // URL publique (R2/S3/Blob) uniquement — un chemin relatif local ne serait
+      // pas téléchargeable depuis le portail parent.
+      if (typeof stored === 'string' && /^https?:\/\//.test(stored)) filePath = stored;
+    } catch {
+      return; // storage indisponible — rien à rattacher
+    }
+    if (!filePath) return;
+
+    // 2. Retrouver/créer la ligne ReportCard (clé du workflow : tenant + année
+    //    + élève + période + type d'évaluation) SANS toucher au statut.
+    const where: any = {
+      tenantId: resolvedTenantId,
+      academicYearId,
+      studentId,
+      quarterId: pdfData.periodId,
+    };
+    if (pdfData.evaluationTypeId) {
+      where.evaluationTypeId = pdfData.evaluationTypeId;
+    } else {
+      where.OR = [{ evaluationTypeId: null }, { evaluationTypeId: '' }];
+    }
+
+    const existing = await this.prisma.reportCard.findFirst({ where }).catch(() => null);
+
+    const generalAverage = typeof pdfData.generalAverage === 'number'
+      ? pdfData.generalAverage
+      : (typeof pdfData.generalAverage === 'string' && !isNaN(Number(pdfData.generalAverage))
+        ? Number(pdfData.generalAverage)
+        : 0);
+    const classRank = typeof pdfData.classRank === 'number' ? Math.round(pdfData.classRank) : null;
+
+    let reportCardId: string;
+    if (existing) {
+      await this.prisma.reportCard.update({
+        where: { id: existing.id },
+        data: {
+          filePath,
+          generatedAt: new Date(),
+          overallAverage: existing.overallAverage || generalAverage,
+          ...(existing.rank == null && classRank != null ? { rank: classRank } : {}),
+        },
+      });
+      reportCardId = existing.id;
+    } else {
+      if (!schoolLevelId) return; // impossible de créer la ligne sans niveau
+      const created = await this.prisma.reportCard.create({
+        data: {
+          tenantId: resolvedTenantId,
+          academicYearId,
+          schoolLevelId,
+          studentId,
+          quarterId: pdfData.periodId,
+          type: 'BULLETIN',
+          overallAverage: generalAverage,
+          rank: classRank,
+          status: 'DRAFT',
+          filePath,
+          generatedAt: new Date(),
+          evaluationTypeId: pdfData.evaluationTypeId || null,
+          evaluationTypeName: pdfData.evaluationTypeName || null,
+          evaluationTypeCode: pdfData.evaluationTypeCode || null,
+        },
+      });
+      reportCardId = created.id;
+    }
+
+    // 3. Items par matière (tableau du portail parent) — remplacés à chaque
+    //    génération pour refléter exactement le document émis. Seules les
+    //    matières réelles (UUID) avec une moyenne numérique sont écrites.
+    const subjects: any[] = Array.isArray(pdfData.subjects) ? pdfData.subjects : [];
+    const itemRows = subjects
+      .filter((s: any) => s?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s.id)))
+      .map((s: any) => {
+        const average = typeof s.score === 'number'
+          ? s.score
+          : typeof s.secMoyenne === 'number'
+            ? s.secMoyenne
+            : typeof s.total === 'number'
+              ? s.total
+              : null;
+        const coefficient = typeof s.coefficient === 'number'
+          ? s.coefficient
+          : typeof s.secCoef === 'number'
+            ? s.secCoef
+            : 1;
+        const rank = typeof s.subjectRank === 'number'
+          ? s.subjectRank
+          : typeof s.secRank === 'number'
+            ? s.secRank
+            : null;
+        return average !== null ? {
+          reportCardId,
+          subjectId: String(s.id),
+          average,
+          coefficient,
+          rank: rank !== null ? Math.round(rank) : null,
+          comments: s.appreciation || null,
+        } : null;
+      })
+      .filter(Boolean) as any[];
+
+    if (itemRows.length > 0) {
+      await this.prisma.reportCardItem.deleteMany({ where: { reportCardId } }).catch(() => {});
+      await this.prisma.reportCardItem.createMany({
+        data: itemRows.map((r: any) => ({
+          tenantId: resolvedTenantId!,
+          academicYearId,
+          schoolLevelId: schoolLevelId!,
+          ...r,
+        })),
+      }).catch(() => {});
+    }
   }
 
   /**

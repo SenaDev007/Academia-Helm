@@ -373,6 +373,29 @@ export class StaffPrismaService {
       orderBy: { lastName: 'asc' },
     });
 
+    // ⭐ 2026-11-23 — PRESENCE DE COMPTE UTILISATEUR (envoi d'identifiants en
+    //    masse — RH > Administration) : un staff « a déjà ses identifiants »
+    //    dès qu'un User existe avec son email (la liaison Staff↔User se fait
+    //    par email — même règle que StaffCredentialService). Une seule requête
+    //    batch pour toute la liste, exposée via `hasUserAccount`.
+    const staffEmails = staff
+      .map((s: any) => (typeof s.email === 'string' ? s.email.trim().toLowerCase() : null))
+      .filter((e: string | null): e is string => !!e);
+    const accountEmails = new Set<string>();
+    if (staffEmails.length > 0) {
+      try {
+        const accountUsers = await this.prisma.user.findMany({
+          where: { email: { in: staffEmails } },
+          select: { email: true },
+        });
+        accountUsers.forEach((u) => {
+          if (u.email) accountEmails.add(u.email.toLowerCase());
+        });
+      } catch {
+        // Non bloquant — la liste reste servie sans l'indicateur
+      }
+    }
+
     // Ajouter staffCode et category aliases pour compatibilité frontend
     // Resolve photo URLs for R2/S3 storage (thumbnailUrl is a storage key, not a full URL)
     // ⭐ FIX PERF 2026-09-21 (suite) : l'objet `photo` brut est retiré de la
@@ -388,6 +411,9 @@ export class StaffPrismaService {
         photoUrl: photo?.thumbnailUrl
           ? await this.storageService.resolveFileUrl(photo.thumbnailUrl)
           : null,
+        // ⭐ 2026-11-23 — « a déjà un compte utilisateur » (badge « Sans
+        //    identifiants » + cible de l'envoi en masse côté RH > Administration)
+        hasUserAccount: !!(typeof s.email === 'string' && accountEmails.has(s.email.trim().toLowerCase())),
       };
     }));
   }
@@ -1948,5 +1974,121 @@ export class StaffPrismaService {
     emailSent?: boolean;
   }> {
     return this.credentialService.generateOrRegenerateCredentials(staffId, tenantId, triggeredByUserId);
+  }
+
+  /**
+   * ⭐ 2026-11-23 — ENVOI D'IDENTIFIANTS EN MASSE (RH > Personnel > Administration).
+   *
+   * Au lieu d'appuyer individuellement sur « Identifiants » fiche par fiche :
+   *   - soit on fournit `staffIds` (sélection explicite — ex. « tout le
+   *     personnel du niveau sélectionné » côté frontend) ;
+   *   - soit `onlyWithoutAccount: true` ne cible que les fiches SANS compte
+   *     utilisateur (les « sans identifiants » — résolution par email, même
+   *     règle que StaffCredentialService) ; sans `staffIds`, la cible est tout
+   *     le personnel actif / en attente de signature du tenant.
+   *
+   * Chaque fiche passe par generateOrRegenerateCredentials (mêmes règles :
+   * statut, email obligatoire, rôle agrégé, politique de mot de passe, email
+   * professionnel + traçabilité EmailLog). Pool de concurrence 3 (même
+   * convention que bulkProvisionParentAccounts — éviter de saturer la file
+   * d'envoi d'emails). Le résumé distingue les emails réellement envoyés des
+   * emails échoués (honnêteté UI déjà établie pour l'envoi unitaire).
+   */
+  async bulkGenerateCredentials(
+    tenantId: string,
+    body: { staffIds?: string[]; onlyWithoutAccount?: boolean },
+    triggeredByUserId?: string,
+  ) {
+    const MAX_TARGETS = 200;
+
+    // 1. Résoudre les fiches cibles
+    let targets: any[] = [];
+    if (Array.isArray(body.staffIds) && body.staffIds.length > 0) {
+      if (body.staffIds.length > MAX_TARGETS) {
+        throw new BadRequestException(`Trop de fiches (${body.staffIds.length}) — maximum ${MAX_TARGETS} par lot.`);
+      }
+      targets = await this.prisma.staff.findMany({
+        where: {
+          tenantId,
+          id: { in: body.staffIds },
+          status: { not: 'ONBOARDING_DRAFT' },
+        },
+        select: { id: true, firstName: true, lastName: true, email: true, status: true },
+      });
+    } else {
+      targets = await this.prisma.staff.findMany({
+        where: {
+          tenantId,
+          status: { in: ['ACTIVE', 'PENDING_SIGNATURE'] },
+          roleType: { not: 'PROMOTEUR' },
+        },
+        select: { id: true, firstName: true, lastName: true, email: true, status: true },
+        orderBy: { lastName: 'asc' },
+      });
+      if (targets.length > MAX_TARGETS) targets = targets.slice(0, MAX_TARGETS);
+    }
+
+    // 2. Comptes utilisateurs existants (résolution par email — batch unique)
+    const targetEmails = targets
+      .map((t) => (typeof t.email === 'string' ? t.email.trim().toLowerCase() : null))
+      .filter((e): e is string => !!e);
+    const accountEmails = new Set<string>();
+    if (targetEmails.length > 0) {
+      try {
+        const accountUsers = await this.prisma.user.findMany({
+          where: { email: { in: targetEmails } },
+          select: { email: true },
+        });
+        accountUsers.forEach((u) => {
+          if (u.email) accountEmails.add(u.email.toLowerCase());
+        });
+      } catch {
+        // Non bloquant — le filtre « sans identifiants » devient simplement inopérant
+      }
+    }
+
+    // 3. Filtrer « sans identifiants » si demandé
+    const hasAccount = (t: any) =>
+      !!(typeof t.email === 'string' && accountEmails.has(t.email.trim().toLowerCase()));
+    const queue = body.onlyWithoutAccount ? targets.filter((t) => !hasAccount(t)) : [...targets];
+
+    // 4. Envoi en pool de concurrence 3
+    const results: any[] = [];
+    const summary = { total: queue.length, sent: 0, failed: 0, emailsSent: 0, emailsFailed: 0, skippedAlreadyHavingAccount: body.onlyWithoutAccount ? targets.length - queue.length : 0 };
+    const workers = Array.from({ length: Math.min(3, queue.length) }, async () => {
+      for (;;) {
+        const staff = queue.shift();
+        if (!staff) return;
+        const name = `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || staff.id;
+        try {
+          const res = await this.credentialService.generateOrRegenerateCredentials(
+            staff.id, tenantId, triggeredByUserId,
+          );
+          if (res?.success) {
+            summary.sent++;
+            if (res.emailSent) summary.emailsSent++; else summary.emailsFailed++;
+            results.push({
+              staffId: staff.id, name, success: true,
+              message: res.message || null, email: res.email || staff.email || null,
+              emailSent: !!res.emailSent, emailError: res.emailError || null,
+            });
+          } else {
+            summary.failed++;
+            results.push({ staffId: staff.id, name, success: false, message: res?.message || 'Génération impossible' });
+          }
+        } catch (err: any) {
+          summary.failed++;
+          results.push({ staffId: staff.id, name, success: false, message: err?.message || 'Erreur inattendue' });
+        }
+      }
+    });
+    await Promise.all(workers);
+
+    return {
+      success: true,
+      message: `${summary.sent} envoi(s) d'identifiants effectué(s), ${summary.failed} échec(s)`,
+      results,
+      summary,
+    };
   }
 }

@@ -17,15 +17,24 @@
  * rarement : un cache d'une demi-journée est sans risque.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { getSecondaryIdentity } from "@/services/settings.service";
 
 export interface SchoolIdentity {
   schoolName: string;
   schoolAcronym?: string;
+  slogan?: string;
   logoUrl?: string;
   phone?: string;
+  phonePrimary?: string;
+  phoneSecondary?: string;
+  whatsapp?: string;
   email?: string;
   address?: string;
+  city?: string;
+  department?: string;
+  country?: string;
+  postalCode?: string;
   website?: string;
 }
 
@@ -74,13 +83,29 @@ export function useSchoolIdentity() {
       });
       if (res.ok) {
         const data = await res.json();
+        // ⭐ 2026-11-23 — MAPPING COMPLET (module Paramètres → onglet Identité) :
+        //    AVANT, `phone: data.phone` lisait une clé INEXISTANTE (le backend
+        //    renvoie phonePrimary/phoneSecondary) → même la ligne « Tél : » de
+        //    l'en-tête des bulletins était vide ; email/whatsapp/site/ville/
+        //    département/slogan n'étaient pas mappés du tout. Désormais TOUTE
+        //    l'identité (contacts, localisation, branding) est exposée aux
+        //    interfaces qui l'affichent avant les tableaux (Registre des notes,
+        //    Bulletins).
         const next: SchoolIdentity = {
           schoolName: data.schoolName || "",
           schoolAcronym: data.schoolAcronym,
+          slogan: data.slogan,
           logoUrl: data.logoUrl,
-          phone: data.phone,
+          phone: data.phonePrimary || data.phoneSecondary || data.phone,
+          phonePrimary: data.phonePrimary,
+          phoneSecondary: data.phoneSecondary,
+          whatsapp: data.whatsapp,
           email: data.email,
           address: data.address,
+          city: data.city,
+          department: data.department,
+          country: data.country,
+          postalCode: data.postalCode,
           website: data.website,
         };
         setIdentity(next);
@@ -112,4 +137,79 @@ export function useSchoolIdentity() {
   }, []);
 
   return { identity, loading };
+}
+
+/**
+ * ⭐ 2026-11-23 — IDENTITÉ DE L'ÉCOLE RÉSOLUE PAR NIVEAU (module Examen).
+ *
+ * Exige promoteur : « quand il s'agit de la maternelle et du primaire, ce sont
+ * les informations de l'école maternel-primaire dans les informations PAR DÉFAUT
+ * de l'école qui s'affichent, et quand il s'agit du secondaire, ce sont les
+ * informations du secondaire comme défini dans l'onglet identité module
+ * paramètres. »
+ *
+ *   - Maternelle / Primaire → profil GLOBAL (identité par défaut) ;
+ *   - Secondaire           → profil « Identité école secondaire » (Paramètres →
+ *     Identité) fusionné champ à champ (chaque champ non vide du profil
+ *     secondaire remplace le champ global).
+ *
+ * Partagé entre l'onglet Bulletins et l'onglet Registre des notes (module
+ * Examen) — même résolution d'identité pour les deux interfaces.
+ */
+export function useSchoolIdentityForLevel(
+  levelCode?: string | null,
+  tenantId?: string | null,
+) {
+  const { identity: baseIdentity, loading } = useSchoolIdentity();
+  const isSecondaire = levelCode === "SECONDAIRE" || levelCode === "SECONDARY" || levelCode === "SEC";
+
+  const [secondaryProfile, setSecondaryProfile] = useState<any | null>(null);
+  useEffect(() => {
+    if (!isSecondaire) {
+      setSecondaryProfile(null);
+      return;
+    }
+    let cancelled = false;
+    getSecondaryIdentity(tenantId ?? undefined)
+      .then((res: any) => {
+        if (!cancelled) {
+          setSecondaryProfile(res?.configured && res?.profile ? res.profile : null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSecondaryProfile(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSecondaire, tenantId]);
+
+  const identity = useMemo(() => {
+    const sec = secondaryProfile;
+    if (!isSecondaire || !sec || !baseIdentity) return baseIdentity;
+    const merged: any = { ...baseIdentity };
+    if (sec.schoolName) merged.schoolName = sec.schoolName;
+    if (sec.schoolAcronym) merged.schoolAcronym = sec.schoolAcronym;
+    if (sec.slogan) merged.slogan = sec.slogan;
+    if (sec.logoUrl) merged.logoUrl = sec.logoUrl;
+    if (sec.address) merged.address = sec.address;
+    if (sec.city) merged.city = sec.city;
+    if (sec.department) merged.department = sec.department;
+    if (sec.phonePrimary) {
+      merged.phonePrimary = sec.phonePrimary;
+      merged.phone = sec.phonePrimary;
+    }
+    if (sec.phoneSecondary) merged.phoneSecondary = sec.phoneSecondary;
+    if (sec.whatsapp) merged.whatsapp = sec.whatsapp;
+    if (sec.email) merged.email = sec.email;
+    if (sec.website) merged.website = sec.website;
+    return merged as SchoolIdentity;
+  }, [baseIdentity, isSecondaire, secondaryProfile]);
+
+  return {
+    identity,
+    baseIdentity,
+    loading,
+    secondaryApplied: isSecondaire && !!secondaryProfile,
+  };
 }

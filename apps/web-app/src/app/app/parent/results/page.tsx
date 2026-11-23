@@ -77,6 +77,14 @@ interface ReportCard {
   createdAt: string;
   quarterName: string | null;
   quarterNumber: number | null;
+  // ⭐ 2026-11-23 — Workflow de signature : le bulletin envoyé par l'école
+  //    (étape 5 — « Envoyer aux parents ») porte le statut PARENT_SENT et la
+  //    date d'envoi ; le type d'évaluation (EM1, EC, EP…) est affiché pour
+  //    distinguer les bulletins d'une même période.
+  sentToParentAt: string | null;
+  evaluationTypeId: string | null;
+  evaluationTypeName: string | null;
+  evaluationTypeCode: string | null;
   items: Array<{
     average: number | null;
     coefficient: number | null;
@@ -463,11 +471,19 @@ function BulletinsTab({ studentId, academicYearId, child }: { studentId: string;
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
-                  {rc.quarterName || 'Bulletin'}
+                  {/* ⭐ 2026-11-23 — Période réelle (academic_periods) + type
+                      d'évaluation (EM1, EC, EP…) : le bulletin porte son
+                      intitulé complet, exactement comme dans l'onglet du
+                      directeur. */}
+                  {rc.quarterName || 'Bulletin'}{rc.evaluationTypeName ? ` — ${rc.evaluationTypeName}` : ''}
                 </h3>
                 <p className="text-xs text-slate-500">
                   {rc.type === 'QUARTERLY' ? 'Bulletin trimestriel' : rc.type}
                   {rc.publishedAt && ` · Publié le ${format(new Date(rc.publishedAt), 'd MMM yyyy', { locale: fr })}`}
+                  {/* ⭐ 2026-11-23 — Workflow : « reçu le … » quand l'école a
+                      envoyé le bulletin aux parents (statut PARENT_SENT). */}
+                  {rc.status === 'PARENT_SENT' && rc.sentToParentAt
+                    && ` · Reçu le ${format(new Date(rc.sentToParentAt), 'd MMM yyyy', { locale: fr })}`}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -481,6 +497,9 @@ function BulletinsTab({ studentId, academicYearId, child }: { studentId: string;
                     Rang: {rc.rank}
                   </span>
                 )}
+                {/* ⭐ Bouton PDF — le bulletin exactement comme généré par le
+                    directeur (filePath = archive publique posée à la
+                    génération/à l'envoi WhatsApp). */}
                 {rc.filePath && (
                   <a
                     href={rc.filePath}

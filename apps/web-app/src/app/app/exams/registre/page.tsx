@@ -50,6 +50,12 @@ import { translateClassName } from '@/lib/pedagogy/class-name-en';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+// ⭐ 2026-11-23 — Identité école complète + résolution par niveau (exige
+//    promoteur : section identité COMPLÈTE avant le tableau du registre —
+//    maternelle/primaire → identité par défaut ; secondaire → identité du
+//    secondaire de Paramètres → Identité).
+import { useSchoolIdentityForLevel } from '@/hooks/useSchoolIdentity';
+import { SchoolIdentityHeader } from '@/components/exams/SchoolIdentityHeader';
 
 // ─── Pedagogical class ordering ──────────────────────────────────────────────
 const PEDAGOGICAL_ORDER = ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2', '6E', '5E', '4E', '3E', '2NDE', '1ERE', 'TERM'];
@@ -146,6 +152,11 @@ function RegistreContent() {
   const { academicYear } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
+
+  // ⭐ 2026-11-23 — Identité de l'école du NIVEAU courant (complète — nom,
+  //    sigle, devise, localisation, téléphones, WhatsApp, email, site web).
+  //    Affichée en tête du registre (section identité juste avant le tableau).
+  const { identity: schoolForLevel } = useSchoolIdentityForLevel(scopeLevel);
 
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
@@ -271,6 +282,7 @@ function RegistreContent() {
         isPrimaire={isPrimaire}
         isSecondaire={isSecondaire}
         language={language as 'FR' | 'EN'}
+        school={schoolForLevel}
         scopedSubModules={scopedSubModules}
         onBack={() => {
           setSelectedGroup(null);
@@ -293,6 +305,7 @@ function RegistreContent() {
         loading={loading}
         levelBadge={`${scopeLevel || '—'} ${language ? `· ${language}` : ''}`}
         language={language as 'FR' | 'EN'}
+        school={schoolForLevel}
         onRefresh={loadEvaluations}
       />
     );
@@ -300,6 +313,11 @@ function RegistreContent() {
 
   return (
     <div className="space-y-4">
+      {/* ⭐ 2026-11-23 — SECTION IDENTITÉ ÉCOLE (maternelle/primaire →
+          identité par défaut) — exigence promoteur : toutes les informations
+          de l'école figurent désormais en tête du registre, avant le tableau. */}
+      <SchoolIdentityHeader school={schoolForLevel} lang={isEN ? 'EN' : 'FR'} />
+
       {/* Header + class selector */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
@@ -484,6 +502,7 @@ function RegistreSecondaireView({
   loading,
   levelBadge,
   language,
+  school,
   onRefresh,
 }: {
   classes: any[];
@@ -496,6 +515,9 @@ function RegistreSecondaireView({
    *    traduit les noms en piste EN, mais la prop n'était pas transmise →
    *    ReferenceError dès le 1er rendu du registre secondaire (FR comme EN). */
   language: 'FR' | 'EN';
+  // ⭐ 2026-11-23 — Identité école du secondaire (Paramètres → Identité),
+  //    affichée en section complète juste avant le tableau du registre.
+  school?: any;
   onRefresh: () => void;
 }) {
   const isEN = language === 'EN';
@@ -898,6 +920,13 @@ function RegistreSecondaireView({
         </div>
       ) : (
         <>
+          {/* ⭐ 2026-11-23 — SECTION IDENTITÉ ÉCOLE (exige promoteur : « juste
+              avant la section du tableau… toutes les informations de
+              l'école » — logo, nom, sigle, devise, localisation, téléphones,
+              WhatsApp, email, site web — identité du SECONDAIRE telle que
+              définie dans Paramètres → Identité). */}
+          <SchoolIdentityHeader school={school} lang={language} />
+
           {/* Titre du registre (document) */}
           <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
             <h2 className="text-lg font-bold text-slate-900">
@@ -1286,6 +1315,7 @@ function RegistreDetailSheet({
   isPrimaire,
   isSecondaire,
   language,
+  school,
   scopedSubModules,
   onBack,
 }: {
@@ -1294,6 +1324,10 @@ function RegistreDetailSheet({
   isPrimaire: boolean;
   isSecondaire: boolean;
   language: 'FR' | 'EN';
+  // ⭐ 2026-11-23 — Identité école du niveau (maternelle/primaire → identité
+  //    par défaut ; secondaire → identité du secondaire), affichée en
+  //    section complète juste avant le tableau du registre.
+  school?: any;
   scopedSubModules: any;
   onBack: () => void;
 }) {
@@ -1556,6 +1590,13 @@ function RegistreDetailSheet({
 
   return (
     <div className="space-y-4">
+            {/* ⭐ 2026-11-23 — SECTION IDENTITÉ ÉCOLE (exige promoteur : « juste
+                avant la section du tableau… toutes les informations de
+                l'école » — logo, nom, sigle, devise, localisation, téléphones,
+                WhatsApp, email, site web — maternelle/primaire → identité PAR
+                DÉFAUT de l'école, secondaire → identité du secondaire). */}
+            <SchoolIdentityHeader school={school} lang={language} />
+
             {/* Titre */}
             <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
               <h2 className="text-lg font-bold text-slate-900">

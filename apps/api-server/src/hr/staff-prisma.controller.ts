@@ -114,6 +114,36 @@ export class StaffPrismaController {
     return this.staffService.batchAssignLevel(body);
   }
 
+  /**
+   * ⭐ 2026-11-23 — POST /hr/staff/bulk-generate-credentials
+   *
+   * ENVOI D'IDENTIFIANTS EN MASSE (RH > Personnel > Administration — maternelle-
+   * primaire, secondaire, affectations). Au lieu d'appuyer individuellement sur
+   * « Identifiants » fiche par fiche :
+   *   - { staffIds: [...] }                          → envoi aux fiches sélectionnées
+   *     (ex. tout le personnel du niveau affiché) ;
+   *   - { onlyWithoutAccount: true }                 → envoi à toutes les fiches
+   *     SANS compte utilisateur (les « sans identifiants ») ;
+   *   - { } (sans staffIds, sans filtre)             → tout le personnel actif.
+   *
+   * ⚠️ Route STATIQUE déclarée AVANT les routes ':id' (convention du contrôleur
+   *    — sinon NestJS la capturerait comme un staffId).
+   */
+  @Post('bulk-generate-credentials')
+  async bulkGenerateCredentials(
+    @GetTenant() tenant: any,
+    @Body() body: { staffIds?: string[]; onlyWithoutAccount?: boolean },
+    @Req() req: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    const triggeredByUserId = req?.user?.id;
+    return this.staffService.bulkGenerateCredentials(tid, body || {}, triggeredByUserId);
+  }
+
   @Get('teachers-by-level')
   async getTeachersByLevel(@Query('schoolLevelId') schoolLevelId: string, @Query('academicYearId') academicYearId?: string, @Req() req?: any) {
     return this.staffService.findTeachersByLevel(schoolLevelId, academicYearId);

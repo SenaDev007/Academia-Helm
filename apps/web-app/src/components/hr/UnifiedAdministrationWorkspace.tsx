@@ -111,6 +111,10 @@ interface StaffOption {
   schoolLevelId?: string | null;
   schoolLevel?: { id: string; code: string; name?: string } | null;
   assignedLanguages?: string[] | null;
+  // ⭐ 2026-11-23 — « a déjà un compte utilisateur » (exposé par GET /hr/staff
+  //    via une requête batch email→User) : badge « Sans identifiants » +
+  //    cible de l'envoi d'identifiants EN MASSE (exigence promoteur).
+  hasUserAccount?: boolean;
 }
 
 interface AdminAssignment {
@@ -837,6 +841,101 @@ export default function UnifiedAdministrationWorkspace() {
       toast({ variant: 'error', title: 'Échec envoi identifiants', description: err?.message });
     } finally {
       setSendingTeacherCredentials(null);
+    }
+  };
+
+  // ── ⭐ 2026-11-23 — ENVOI D'IDENTIFIANTS EN MASSE ─────────────────────────
+  //    Exigence promoteur : au lieu d'appuyer individuellement sur
+  //    « Identifiants » fiche par fiche (onglet Administration — maternelle-
+  //    primaire, secondaire, affectations), envoyer en UN SEUL CLIC :
+  //    - soit à TOUT le personnel du niveau affiché ;
+  //    - soit uniquement à ceux qui n'ont PAS ENCORE d'identifiants
+  //      (résolution par email — badge « Sans identifiants »).
+  //    Backend : POST /hr/staff/bulk-generate-credentials (pool de concurrence 3,
+  //    même service d'envoi que le bouton unitaire).
+  const [bulkSending, setBulkSending] = useState<'without' | 'all' | null>(null);
+  const hasAccountMap = useMemo(() => {
+    const m = new Map<string, boolean>();
+    staffList.forEach((s) => m.set(s.id, !!s.hasUserAccount));
+    return m;
+  }, [staffList]);
+
+  // Cibles du niveau courant (indépendantes de la recherche textuelle —
+  // « tout le personnel » veut dire tout le personnel) : enseignants affectés
+  // au niveau (piste courante si bilingue) + titulaires des affectations
+  // administratives du niveau — dédupliqués.
+  const bulkTargets = useMemo(() => {
+    if (!selectedUnit) return { all: [] as StaffOption[], without: [] as StaffOption[] };
+    const group = adminGroups.find((g) => g.unit === selectedUnit);
+    let teachers = staffList.filter((s) => s.roleType === 'TEACHER');
+    if (isBilingual) {
+      teachers = teachers.filter((s) => {
+        const langs = s.assignedLanguages ?? ['FR', 'EN'];
+        return langs.includes(currentTrack);
+      });
+    }
+    // Seulement les enseignants réellement affectés à ce niveau
+    teachers = teachers.filter((s) => {
+      const effectiveLevelId = pendingTeacherChanges[s.id]?.levelId ?? s.schoolLevelId;
+      if (!effectiveLevelId) return false;
+      return allLevelIdsForSelectedUnit.includes(effectiveLevelId);
+    });
+    const adminStaffIds = new Set(
+      (group ? getAssignmentsForUnit(group.unit) : [])
+        .map((a) => a.staffId)
+        .filter((id): id is string => !!id),
+    );
+    const byId = new Map<string, StaffOption>();
+    teachers.forEach((s) => byId.set(s.id, s));
+    adminStaffIds.forEach((id) => {
+      const s = staffList.find((x) => x.id === id);
+      if (s) byId.set(id, s);
+    });
+    const all = Array.from(byId.values());
+    const without = all.filter((s) => !s.hasUserAccount);
+    return { all, without };
+  }, [selectedUnit, adminGroups, staffList, isBilingual, currentTrack, allLevelIdsForSelectedUnit, pendingTeacherChanges, getAssignmentsForUnit]);
+
+  const handleBulkCredentials = async (mode: 'without' | 'all') => {
+    const targets = mode === 'without' ? bulkTargets.without : bulkTargets.all;
+    if (targets.length === 0) return;
+    const label = mode === 'without'
+      ? `${targets.length} membre(s) du personnel SANS identifiants`
+      : `tout le personnel du niveau (${targets.length} membre(s))`;
+    if (!window.confirm(
+      `Envoyer les identifiants de connexion par email à ${label} ?\n\n` +
+      `Chaque membre recevra un email professionnel avec ses identifiants (nom d'utilisateur + mot de passe temporaire).`,
+    )) {
+      return;
+    }
+    setBulkSending(mode);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await authedFetch<any>('/api/hr/staff/bulk-generate-credentials', {
+        method: 'POST',
+        body: { staffIds: targets.map((s) => s.id) },
+      });
+      const summary = res?.summary || {};
+      // ⭐ Même honnêteté que l'envoi unitaire : distinguer les envois réels
+      //    des échecs d'email (identifiants générés malgré tout).
+      const parts = [
+        `${summary.sent ?? 0} envoi(s) effectué(s)`,
+        summary.failed ? `${summary.failed} échec(s)` : null,
+        summary.emailsFailed ? `${summary.emailsFailed} email(s) NON parti(s) (identifiants générés — réessayez plus tard)` : null,
+      ].filter(Boolean).join(' · ');
+      setSuccess(`Identifiants envoyés en masse — ${parts}.`);
+      toast({
+        variant: (summary.failed || summary.emailsFailed) ? 'error' : 'success',
+        title: 'Envoi des identifiants en masse',
+        description: parts,
+      });
+      loadData(); // rafraîchit les badges « Sans identifiants »
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de l\'envoi en masse des identifiants');
+      toast({ variant: 'error', title: 'Échec de l\'envoi en masse', description: err?.message });
+    } finally {
+      setBulkSending(null);
     }
   };
 
@@ -1607,6 +1706,55 @@ export default function UnifiedAdministrationWorkspace() {
             </div>
           )}
 
+          {/* ⭐ 2026-11-23 — ENVOI D'IDENTIFIANTS EN MASSE (exigence promoteur) :
+              UN SEUL CLIC pour tout le personnel du niveau affiché, ou
+              uniquement pour ceux qui n'ont pas encore d'identifiants — plus
+              besoin d'appuyer fiche par fiche. */}
+          {selectedUnit && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center shrink-0">
+                  <Mail className="w-4 h-4 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-bold text-slate-900">Identifiants de connexion — envoi en masse</h4>
+                  <p className="text-xs text-slate-500">
+                    {bulkTargets.all.length === 0
+                      ? 'Aucun membre du personnel pour ce niveau.'
+                      : bulkTargets.without.length > 0
+                        ? `${bulkTargets.without.length} membre(s) du niveau n'ont PAS ENCORE d'identifiants · ${bulkTargets.all.length} membre(s) au total.`
+                        : `Tout le personnel du niveau (${bulkTargets.all.length}) a déjà des identifiants — un envoi les régénère (nouveaux mots de passe temporaires).`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 md:ml-auto">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={bulkSending !== null || bulkTargets.without.length === 0}
+                  onClick={() => handleBulkCredentials('without')}
+                  className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                  title="Envoyer les identifiants en un clic à tous les membres du niveau qui n'ont pas encore d'identifiants"
+                >
+                  {bulkSending === 'without' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                  Envoyer aux {bulkTargets.without.length} sans identifiants
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={bulkSending !== null || bulkTargets.all.length === 0}
+                  onClick={() => handleBulkCredentials('all')}
+                  className="text-xs"
+                  title="Envoyer les identifiants en un clic à tout le personnel du niveau"
+                >
+                  {bulkSending === 'all' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Users className="w-3 h-3" />}
+                  Tout le personnel du niveau ({bulkTargets.all.length})
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Contenu du niveau sélectionné */}
           {selectedUnit && (() => {
             const group = adminGroups.find((g) => g.unit === selectedUnit);
@@ -1738,6 +1886,14 @@ export default function UnifiedAdministrationWorkspace() {
                                       <span className="text-xs md:text-sm font-medium text-gray-900">{staffName}</span>
                                       {staffEmail && (
                                         <span className="text-[10px] text-gray-500">{staffEmail}</span>
+                                      )}
+                                      {/* ⭐ 2026-11-23 — Badge « Sans identifiants » :
+                                          le titulaire n'a pas encore de compte
+                                          utilisateur (cible de l'envoi en masse). */}
+                                      {a.staffId && hasAccountMap.get(a.staffId) === false && (
+                                        <span className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[10px] font-bold w-fit">
+                                          Sans identifiants
+                                        </span>
                                       )}
                                     </div>
                                   </TableCell>
@@ -2083,6 +2239,14 @@ export default function UnifiedAdministrationWorkspace() {
                                     {staff.employeeNumber && ` · ${staff.employeeNumber}`}
                                     {staff.email && ` · ${staff.email}`}
                                   </p>
+                                  {/* ⭐ 2026-11-23 — Badge « Sans identifiants » :
+                                      l'enseignant n'a pas encore de compte
+                                      utilisateur (cible de l'envoi en masse). */}
+                                  {!staff.hasUserAccount && (
+                                    <span className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[10px] font-bold w-fit">
+                                      Sans identifiants
+                                    </span>
+                                  )}
                                 </div>
 
                                 {/* Boutons : Identifiants + (Modifier / Retirer si affecté,

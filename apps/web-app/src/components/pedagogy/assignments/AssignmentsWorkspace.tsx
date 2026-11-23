@@ -99,6 +99,18 @@ const isHomeroomLevel = (levelName?: string): boolean => {
   return n.includes('MATERN') || n.includes('PRIMA') || n.includes('PRIM');
 };
 
+/**
+ * ⭐ 169 — Catégorie de niveau (retour promoteur) : maternel-primaire À
+ * PART, secondaire À PART. Sert à borner les enseignants proposés au niveau
+ * de la classe sélectionnée — aucun mélange.
+ */
+const levelCategoryOf = (label?: string): 'MATERNEL_PRIMAIRE' | 'SECONDAIRE' | 'AUTRE' => {
+  const n = (label || '').toUpperCase();
+  if (n.includes('MATERN') || n.includes('PRIMA') || n.includes('PRIM')) return 'MATERNEL_PRIMAIRE';
+  if (n.includes('SECOND')) return 'SECONDAIRE';
+  return 'AUTRE';
+};
+
 // ── ⭐ Matières « itinérantes » (Anglais / Informatique) ─────────────────────
 // Écoles NON bilingues (maternel/primaire) : un enseignant spécialiste parcourt
 // toutes les classes (maternelle → CM2) pour ces matières, exactement comme un
@@ -928,6 +940,25 @@ export default function AssignmentsWorkspace() {
     });
   }, [teachers, isBilingual, currentTrack, teachersWithPhotos]);
 
+  // ⭐ 169 — FILTRE PAR NIVEAU DE LA CLASSE (retour promoteur) : quand une
+  // classe du secondaire (6e → Terminale) est sélectionnée, les modals
+  // d'affectation ne doivent lister QUE les enseignants du secondaire ; une
+  // classe maternelle/primaire ne propose que les enseignants maternel-
+  // primaire — AUCUN MÉLANGE. Le niveau de chaque enseignant vient de
+  // GET /api/teachers (Teacher.schoolLevel name/code — teachersWithPhotos).
+  const getTeacherCategory = (teacherId: string): 'MATERNEL_PRIMAIRE' | 'SECONDAIRE' | 'AUTRE' => {
+    const t = teachersWithPhotos.find(x => x.id === teacherId);
+    return levelCategoryOf(`${t?.schoolLevel?.name || ''} ${t?.schoolLevel?.code || ''}`);
+  };
+  const selectedClassCategory = levelCategoryOf(
+    selectedOfficialClass?.level?.name || selectedPhysicalClass?.name || '',
+  );
+  const levelEligibleTeachers = useMemo(() => {
+    if (selectedClassCategory === 'AUTRE') return eligibleTeachers;
+    return eligibleTeachers.filter(t => getTeacherCategory(t.teacher.id) === selectedClassCategory);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eligibleTeachers, selectedClassCategory, teachersWithPhotos]);
+
   // --- Render ---
 
   return (
@@ -1483,10 +1514,10 @@ export default function AssignmentsWorkspace() {
           </div>
 
           <div className="space-y-1.5">
-            {eligibleTeachers.length === 0 ? (
+            {levelEligibleTeachers.length === 0 ? (
               <p className="text-center text-xs text-slate-400 py-6">Aucun enseignant disponible.</p>
             ) : (
-              eligibleTeachers
+              levelEligibleTeachers
                 .filter(t => {
                   if (!search) return true;
                   const s = search.toLowerCase();
@@ -1572,6 +1603,12 @@ export default function AssignmentsWorkspace() {
             <p className="text-xs text-blue-800">
               Section : <strong>{selectedPhysicalClass?.name}</strong> · Matière : <strong>{activeSubject?.subject?.name}</strong>
             </p>
+            {/* ⭐ 169 — le sélecteur est borné au niveau de la classe (aucun mélange). */}
+            {selectedClassCategory !== 'AUTRE' && (
+              <p className="text-[10px] text-blue-600 mt-1">
+                Seuls les enseignants {selectedClassCategory === 'SECONDAIRE' ? 'du secondaire' : "de la maternelle & du primaire"} sont proposés.
+              </p>
+            )}
           </div>
 
           <div className="relative">
@@ -1586,7 +1623,7 @@ export default function AssignmentsWorkspace() {
           </div>
 
           <div className="space-y-1.5">
-            {eligibleTeachers
+            {levelEligibleTeachers
               .filter(t => {
                 if (!search) return true;
                 const s = search.toLowerCase();
@@ -1749,10 +1786,10 @@ export default function AssignmentsWorkspace() {
           </div>
 
           <div className="space-y-1.5">
-            {eligibleTeachers.length === 0 ? (
+            {levelEligibleTeachers.length === 0 ? (
               <p className="text-center text-xs text-slate-400 py-6">Aucun enseignant disponible.</p>
             ) : (
-              eligibleTeachers
+              levelEligibleTeachers
                 .filter(t => {
                   if (!search) return true;
                   const s = search.toLowerCase();
@@ -1908,7 +1945,10 @@ export default function AssignmentsWorkspace() {
                 className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"
               >
                 <option value="">— Sélectionner un enseignant —</option>
-                {teachers.map(t => (
+                {/* ⭐ 169 — Professeur Principal = fonction du SECONDAIRE : seuls
+                    les enseignants du secondaire sont proposés (aucun mélange
+                    avec maternel-primaire). */}
+                {teachers.filter(t => getTeacherCategory(t.teacherId) === 'SECONDAIRE').map(t => (
                   <option key={t.teacherId} value={t.teacherId}>
                     {t.teacher.lastName} {t.teacher.firstName}
                   </option>

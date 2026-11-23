@@ -889,6 +889,15 @@ export class StaffPrismaService {
     // Verify staff exists in this tenant
     await this.findStaffById(id, tenantId);
 
+    // ⭐ 169 — Capturer le matricule AVANT la suppression : le miroir
+    // pédagogique (teachers) est rattaché par matricule (employeeNumber).
+    // Sans capture préalable, la fiche disparaît et le fantôme devient
+    // intraçable depuis la fiche (il reste listé dans Pédagogie).
+    const staffForMirror = await this.prisma.staff.findFirst({
+      where: { id, tenantId },
+      select: { employeeNumber: true },
+    });
+
     // Delete related records in order (respecting FK constraints)
     // 1. Staff photo
     try {
@@ -951,7 +960,62 @@ export class StaffPrismaService {
     // 12. Finally, delete the staff record
     await this.prisma.staff.delete({ where: { id } });
 
-    return { success: true, deletedId: id };
+    // 13. ⭐ 169 — Miroir pédagogique (teachers) : le pont RH→Pédagogie crée un
+    //     Teacher par matricule (employeeNumber) dès la création de la fiche
+    //     (brouillon du wizard d'embauche inclus). Sans cette purge, un
+    //     personnel supprimé reste listé comme enseignant dans Pédagogie >
+    //     Enseignants / Affectations — cas réel CSPMON-P-26-00021 (dictée du
+    //     promoteur collée dans les champs nom, fiche RH supprimée mais le
+    //     miroir « active » survivait dans le module Pédagogie).
+    let purgedPedagogyTeachers = 0;
+    try {
+      purgedPedagogyTeachers = await this.purgePedagogyTeacherMirror(
+        tenantId,
+        staffForMirror?.employeeNumber,
+      );
+    } catch (err: any) {
+      this.logger.warn(`[hardDeleteStaff] purge miroir pédagogie ignorée : ${err?.message}`);
+    }
+
+    return { success: true, deletedId: id, purgedPedagogyTeachers };
+  }
+
+  /**
+   * ⭐ 169 — Purge du miroir pédagogique (teachers) d'un staff.
+   *
+   * Le pont RH→Pédagogie (doCreateStaff) crée un Teacher par matricule
+   * (employeeNumber) dès la création de la fiche — brouillon du wizard
+   * d'embauche inclus. Toute suppression/abandon du staff DOIT donc purger
+   * ce miroir, sinon le personnel reste listé comme enseignant dans
+   * Pédagogie > Enseignants / Affectations (fantôme CSPMON-P-26-00021).
+   *
+   * Les FK Restrict (multigrade_assignments, prêts de matériel pédagogique,
+   * fournitures annuelles) sont purgées AVANT le Teacher ; le reste
+   * (profils académiques, affectations de classe) cascade avec lui.
+   */
+  private async purgePedagogyTeacherMirror(
+    tenantId: string,
+    employeeNumber: string | null | undefined,
+  ): Promise<number> {
+    if (!employeeNumber) return 0;
+    let deleted = 0;
+    const mirrors = await this.prisma.teacher.findMany({
+      where: { tenantId, matricule: employeeNumber },
+      select: { id: true },
+    });
+    for (const m of mirrors) {
+      try {
+        await this.prisma.multigradeAssignment.deleteMany({ where: { tenantId, teacherId: m.id } });
+        await this.prisma.teacherMaterialAssignment.deleteMany({ where: { tenantId, teacherId: m.id } });
+        await this.prisma.annualTeacherSupply.deleteMany({ where: { tenantId, teacherId: m.id } });
+        await this.prisma.teacher.delete({ where: { id: m.id } });
+        deleted++;
+        this.logger.log(`🗑️ Miroir pédagogique Teacher ${m.id} purgé (matricule ${employeeNumber})`);
+      } catch (err: any) {
+        this.logger.warn(`Miroir pédagogique Teacher ${m.id} non purgé : ${err?.message}`);
+      }
+    }
+    return deleted;
   }
 
   /**

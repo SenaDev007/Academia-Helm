@@ -70,6 +70,21 @@ const isHomeroomLevel = (levelName?: string): boolean => {
   return n.includes('MATERN') || n.includes('PRIMA') || n.includes('PRIM');
 };
 
+/**
+ * ⭐ 169 — Catégorie d'affichage d'un enseignant (retour promoteur) :
+ * maternel-primaire À PART, secondaire À PART — fin de la liste mélangée.
+ * Basé sur Teacher.schoolLevel (nom/code : Maternelle, Primaire, Secondaire…).
+ */
+const teacherCategory = (t: {
+  schoolLevelName?: string | null;
+  schoolLevel?: { name?: string; code?: string } | null;
+}): 'MATERNEL_PRIMAIRE' | 'SECONDAIRE' | 'AUTRE' => {
+  const raw = `${t.schoolLevelName || ''} ${t.schoolLevel?.name || ''} ${t.schoolLevel?.code || ''}`.toUpperCase();
+  if (raw.includes('MATERN') || raw.includes('PRIMA') || raw.includes('PRIM')) return 'MATERNEL_PRIMAIRE';
+  if (raw.includes('SECOND')) return 'SECONDAIRE';
+  return 'AUTRE';
+};
+
 const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';
 
@@ -486,6 +501,50 @@ export default function TeachersAcademicWorkspace() {
         variant: "destructive"
       });
     }
+  };
+
+  // ⭐ 169 — INITIALISATION EN MASSE (retour promoteur) : un seul bouton crée
+  // le profil académique de l'année pour TOUS les enseignants qui en manquent,
+  // au lieu de cliquer enseignant par enseignant. Mêmes valeurs par défaut
+  // que l'initialisation unitaire (maxWeeklyHours 18, non semainier).
+  const [batchInitializing, setBatchInitializing] = useState(false);
+  const teachersWithoutProfile = teachers.filter(t => !profiles.some(p => p.teacherId === t.id));
+
+  const handleCreateAllProfiles = async () => {
+    if (!academicYear?.id || teachersWithoutProfile.length === 0 || batchInitializing) return;
+    setBatchInitializing(true);
+    let created = 0;
+    let failed = 0;
+    for (const t of teachersWithoutProfile) {
+      try {
+        await pedagogyFetch<any>(`/api/pedagogy/teacher-profiles`, {
+          method: 'POST',
+          body: {
+            academicYearId: academicYear.id,
+            teacherId: t.id,
+            maxWeeklyHours: 18,
+            isSemainier: false,
+          },
+        });
+        created++;
+      } catch {
+        failed++;
+      }
+    }
+    // Recharger tous les profils pour refléter l'état réel (inclut l'include
+    // teacher que les POST individuels ne garantissent pas).
+    try {
+      const profilesData = await pedagogyService.getTeacherProfiles(academicYear.id);
+      setProfiles(profilesData || []);
+    } catch { /* garder l'état courant */ }
+    setBatchInitializing(false);
+    toast({
+      title: created > 0 ? "Succès" : "Information",
+      description: failed === 0
+        ? `${created} profil(s) académique(s) initialisé(s).`
+        : `${created} initialisé(s), ${failed} échec(s) — réessayez pour les enseignants restants.`,
+      variant: failed > 0 && created === 0 ? 'destructive' : 'default',
+    });
   };
 
   const handleUpdateProfile = async (data: any) => {
@@ -1306,6 +1365,30 @@ export default function TeachersAcademicWorkspace() {
         <div className="flex flex-wrap items-center gap-2">
           {activeSubTab === 'teachers' && (
             <>
+              {/* ⭐ 169 — Initialisation EN MASSE des profils académiques
+                  (retour promoteur : « un bouton pour initialiser le profil
+                  académique de tous les enseignants au même moment »). */}
+              <button
+                type="button"
+                onClick={handleCreateAllProfiles}
+                disabled={batchInitializing || teachersWithoutProfile.length === 0}
+                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: teachersWithoutProfile.length === 0 ? '#94A3B8' : '#0E9F6E' }}
+                title={teachersWithoutProfile.length === 0
+                  ? "Tous les enseignants ont déjà un profil académique pour cette année"
+                  : `Créer d'un seul clic le profil académique des ${teachersWithoutProfile.length} enseignant(s) qui en manquent`}
+              >
+                {batchInitializing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <UserCheck className="h-4 w-4" />
+                )}
+                {batchInitializing
+                  ? 'Initialisation en cours...'
+                  : teachersWithoutProfile.length === 0
+                    ? 'Profils initialisés'
+                    : `Initialiser tous les profils (${teachersWithoutProfile.length})`}
+              </button>
               <button
                 type="button"
                 onClick={handleNotifyBatch}
@@ -1416,43 +1499,67 @@ export default function TeachersAcademicWorkspace() {
                     Aucun enseignant trouvé.
                   </div>
                 ) : (
-                  filteredTeachers.map(teacher => {
-                    const isSelected = selectedTeacherId === teacher.id;
-                    
+                  <div className="space-y-2">
+                  {/* ⭐ 169 — CATÉGORISATION DU CORPS ENSEIGNANT (retour
+                      promoteur) : les enseignants de la maternelle et du
+                      primaire À PART, ceux du secondaire À PART — fin de la
+                      liste mélangée. En-têtes de groupe collants (scroll)
+                      avec pastille de couleur et effectif. */}
+                  {([
+                    { key: 'MATERNEL_PRIMAIRE', label: 'Enseignants Maternelle & Primaire', color: '#0E9F6E' },
+                    { key: 'SECONDAIRE', label: 'Enseignants Secondaire', color: '#1A2BA6' },
+                    { key: 'AUTRE', label: 'Niveau non renseigné', color: '#94A3B8' },
+                  ] as const).map(group => {
+                    const groupTeachers = filteredTeachers.filter(t => teacherCategory(t) === group.key);
+                    if (groupTeachers.length === 0) return null;
                     return (
-                      <button
-                        key={teacher.id}
-                        type="button"
-                        onClick={() => selectTeacher(teacher.id)}
-                        className={cn(
-                          "w-full text-left p-3 rounded-lg transition-all flex items-center justify-between group border border-transparent",
-                          isSelected ? "bg-slate-50 shadow-sm" : "hover:bg-slate-50/80"
-                        )}
-                        style={isSelected ? { borderLeft: `3px solid ${PRIMARY}`, paddingLeft: '9px' } : undefined}
-                      >
-                        <div className="flex items-center gap-3">
-                          <TeacherAvatar
-                            teacher={teacher}
-                            size="md"
-                            bgColor={isSelected ? PRIMARY : undefined}
-                            textColor={isSelected ? '#fff' : '#475569'}
-                          />
-                          <div>
-                            <p className={cn("font-bold text-xs", isSelected ? "text-slate-900" : "text-slate-800")}>
-                              {teacher.lastName} {teacher.firstName}
-                            </p>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mt-0.5">
-                              {teacher.matricule}
-                            </p>
-                          </div>
+                      <div key={group.key} className="space-y-1">
+                        <div className="sticky top-0 z-10 flex items-center gap-2 bg-white/95 backdrop-blur px-3 pt-2 pb-1 border-b border-slate-100">
+                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">{group.label}</span>
+                          <span className="text-[10px] font-bold text-slate-400">({groupTeachers.length})</span>
                         </div>
-                        <ChevronRight className={cn(
-                          "w-3.5 h-3.5 transition-all text-slate-400",
-                          isSelected ? "translate-x-1" : "opacity-0 group-hover:opacity-100"
-                        )} style={isSelected ? { color: PRIMARY } : undefined} />
-                      </button>
+                        {groupTeachers.map(teacher => {
+                          const isSelected = selectedTeacherId === teacher.id;
+
+                          return (
+                            <button
+                              key={teacher.id}
+                              type="button"
+                              onClick={() => selectTeacher(teacher.id)}
+                              className={cn(
+                                "w-full text-left p-3 rounded-lg transition-all flex items-center justify-between group border border-transparent",
+                                isSelected ? "bg-slate-50 shadow-sm" : "hover:bg-slate-50/80"
+                              )}
+                              style={isSelected ? { borderLeft: `3px solid ${PRIMARY}`, paddingLeft: '9px' } : undefined}
+                            >
+                              <div className="flex items-center gap-3">
+                                <TeacherAvatar
+                                  teacher={teacher}
+                                  size="md"
+                                  bgColor={isSelected ? PRIMARY : undefined}
+                                  textColor={isSelected ? '#fff' : '#475569'}
+                                />
+                                <div>
+                                  <p className={cn("font-bold text-xs", isSelected ? "text-slate-900" : "text-slate-800")}>
+                                    {teacher.lastName} {teacher.firstName}
+                                  </p>
+                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mt-0.5">
+                                    {teacher.matricule}
+                                  </p>
+                                </div>
+                              </div>
+                              <ChevronRight className={cn(
+                                "w-3.5 h-3.5 transition-all text-slate-400",
+                                isSelected ? "translate-x-1" : "opacity-0 group-hover:opacity-100"
+                              )} style={isSelected ? { color: PRIMARY } : undefined} />
+                            </button>
+                          );
+                        })}
+                      </div>
                     );
-                  })
+                  })}
+                  </div>
                 )}
               </div>
             </div>

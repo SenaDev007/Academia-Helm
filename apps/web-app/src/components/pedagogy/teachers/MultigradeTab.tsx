@@ -28,7 +28,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useBilingual } from '@/contexts/BilingualContext';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
@@ -82,7 +81,6 @@ async function mgFetch<T>(path: string, options?: { method?: string; body?: any 
 
 export function MultigradeTab() {
   const { academicYear } = useModuleContext();
-  const { currentLevel } = useSchoolLevel();
   const { isEnabled: bilingualEnabled } = useBilingual();
   const { toast } = useToast();
 
@@ -101,7 +99,6 @@ export function MultigradeTab() {
     notes: '',
   });
 
-  const schoolLevelId = currentLevel?.id;
   const academicYearId = academicYear?.id;
 
   // ─── Loaders ───
@@ -131,15 +128,26 @@ export function MultigradeTab() {
       // PAS dans prisma.academicClass (classes officielles).
       // On utilise GET /api/pedagogy/academic-structure/sections pour récupérer
       // les sections physiques avec leur officialClass pour l'affichage.
+      // ⭐ 169 — MULTIGRADE = PRATIQUE MATERNEL-PRIMAIRE (CI+CE1, CE1+CE2…)
+      //    uniquement (retour promoteur) : la liste est chargée SANS filtre du
+      //    niveau courant — si l'utilisateur est positionné sur le secondaire,
+      //    les enseignants du secondaire ne doivent PAS apparaître ici — puis
+      //    filtrée côté client sur le niveau rattaché (schoolLevel name/code).
+      //    Le périmètre serveur (promoteur voit tout, directeur MAT_PRI borné)
+      //    reste appliqué par le backend.
       const [tchs, sections] = await Promise.all([
-        pedagogyFetch<any[]>(`/api/teachers${schoolLevelId ? `?schoolLevelId=${schoolLevelId}` : ''}`).catch(() => []),
+        pedagogyFetch<any[]>(`/api/teachers`).catch(() => []),
         pedagogyFetch<any[]>(`/api/pedagogy/academic-structure/sections?academicYearId=${academicYearId}`).catch(() => []),
       ]);
-      setTeachers(Array.isArray(tchs) ? tchs : []);
+      const matPriTeachers = (Array.isArray(tchs) ? tchs : []).filter(t => {
+        const lvl = `${t.schoolLevel?.name || ''} ${t.schoolLevel?.code || ''}`.toUpperCase();
+        return lvl.includes('MATERN') || lvl.includes('PRIMA') || lvl.includes('PRIM');
+      });
+      setTeachers(matPriTeachers);
       // Les sections sont les classes physiques — c'est ce que le backend multigrade attend
       setClasses(Array.isArray(sections) ? sections : []);
     } catch { /* silent */ }
-  }, [academicYearId, schoolLevelId]);
+  }, [academicYearId]);
 
   useEffect(() => { loadAssignments(); }, [loadAssignments]);
   useEffect(() => { loadData(); }, [loadData]);
@@ -392,7 +400,7 @@ export function MultigradeTab() {
             <div className="p-4 space-y-4">
               {/* Teacher */}
               <div>
-                <label className="text-xs font-bold text-slate-700 uppercase mb-1.5 block">Enseignant *</label>
+                <label className="text-xs font-bold text-slate-700 uppercase mb-1.5 block">Enseignant (maternelle &amp; primaire) *</label>
                 <select
                   value={form.teacherId}
                   onChange={e => setForm({ ...form, teacherId: e.target.value })}

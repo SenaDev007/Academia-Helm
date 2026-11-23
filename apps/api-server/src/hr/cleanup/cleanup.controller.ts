@@ -149,6 +149,23 @@ export class CleanupController {
       );
     }
 
+    // 7b. ⭐ 169 — Capturer les matricules AVANT la suppression : le miroir
+    //     pédagogique (teachers) est rattaché par matricule (employeeNumber) —
+    //     il faudra le purger, sinon le staff supprimé reste listé comme
+    //     enseignant dans Pédagogie > Enseignants / Affectations.
+    let mirrorEmployeeNumbers: string[] = [];
+    if (staffToDelete.length > 0) {
+      try {
+        const mirrorStaff = await this.prisma.staff.findMany({
+          where: { id: { in: staffToDelete } },
+          select: { employeeNumber: true },
+        });
+        mirrorEmployeeNumbers = mirrorStaff
+          .map((s) => s.employeeNumber)
+          .filter((e): e is string => !!e);
+      } catch { /* non bloquant */ }
+    }
+
     // 8. Supprimer les Contracts liés à ces Staff
     if (staffToDelete.length > 0) {
       const deletedContracts = await this.prisma.contract.deleteMany({
@@ -163,6 +180,30 @@ export class CleanupController {
       });
       stats.staff = deletedStaff.count;
       this.logger.log(`Deleted ${stats.staff} staff records`);
+
+      // 9b. ⭐ 169 — Purger les miroirs pédagogiques (teachers) des staff
+      //     supprimés (FK Restrict purgées avant le Teacher — même règle que
+      //     purgePedagogyTeacherMirror du module RH).
+      if (mirrorEmployeeNumbers.length > 0) {
+        try {
+          const mirrors = await this.prisma.teacher.findMany({
+            where: { tenantId, matricule: { in: mirrorEmployeeNumbers } },
+            select: { id: true },
+          });
+          for (const m of mirrors) {
+            try {
+              await this.prisma.multigradeAssignment.deleteMany({ where: { tenantId, teacherId: m.id } });
+              await this.prisma.teacherMaterialAssignment.deleteMany({ where: { tenantId, teacherId: m.id } });
+              await this.prisma.annualTeacherSupply.deleteMany({ where: { tenantId, teacherId: m.id } });
+              await this.prisma.teacher.delete({ where: { id: m.id } });
+            } catch { /* best-effort par Teacher */ }
+          }
+          stats.pedagogyTeachers = mirrors.length;
+          this.logger.log(`Deleted ${stats.pedagogyTeachers} pedagogy teacher mirrors`);
+        } catch (err: any) {
+          this.logger.warn(`Failed to purge pedagogy teacher mirrors: ${err.message}`);
+        }
+      }
     }
 
     // 10. Supprimer les HrCandidate du tenant

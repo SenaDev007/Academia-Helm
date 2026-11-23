@@ -1265,6 +1265,18 @@ export class ContractPdfService {
       purged.contracts = await this.prisma.contract.count({ where: { staffId, tenantId } });
     } catch { purged.contracts = 0; }
 
+    // 4b. ⭐ 169 — Miroir pédagogique (teachers) : le pont RH→Pédagogie crée
+    //     un Teacher par matricule DÈS le brouillon du wizard — sans cette
+    //     purge, l'abandon laisse le fantôme listé dans Pédagogie >
+    //     Enseignants / Affectations (cas réel CSPMON-P-26-00021 : dictée
+    //     collée dans les champs nom, fiche purgée mais miroir survivant).
+    try {
+      purged.pedagogyTeachers = await this.purgePedagogyTeacherMirror(tenantId, staff.employeeNumber);
+    } catch (err: any) {
+      purged.pedagogyTeachers = 0;
+      this.logger.warn(`[abortOnboarding] purge miroir pédagogie ignorée : ${err?.message}`);
+    }
+
     // 5. Fiche personnel — suppression DURE : TOUT le reste (contrats,
     //    documents, indemnités, presences, paies éventuelles) cascade.
     await this.prisma.staff.delete({ where: { id: staffId } });
@@ -1272,7 +1284,8 @@ export class ContractPdfService {
     this.logger.log(
       `🗑️ Embauche abandonnée et purgée (staff ${staffId}) : ` +
       `${purged.contracts ?? 0} contrat(s), ${purged.documents ?? 0} document(s), ` +
-      `${purged.allowances ?? 0} indemnité(s), ${purged.candidates ?? 0} candidature(s)`,
+      `${purged.allowances ?? 0} indemnité(s), ${purged.candidates ?? 0} candidature(s), ` +
+      `${purged.pedagogyTeachers ?? 0} miroir(s) pédagogique(s)`,
     );
 
     return {
@@ -1284,8 +1297,43 @@ export class ContractPdfService {
         documents: purged.documents ?? 0,
         allowances: purged.allowances ?? 0,
         candidates: purged.candidates ?? 0,
+        pedagogyTeachers: purged.pedagogyTeachers ?? 0,
       },
     };
+  }
+
+  /**
+   * ⭐ 169 — Purge du miroir pédagogique (teachers) d'un staff abandonné.
+   *
+   * Le pont RH→Pédagogie (doCreateStaff) crée un Teacher par matricule
+   * (employeeNumber) dès la création de la fiche — brouillon du wizard
+   * d'embauche inclus. L'abandon DOIT purger ce miroir, sinon le personnel
+   * reste listé comme enseignant dans Pédagogie > Enseignants / Affectations
+   * (fantôme CSPMON-P-26-00021). FK Restrict purgées avant le Teacher.
+   */
+  private async purgePedagogyTeacherMirror(
+    tenantId: string,
+    employeeNumber: string | null | undefined,
+  ): Promise<number> {
+    if (!employeeNumber) return 0;
+    let deleted = 0;
+    const mirrors = await this.prisma.teacher.findMany({
+      where: { tenantId, matricule: employeeNumber },
+      select: { id: true },
+    });
+    for (const m of mirrors) {
+      try {
+        await this.prisma.multigradeAssignment.deleteMany({ where: { tenantId, teacherId: m.id } });
+        await this.prisma.teacherMaterialAssignment.deleteMany({ where: { tenantId, teacherId: m.id } });
+        await this.prisma.annualTeacherSupply.deleteMany({ where: { tenantId, teacherId: m.id } });
+        await this.prisma.teacher.delete({ where: { id: m.id } });
+        deleted++;
+        this.logger.log(`🗑️ Miroir pédagogique Teacher ${m.id} purgé (matricule ${employeeNumber})`);
+      } catch (err: any) {
+        this.logger.warn(`Miroir pédagogique Teacher ${m.id} non purgé : ${err?.message}`);
+      }
+    }
+    return deleted;
   }
 
   /**

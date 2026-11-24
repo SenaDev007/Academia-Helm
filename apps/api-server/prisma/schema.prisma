@@ -119,6 +119,9 @@ model Tenant {
   educationSeries                  EducationSeries[]
   emailLogs                        EmailLog[]
   inboundEmails                    InboundEmail[]
+  schoolEmailSetting               SchoolEmailSetting?
+  emailSendLogs                    EmailSendLog[]
+  emailQueueItems                  EmailQueue[]
   contractSignTokens               ContractSignToken[]
   employeeCNSS                     EmployeeCNSS[]
   contracts                        Contract[]
@@ -9250,6 +9253,107 @@ model InboundEmail {
   @@index([threadId])
   @@index([tenantId, receivedAt])
   @@map("inbound_emails")
+}
+
+// ============================================================================
+// 📧 E-MAIL ÉCOLE (tâche 181) — envoi via le Gmail de chaque établissement
+// Cahier des charges « Academia Helm : envoi d'e-mails via le Gmail de chaque
+// école ». Phase 1 : SMTP Gmail avec mot de passe d'application (chiffré
+// AES-256-GCM). Phase 2 : Google OAuth2 (jeton de rafraîchissement chiffré
+// dans les mêmes colonnes secret_*).
+// ============================================================================
+
+model SchoolEmailSetting {
+  id        String   @id @default(uuid())
+  tenantId  String   @unique
+
+  // ─── Mode de connexion ───
+  mode String @default("aucun") // smtp | google_oauth | aucun
+
+  // ─── Identité d'expédition (formulaire commun) ───
+  fromName  String // Nom affiché de l'expéditeur (ex: « Complexe Scolaire Mon Avenir Plus »)
+  fromEmail String // Adresse Gmail de l'école (compte authentifié)
+  replyTo   String  // Adresse de réponse (par défaut = fromEmail)
+
+  // ─── SMTP (Phase 1) ───
+  smtpHost String? // smtp.gmail.com
+  smtpPort Int?    @default(587) // 587 STARTTLS (défaut) | 465 SSL
+  smtpUser String? // Identifiant (l'adresse Gmail)
+
+  // ─── Secret chiffré (mot de passe d'application ou refresh token OAuth2) ───
+  secretEncrypted String? // AES-256-GCM, base64 — JAMAIS renvoyé au navigateur
+  secretIv        String? // IV unique par secret, base64
+  secretTag       String? // Tag d'authenticité GCM, base64
+
+  // ─── Statut de la connexion ───
+  status         String    @default("non_configure") // non_configure | actif | expire | erreur
+  lastError      String?
+  lastVerifiedAt DateTime?
+
+  // ─── Plafond quotidien (modifiable uniquement par YEHI OR Tech, pas l'école) ───
+  dailyCap Int @default(490)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("school_email_settings")
+}
+
+// Journal des envois — UNE LIGNE PAR DESTINATAIRE (To, Cc, Bcc comptent chacun).
+// Sert au calcul du plafond 24 h glissantes (index [tenantId, createdAt]).
+// Contrairement à EmailLog (module Communication), ne stocke PAS le contenu
+// du message — uniquement sujet + métadonnées.
+model EmailSendLog {
+  id       String @id @default(uuid())
+  tenantId String
+
+  module    String // pedagogie | eleves | finance | examens | rh | communication | settings
+  category  String // system | pedagogie | eleves | finance | examens | rh | communication | test
+  recipient String
+
+  subject String
+
+  provider String // google_oauth | smtp | resend
+
+  status    String // pending | envoye | reporte | echec
+  errorCode String?
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+  @@map("email_send_log")
+}
+
+// File d'attente des envois différés (fenêtre de plafond, débit 20/min, relances).
+// Alternative PostgreSQL à BullMQ : verrouillage FOR UPDATE SKIP LOCKED.
+model EmailQueue {
+  id       String @id @default(uuid())
+  tenantId String
+
+  module   String
+  category String
+  payload  String // JSON : { to, cc, bcc, subject, html, text, replyTo, attachments, emailLogId? }
+
+  status        String   @default("en_attente") // en_attente | envoye | reporte | echec
+  attempts      Int      @default(0)
+  maxAttempts   Int      @default(3)
+  nextAttemptAt DateTime @default(now())
+  lastError     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, nextAttemptAt])
+  @@index([status, nextAttemptAt])
+  @@index([tenantId, createdAt])
+  @@map("email_queue")
 }
 
 model WhatsappLog {

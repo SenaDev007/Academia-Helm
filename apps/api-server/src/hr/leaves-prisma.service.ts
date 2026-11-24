@@ -619,8 +619,15 @@ export class LeavesPrismaService {
         approverName,
       });
 
-      await this.emailService.sendEmail({
+      // ⭐ Tâche 181 — voie centralisée : SMTP de l'école (file + plafond)
+      // (catégorie RECRUTEMENT = pôle RH dans la taxonomie EmailLog)
+      await this.emailService.sendCategorized({
+        tenantId,
+        category: 'RECRUTEMENT',
+        subCategory: decision === 'APPROVED' ? 'conge_approuve' : 'conge_rejete',
+        module: 'hr',
         to: staff.email,
+        recipientType: 'STAFF',
         subject,
         html,
         fromName: branding.schoolName || 'Academia Helm',

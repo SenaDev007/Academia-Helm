@@ -32,6 +32,14 @@ export const RBAC_RESOURCES = [
 
 export const RBAC_ACTIONS = ['read', 'write', 'delete', 'validate'] as const;
 
+/**
+ * ⭐ TÂCHE 181 — Permission dédiée « gérer l'e-mail de l'école »
+ * (settings.email.manage du cahier des charges). Hors produit cartésien.
+ */
+export const RBAC_EXTRA_PERMISSIONS = [
+  { name: 'PARAMETRES_email', resource: 'PARAMETRES', action: 'email', description: 'Paramètres - gérer l\'e-mail de l\'école (SMTP/OAuth)' },
+] as const;
+
 export type SystemRoleDef = {
   name: string;
   description: string;
@@ -80,6 +88,7 @@ export function getSystemRolesDefinitions(allPermissionNames: string[]): SystemR
         'PARAMETRES_read', 'PARAMETRES_write', 'ANNEES_SCOLAIRES_read', 'ANNEES_SCOLAIRES_write',
         'ORION_read', 'ATLAS_read',
         'QHSE_read', 'BIBLIOTHEQUE_read', 'TRANSPORT_read', 'CANTINE_read', 'INFIRMERIE_read', 'EDUCAST_read', 'BOUTIQUE_read',
+        'PARAMETRES_email',
       ],
     },
     {

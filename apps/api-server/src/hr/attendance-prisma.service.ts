@@ -427,8 +427,15 @@ export class AttendancePrismaService {
         validatorName: undefined, // could be enriched if we fetch the validator user
       });
 
-      await this.emailService.sendEmail({
+      // ⭐ Tâche 181 — voie centralisée : SMTP de l'école (file + plafond)
+      // (catégorie RECRUTEMENT = pôle RH dans la taxonomie EmailLog)
+      await this.emailService.sendCategorized({
+        tenantId,
+        category: 'RECRUTEMENT',
+        subCategory: action === 'VALIDATE' ? 'heures_sup_validees' : 'heures_sup_rejetees',
+        module: 'hr',
         to: staff.email,
+        recipientType: 'STAFF',
         subject,
         html,
         fromName: branding.schoolName || 'Academia Helm',

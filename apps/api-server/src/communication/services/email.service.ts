@@ -612,6 +612,7 @@ export class EmailService {
 
   private _emailLogService: any = null;
   private _emailTrackingService: any = null;
+  private _centralEmailService: any = null;
 
   /**
    * Injecte le EmailLogService (appelé par CommunicationModule.onModuleInit).
@@ -627,6 +628,17 @@ export class EmailService {
    */
   setEmailTrackingService(service: any): void {
     this._emailTrackingService = service;
+  }
+
+  /**
+   * ⭐ TÂCHE 181 — Injecte le CentralEmailService (appelé par
+   * SchoolEmailModule.onModuleInit). Le transport de sendCategorized passe
+   * alors par le service central : e-mails système → Resend plateforme,
+   * e-mails d'école → SMTP de l'école (file d'attente + plafond 490/24 h +
+   * débit 20/min). Sans injection (config minimale), comportement inchangé.
+   */
+  setCentralEmailService(service: any): void {
+    this._centralEmailService = service;
   }
 
   /**
@@ -701,7 +713,54 @@ export class EmailService {
       }
     }
 
-    // 2. Envoyer l'email avec le reply-to personnalisé + HTML tracké
+    // 2. Envoyer l'email avec le reply-to personnalisé + HTML tracké.
+    //
+    // ⭐ TÂCHE 181 — ROUTAGE VIA LE SERVICE CENTRAL : si CentralEmailService
+    // est injecté, le transport passe par lui (e-mails système → Resend
+    // plateforme ; e-mails d'école → SMTP de l'école avec file + plafond +
+    // débit). L'EmailLog reste PENDING pour les envois mis en file : le
+    // dispatcher le marquera SENT/FAILED au moment de l'envoi réel.
+    if (this._centralEmailService) {
+      try {
+        const outcome: 'sent' | 'queued' | 'deferred' | 'failed' =
+          await this._centralEmailService.deliverForCommunicationModule({
+            tenantId: request.tenantId,
+            module: request.module,
+            category: request.category,
+            to: request.to,
+            cc: request.cc,
+            bcc: request.bcc,
+            subject: request.subject,
+            html: htmlToSend,
+            text: request.text,
+            replyTo: replyTo || undefined,
+            attachments: request.attachments,
+            emailLogId: logId,
+            triggeredByUserId: request.triggeredByUserId,
+          });
+
+        if (outcome === 'sent') {
+          await this._emailLogService.markAsSent(logId, 'central', undefined);
+          return { success: true, logId };
+        }
+        if (outcome === 'queued' || outcome === 'deferred') {
+          // En file (ou reporté pour plafond) — l'EmailLog reste PENDING,
+          // le dispatcher de la file le marquera à l'issue réelle.
+          return { success: true, logId };
+        }
+        await this._emailLogService.markAsFailed(logId, 'Envoi via le SMTP de l\'école échoué (voir Paramètres, onglet E-mail).');
+        return { success: false, logId, error: 'Envoi via le SMTP de l\'école échoué (voir Paramètres, onglet E-mail).' };
+      } catch (err: any) {
+        try {
+          await this._emailLogService.markAsFailed(logId, err?.message);
+        } catch (markErr: any) {
+          this.logger.error(`Failed to mark EmailLog ${logId} as FAILED: ${markErr.message}`);
+        }
+        return { success: false, logId, error: err?.message };
+      }
+    }
+
+    // (config minimale sans service central — comportement historique inchangé)
     try {
       const result = await this.sendEmail({
         to: request.to,

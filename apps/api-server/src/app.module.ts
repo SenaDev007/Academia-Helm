@@ -52,6 +52,8 @@ import { PaymentFlowsModule } from './payment-flows/payment-flows.module';
 import { OrionModule } from './orion/orion.module';
 import { QhsModule } from './qhs/qhs.module';
 import { SettingsModule } from './settings/settings.module';
+// ⭐ Tâche 181 — service central d'envoi d'e-mails (SMTP de chaque école)
+import { SchoolEmailModule } from './school-email/school-email.module';
 import { MeetingsModule } from './meetings/meetings.module';
 import { MediaModule } from './media/media.module';
 import { TenantMediaModule } from './tenant-media/tenant-media.module';
@@ -240,6 +242,7 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     
     // Module Transversal — Paramètres (Centre de contrôle stratégique)
     SettingsModule,
+    SchoolEmailModule,
     
     // Module Transversal — Réunions (Administratives, Pédagogiques & Parents)
     MeetingsModule,

@@ -1359,8 +1359,14 @@ export class SettingsController {
     try {
       // ⭐ Send email ON BEHALF OF THE SCHOOL (not Academia Helm)
       //    Same pattern as staff credentials email — uses schoolName as fromName
-      await this.emailService.sendEmail({
+      // ⭐ Tâche 181 — voie centralisée : SMTP de l'école (file + plafond)
+      await this.emailService.sendCategorized({
+        tenantId: tid,
+        category: 'ADMINISTRATIF',
+        subCategory: 'invitation_signature',
+        module: 'communication',
         to: body.email,
+        recipientType: 'STAFF',
         fromName: schoolName,
         subject: `Signature requise — ${roleLabel} — ${schoolName}`,
         html,

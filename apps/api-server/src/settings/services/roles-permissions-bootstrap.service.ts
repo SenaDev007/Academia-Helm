@@ -14,7 +14,16 @@ const RESOURCES = [
   'INFIRMERIE', 'EDUCAST', 'BOUTIQUE',
 ];
 const ACTIONS = ['read', 'write', 'delete', 'validate'];
-const EXPECTED_PERMISSIONS_COUNT = RESOURCES.length * ACTIONS.length;
+
+/**
+ * ⭐ TÂCHE 181 — Permission dédiée « gérer l'e-mail de l'école »
+ * (settings.email.manage du cahier des charges). Hors produit cartésien
+ * RESOURCES × ACTIONS : upsert dédié + comptée dans EXPECTED_PERMISSIONS_COUNT.
+ */
+const EXTRA_PERMISSIONS = [
+  { name: 'PARAMETRES_email', resource: 'PARAMETRES', action: 'email', description: 'Paramètres - gérer l\'e-mail de l\'école (SMTP/OAuth)' },
+];
+const EXPECTED_PERMISSIONS_COUNT = RESOURCES.length * ACTIONS.length + EXTRA_PERMISSIONS.length;
 
 type RoleDef = {
   name: string;
@@ -40,6 +49,7 @@ const SYSTEM_ROLES: RoleDef[] = [
       'FINANCES_read', 'RECOUVREMENT_read', 'DEPENSES_read', 'RH_read', 'PAIE_read',
       'COMMUNICATION_read', 'COMMUNICATION_write', 'PARAMETRES_read', 'PARAMETRES_write', 'ANNEES_SCOLAIRES_read', 'ANNEES_SCOLAIRES_write',
       'ORION_read', 'ATLAS_read', 'QHSE_read', 'BIBLIOTHEQUE_read', 'TRANSPORT_read', 'CANTINE_read', 'INFIRMERIE_read', 'EDUCAST_read', 'BOUTIQUE_read',
+      'PARAMETRES_email',
     ],
   },
   {
@@ -196,6 +206,15 @@ export class RolesPermissionsBootstrapService implements OnModuleInit {
         }
       }
       this.logger.log(`Permissions RBAC: ${EXPECTED_PERMISSIONS_COUNT} créées/mises à jour`);
+    }
+
+    // ⭐ TÂCHE 181 — upsert DÉDIÉ (hors cartésien) : toujours exécuté, idempotent.
+    for (const extra of EXTRA_PERMISSIONS) {
+      await this.prisma.permission.upsert({
+        where: { name: extra.name },
+        update: { resource: extra.resource, action: extra.action, description: extra.description },
+        create: { ...prismaCreateNoUpdatedAt(), ...extra },
+      });
     }
 
     const allPermissions = await this.prisma.permission.findMany({ select: { id: true, name: true } });

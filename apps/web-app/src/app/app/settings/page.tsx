@@ -34,6 +34,8 @@ import {
 import { ModuleHeader } from '@/components/modules/blueprint';
 import StampDesigner from '@/components/settings/StampDesigner';
 import SchoolCalendarConfigSection from '@/components/settings/SchoolCalendarConfigSection';
+// ⭐ Tâche 181 — onglet E-mail (envoi via le Gmail de chaque école)
+import { SchoolEmailTab } from '@/components/settings/SchoolEmailTab';
 import { PaymentsSettingsSection } from '@/components/settings/fedapay/PaymentsSettingsSection';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
@@ -136,7 +138,7 @@ function generateSamplePassword(form: any): string {
 }
 
 type TabId = 'identity' | 'group' | 'academic-year' | 'school-calendar' | 'structure' | 'admin-structure' | 'departments' | 'bilingual' | 'features' |
-             'roles' | 'billing' | 'security' | 'seals' | 'appareils' | 'history'
+             'roles' | 'email' | 'billing' | 'security' | 'seals' | 'appareils' | 'history'
              // Removed tabs (kept in type for URL compat): communication, payments, orion, atlas, offline
              | 'communication' | 'payments' | 'orion' | 'atlas' | 'offline';
 
@@ -199,7 +201,7 @@ function ActionBadge({ action }: { action: string }) {
 
 const SETTINGS_TAB_IDS: TabId[] = [
   'identity', 'group', 'academic-year', 'structure', 'departments', 'bilingual', 'features',
-  'roles', 'billing', 'security', 'appareils', 'history',
+  'roles', 'email', 'billing', 'security', 'appareils', 'history',
   // school-calendar, admin-structure et seals conservés dans le type pour compat URL
   // mais retirés de l'affichage (fusionnés dans academic-year, departments)
   'school-calendar', 'admin-structure', 'seals',
@@ -272,6 +274,18 @@ export default function SettingsPage() {
   const canAccessDevices =
     !!user?.role &&
     ['PLATFORM_OWNER', 'PLATFORM_ADMIN', 'PROMOTEUR', 'PROMOTER', 'DIRECTOR', 'ADMIN'].includes(user.role);
+
+  /**
+   * ⭐ Tâche 181 — Onglet E-mail : visible avec la permission PARAMETRES:email
+   * (attribuée par défaut à la direction et aux administrateurs). PROMOTEUR et
+   * rôles plateforme ont un bypass côté API ; DIRECTEUR l'a via le bootstrap
+   * RBAC ; les rôles personnalisés l'obtiennent via l'onglet Rôles.
+   */
+  const canAccessSchoolEmail =
+    !!user?.role && (
+      ['PLATFORM_OWNER', 'PLATFORM_ADMIN', 'PROMOTEUR', 'PROMOTER', 'DIRECTOR', 'DIRECTEUR', 'ADMIN'].includes(user.role) ||
+      (Array.isArray(user.permissions) && user.permissions.includes('PARAMETRES_email'))
+    );
 
   const [availableTenantsForPO, setAvailableTenantsForPO] = useState<{ tenantId: string; name?: string }[]>([]);
   const [loadingTenantsPO, setLoadingTenantsPO] = useState(false);
@@ -2748,6 +2762,8 @@ export default function SettingsPage() {
     // school-calendar fusionné dans academic-year (plus d'onglet séparé)
     { id: 'features' as TabId, label: 'Modules', icon: ToggleLeft },
     { id: 'roles' as TabId, label: 'Rôles', icon: UserCog },
+    // ⭐ Tâche 181 — onglet E-mail (juste après Rôles, permission PARAMETRES:email)
+    ...(canAccessSchoolEmail ? [{ id: 'email' as TabId, label: 'E-mail', icon: Mail }] : []),
     { id: 'billing' as TabId, label: 'Facturation', icon: CreditCard },
     { id: 'security' as TabId, label: 'Sécurité', icon: Shield },
     // ⭐ Onglet Cachets supprimé — fusionné dans "Administration et Cachets"
@@ -5782,6 +5798,23 @@ export default function SettingsPage() {
 
       case 'communication':
         return null; // Removed tab — communication géré via module Communication
+      case 'email':
+        // ⭐ Tâche 181 — onglet E-mail : envoi via le Gmail de chaque école
+        return (
+          <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-gray-800">E-mail de l&apos;école</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Envoyez les e-mails de <strong>{identityProfile?.schoolName || 'votre établissement'}</strong> depuis
+                  sa propre adresse Gmail, gratuitement — messagerie, bulletins, relances de scolarité, convocations,
+                  communications au personnel.
+                </p>
+              </div>
+              <SchoolEmailTab />
+            </div>
+          </div>
+        );
       case 'billing':
         return (
           <div className="space-y-6">

@@ -235,9 +235,15 @@ export class ComptaAutoExportService {
       </div>
     `;
 
-    // Envoyer l'email avec pièce jointe
-    await this.emailService.sendEmail({
+    // Envoyer l'email avec pièce jointe — ⭐ Tâche 181 : voie centralisée
+    // (SMTP de l'école, file d'attente + plafond 490/24 h)
+    await this.emailService.sendCategorized({
+      tenantId,
+      category: 'FINANCE',
+      subCategory: 'export_comptable_auto',
+      module: 'finance',
       to: settings.comptaAutoExportEmail,
+      recipientType: 'EXTERNE',
       subject: `[${schoolName}] Export comptable — ${monthLabel}`,
       html,
       attachments: [

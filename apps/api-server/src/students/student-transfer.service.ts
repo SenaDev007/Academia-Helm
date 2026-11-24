@@ -745,8 +745,14 @@ export class StudentTransferService {
 
       if (school?.primaryEmail) {
         const html = this.buildTransferEmailHtml(title, message, school.name);
-        await this.emailService.sendEmail({
+        // ⭐ Tâche 181 — voie centralisée : SMTP de l'école (file + plafond)
+        await this.emailService.sendCategorized({
+          tenantId: schoolId,
+          category: 'ADMINISTRATIF',
+          subCategory: 'transfert_ecole',
+          module: 'students',
           to: school.primaryEmail,
+          recipientType: 'EXTERNE',
           subject: `Academia Helm — ${title}`,
           html,
           fromName: 'Academia Helm — Transferts',
@@ -835,7 +841,7 @@ export class StudentTransferService {
       // Récupérer le nom de l'élève pour personnaliser le message
       const student = await this.prisma.student.findUnique({
         where: { id: studentId },
-        select: { firstName: true, lastName: true },
+        select: { firstName: true, lastName: true, tenantId: true },
       });
       const studentName = student ? `${student.firstName} ${student.lastName}` : 'l\'élève';
 
@@ -860,7 +866,7 @@ export class StudentTransferService {
         // 1. EMAIL
         if (email) {
           notifications.push(
-            this.sendParentEmail(email, guardianName, studentName, fullMessage).catch(e =>
+            this.sendParentEmail(email, guardianName, studentName, fullMessage, student?.tenantId).catch(e =>
               this.logger.warn(`Email parent ${email} échoué: ${e.message}`)
             )
           );
@@ -896,7 +902,7 @@ export class StudentTransferService {
   /**
    * ⭐ Envoie un email professionnel au parent.
    */
-  private async sendParentEmail(email: string, guardianName: string, studentName: string, message: string): Promise<void> {
+  private async sendParentEmail(email: string, guardianName: string, studentName: string, message: string, tenantId?: string): Promise<void> {
     const html = `<!DOCTYPE html>
 <html lang="fr">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
@@ -926,12 +932,29 @@ export class StudentTransferService {
 </body>
 </html>`;
 
-    await this.emailService.sendEmail({
-      to: email,
-      subject: `Academia Helm — Mise à jour du transfert de ${studentName}`,
-      html,
-      fromName: 'Academia Helm — Transferts',
-    });
+    // ⭐ Tâche 181 — voie centralisée : SMTP de l'école (file + plafond).
+    // Sans tenantId (cas théorique), l'EmailLog reste tracé côté plateforme.
+    if (tenantId) {
+      await this.emailService.sendCategorized({
+        tenantId,
+        category: 'ADMINISTRATIF',
+        subCategory: 'transfert_parent',
+        module: 'students',
+        to: email,
+        toName: guardianName,
+        recipientType: 'PARENT',
+        subject: `Academia Helm — Mise à jour du transfert de ${studentName}`,
+        html,
+        fromName: 'Academia Helm — Transferts',
+      });
+    } else {
+      await this.emailService.sendEmail({
+        to: email,
+        subject: `Academia Helm — Mise à jour du transfert de ${studentName}`,
+        html,
+        fromName: 'Academia Helm — Transferts',
+      });
+    }
     this.logger.log(`📧 Email parent envoyé à ${email}`);
   }
 

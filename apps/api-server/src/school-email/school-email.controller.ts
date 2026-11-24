@@ -31,10 +31,14 @@ import {
   Logger,
   Post,
   Put,
+  Query,
   Request,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Public } from '../auth/decorators/public.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { PermissionGuard } from '../common/guards/permission.guard';
@@ -42,6 +46,7 @@ import { RequirePermission } from '../common/decorators/require-permission.decor
 import { SchoolEmailSettingsService } from './school-email-settings.service';
 import { CentralEmailService } from './central-email.service';
 import { EmailQueueDispatcherService } from './email-queue-dispatcher.service';
+import { GoogleOauthService } from './google-oauth.service';
 import { createSmtpTransport } from './smtp-helpers';
 import {
   SaveSchoolEmailConfigDto,
@@ -49,6 +54,7 @@ import {
   SchoolEmailUsageView,
   EmailSendLogEntry,
   SendTestEmailDto,
+  StartGoogleOauthDto,
 } from './dto/school-email.dto';
 
 /** Limite du bouton de test (CDC section 7.3). */
@@ -64,18 +70,22 @@ export class SchoolEmailController {
     private readonly settings: SchoolEmailSettingsService,
     private readonly central: CentralEmailService,
     private readonly dispatcher: EmailQueueDispatcherService,
+    private readonly googleOauth: GoogleOauthService,
   ) {}
 
   /** Statut + réglages (SANS secret) + compteur du jour + alertes. */
   @Get('status')
-  async getStatus(
-    @TenantId() tenantId: string,
-  ): Promise<{ settings: SchoolEmailSettingsView; usage: SchoolEmailUsageView }> {
+  async getStatus(@TenantId() tenantId: string): Promise<{
+    settings: SchoolEmailSettingsView;
+    usage: SchoolEmailUsageView;
+    /** TÂCHE 183 — Google OAuth2 activé côté plateforme (client configuré) ? */
+    googleOauthAvailable: boolean;
+  }> {
     const [settings, usage] = await Promise.all([
       this.settings.getView(tenantId),
       this.settings.getUsage(tenantId),
     ]);
-    return { settings, usage };
+    return { settings, usage, googleOauthAvailable: this.googleOauth.isConfigured() };
   }
 
   /**
@@ -91,7 +101,7 @@ export class SchoolEmailController {
     @CurrentUser() user: any,
     @Body() dto: SaveSchoolEmailConfigDto,
   ): Promise<{ settings: SchoolEmailSettingsView; verified: boolean; verifyError?: string }> {
-    const view = await this.settings.saveConfig(tenantId, user?.id ?? 'unknown', dto);
+    await this.settings.saveConfig(tenantId, user?.id ?? 'unknown', dto);
 
     // Vérification réelle de la connexion SMTP (transport.verify).
     let verified = false;
@@ -112,7 +122,7 @@ export class SchoolEmailController {
     } catch (err: any) {
       verifyError =
         err?.responseCode === 535 || /auth/i.test(String(err?.message || ''))
-          ? 'Authentification refusée par Gmail — vérifiez le mot de passe d\'application (et que la validation en deux étapes est active).'
+          ? "Authentification refusée par Gmail — vérifiez le mot de passe d'application (et que la validation en deux étapes est active)."
           : `Connexion SMTP échouée : ${String(err?.message || err).slice(0, 200)}`;
       await this.settings.markError(tenantId, verifyError);
       this.logger.warn(`Vérification SMTP échouée (tenant ${tenantId}) : ${verifyError}`);
@@ -174,7 +184,11 @@ export class SchoolEmailController {
 
     switch (result.status) {
       case 'envoye':
-        return { success: true, status: result.status, message: `E-mail de test envoyé à ${userEmail}.` };
+        return {
+          success: true,
+          status: result.status,
+          message: `E-mail de test envoyé à ${userEmail}.`,
+        };
       case 'reporte':
         return {
           success: false,
@@ -191,7 +205,7 @@ export class SchoolEmailController {
         return {
           success: false,
           status: result.status,
-          message: result.error || 'Échec de l\'envoi du test.',
+          message: result.error || "Échec de l'envoi du test.",
         };
     }
   }
@@ -217,9 +231,66 @@ export class SchoolEmailController {
   /** Rattrapage manuel de la file (diagnostic — même permission). */
   @Post('dispatch')
   @HttpCode(200)
-  async dispatchNow(@TenantId() tenantId: string): Promise<{ ok: true }> {
+  async dispatchNow(): Promise<{ ok: true }> {
     await this.dispatcher.dispatchDue();
     return { ok: true };
+  }
+
+  // ─── TÂCHE 183 (Phase 2, CDC section 8) — Google OAuth2 PKCE ────────────
+
+  /**
+   * Démarre le flux d'autorisation Google (bouton « Connecter Google »).
+   * Retourne l'URL de consentement vers laquelle le navigateur est dirigé.
+   * Les champs communs (fromName, fromEmail, replyTo) voyagent dans le state
+   * (chiffré côté cache, TTL 10 min) pour pré-remplir au retour — la
+   * migration depuis un SMTP actif se fait donc EN UN CLIC, sans ressaisie.
+   */
+  @Post('google/start')
+  @HttpCode(200)
+  async startGoogleOauth(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() dto: StartGoogleOauthDto,
+    @Request() req: any,
+  ): Promise<{ authUrl: string; redirectUri: string }> {
+    return this.googleOauth.startFlow(
+      {
+        tenantId,
+        userId: user?.id ?? 'unknown',
+        fromName: dto?.fromName,
+        fromEmail: dto?.fromEmail,
+        replyTo: dto?.replyTo,
+      },
+      apiOriginFromRequest(req),
+    );
+  }
+
+  /**
+   * Retour de Google (redirection navigateur — @Public, le state fait foi).
+   * Échange le code (PKCE), enregistre la connexion chiffrée puis ramène le
+   * directeur sur l'onglet E-mail avec un paramètre de résultat :
+   *   ?tab=email&google=ok                → succès (statut Actif)
+   *   ?tab=email&google=erreur&motif=…    → échec (motif affiché)
+   */
+  @Get('google/callback')
+  @Public()
+  async googleCallback(
+    @Query() query: { code?: string; state?: string; error?: string; error_description?: string },
+    @Request() req: any,
+    @Res() res: Response,
+  ): Promise<void> {
+    const base = this.googleOauth.frontendSettingsUrl();
+    try {
+      const result = await this.googleOauth.handleCallback(query);
+      this.logger.log(
+        `Callback Google OAuth2 OK (tenant ${result.tenantId}, compte ${result.googleEmail})`,
+      );
+      return res.redirect(302, `${base}&google=ok`);
+    } catch (err: any) {
+      const motif = encodeURIComponent(String(err?.message || 'Erreur inconnue').slice(0, 300));
+      this.logger.warn(`Callback Google OAuth2 échoué : ${err?.message}`);
+      return res.redirect(302, `${base}&google=erreur&motif=${motif}`);
+    }
   }
 }
 
@@ -229,4 +300,25 @@ function escapeHtmlText(s: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/**
+ * Origine publique de l'API (protocole + hôte) derrière le proxy Railway :
+ * X-Forwarded-* d'abord, puis Host — sert à construire la redirect_uri OAuth,
+ * identique au start et au callback (exigence de Google).
+ */
+function apiOriginFromRequest(req: any): string | undefined {
+  try {
+    const proto =
+      (req.headers && (req.headers['x-forwarded-proto'] as string)) ||
+      (req.protocol as string) ||
+      'https';
+    const host =
+      (req.headers && (req.headers['x-forwarded-host'] as string)) ||
+      (req.headers && (req.headers.host as string));
+    if (!host) return undefined;
+    return `${Array.isArray(proto) ? proto[0] : proto}://${host}`.split(',')[0].trim();
+  } catch {
+    return undefined;
+  }
 }

@@ -17,7 +17,17 @@
  * ============================================================================
  */
 
-import { IsEmail, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min, MaxLength } from 'class-validator';
+import {
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  MaxLength,
+} from 'class-validator';
 
 /** Modules appelants (section 9 du cahier des charges). */
 export type EmailModule181 =
@@ -151,7 +161,7 @@ export interface EmailSendLogEntry {
   createdAt: string;
 }
 
-// ─── DTOs du controller (validation class-validator) ───────────────────────
+// ─── DTOs du controller (validation class-validator) ─────────────────────
 
 const MODES = ['smtp'] as const; // Phase 1 : SMTP uniquement
 
@@ -200,6 +210,28 @@ export class SendTestEmailDto {
   @IsOptional()
   @IsEmail()
   to?: string;
+}
+
+/**
+ * TÂCHE 183 (Phase 2) — Démarrage du flux Google OAuth2 (bouton
+ * « Connecter Google »). Les champs communs accompagnent le state pour
+ * pré-remplir la configuration au retour du consentement (migration 1 clic :
+ * tous optionnels — les valeurs existantes sont conservées sinon).
+ */
+export class StartGoogleOauthDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  fromName?: string;
+
+  @IsOptional()
+  @IsEmail()
+  fromEmail?: string;
+
+  @IsOptional()
+  @IsEmail()
+  replyTo?: string;
 }
 
 export class UpdateDailyCapDto {

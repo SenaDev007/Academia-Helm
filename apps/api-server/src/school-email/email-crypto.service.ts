@@ -74,7 +74,9 @@ export class EmailCryptoService {
           'EMAIL_ENCRYPTION_KEY présent mais format invalide (attendu : hex 64 caractères ou base64 32 octets) — utilisation de la clé dérivée.',
         );
       } else {
-        this.logger.log('EMAIL_ENCRYPTION_KEY non défini — clé dérivée de DATABASE_URL (repli déterministe).');
+        this.logger.log(
+          'EMAIL_ENCRYPTION_KEY non défini — clé dérivée de DATABASE_URL (repli déterministe).',
+        );
       }
       const dsn = this.configService.get<string>('DATABASE_URL') || 'academia-helm-no-dsn';
       key = createHash('sha256').update(`${dsn}::academia-helm::school-email-aes::v1`).digest();
@@ -103,7 +105,11 @@ export class EmailCryptoService {
    */
   decrypt(parts: { secretEncrypted: string; secretIv: string; secretTag: string }): string {
     try {
-      const decipher = createDecipheriv('aes-256-gcm', this.getKey(), Buffer.from(parts.secretIv, 'base64'));
+      const decipher = createDecipheriv(
+        'aes-256-gcm',
+        this.getKey(),
+        Buffer.from(parts.secretIv, 'base64'),
+      );
       decipher.setAuthTag(Buffer.from(parts.secretTag, 'base64'));
       const decrypted = Buffer.concat([
         decipher.update(Buffer.from(parts.secretEncrypted, 'base64')),
@@ -112,13 +118,19 @@ export class EmailCryptoService {
       return decrypted.toString('utf8');
     } catch (err: any) {
       // ⚠️ Ne JAMAIS inclure le secret ni la clé dans le log.
-      this.logger.error(`Déchiffrement e-mail échoué (clé changée ou donnée corrompue) : ${err?.name}`);
+      this.logger.error(
+        `Déchiffrement e-mail échoué (clé changée ou donnée corrompue) : ${err?.name}`,
+      );
       throw new EmailSecretDecryptError();
     }
   }
 
   /** true si les 3 colonnes sont présentes. */
-  hasSecret(row: { secretEncrypted?: string | null; secretIv?: string | null; secretTag?: string | null }): boolean {
+  hasSecret(row: {
+    secretEncrypted?: string | null;
+    secretIv?: string | null;
+    secretTag?: string | null;
+  }): boolean {
     return !!(row?.secretEncrypted && row?.secretIv && row?.secretTag);
   }
 }

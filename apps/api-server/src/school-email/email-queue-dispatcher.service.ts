@@ -22,6 +22,13 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../database/prisma.service';
 import { prismaUpdateDefaults, uuid } from '../common/utils/prisma-helpers';
 import { SchoolEmailSettingsService } from './school-email-settings.service';
+import { GoogleOauthService } from './google-oauth.service';
+import {
+  GmailApiError,
+  GoogleAuthExpiredError,
+  classifyGmailApiError,
+  safeGmailErrorMessage,
+} from './google-oauth.helpers';
 import {
   appendHtmlFooter,
   appendTextFooter,
@@ -66,6 +73,7 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
   constructor(
     private readonly prisma: PrismaService,
     private readonly settings: SchoolEmailSettingsService,
+    private readonly googleOauth: GoogleOauthService,
   ) {}
 
   /** Rattrapage au démarrage : traite les items dus (1 requête/déploiement). */
@@ -191,7 +199,11 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
     if (!settingsRow || settingsRow.mode === 'aucun') {
       // École déconnectée entre-temps → échec définitif (sans perte de log).
       for (const item of items) {
-        await this.finalizeFailure(item, 'EMAIL_SCHOOL_NOT_CONFIGURED', 'Connexion e-mail de l\'école déconnectée.');
+        await this.finalizeFailure(
+          item,
+          'EMAIL_SCHOOL_NOT_CONFIGURED',
+          "Connexion e-mail de l'école déconnectée.",
+        );
       }
       return;
     }
@@ -242,24 +254,26 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
         continue;
       }
 
-      // Envoi réel via le SMTP de l'école — avec découpage par destinataire
-      // si le plafond ou le débit ne permet pas tout envoyer d'un coup
-      // (CDC 4.4 : le 491e destinataire passe en Reporté, sans perte).
+      // Envoi réel — SMTP (phase 1) OU API Gmail OAuth2 (phase 2, tâche 183)
+      // avec découpage par destinataire si le plafond ou le débit ne permet
+      // pas tout envoyer d'un coup (CDC 4.4 : le 491e passe en Reporté).
       try {
-        const password = await this.settings.decryptSecret(tenantId);
-        const transport = createSmtpTransport({
-          host: settingsRow.smtpHost || 'smtp.gmail.com',
-          port: settingsRow.smtpPort || 587,
-          user: settingsRow.smtpUser || settingsRow.fromEmail,
-          password,
-        });
+        const isGoogle = settingsRow.mode === 'google_oauth';
+        const provider: 'google_oauth' | 'smtp' = isGoogle ? 'google_oauth' : 'smtp';
 
-        const allRecipients = [...(payload.to || []), ...(payload.cc || []), ...(payload.bcc || [])];
+        const allRecipients = [
+          ...(payload.to || []),
+          ...(payload.cc || []),
+          ...(payload.bcc || []),
+        ];
         // Nombre de destinataires envoyables MAINTENANT : plafond ET débit.
         const roomCap = await this.hasCapRoom(tenantId, settingsRow.dailyCap, allRecipients.length);
         let sendable = allRecipients.length;
         if (!roomCap.ok) {
-          sendable = Math.min(sendable, Math.max(0, settingsRow.dailyCap - (roomCap.used ?? settingsRow.dailyCap)));
+          sendable = Math.min(
+            sendable,
+            Math.max(0, settingsRow.dailyCap - (roomCap.used ?? settingsRow.dailyCap)),
+          );
         }
         sendable = Math.min(sendable, Math.max(0, budget));
 
@@ -285,29 +299,93 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
 
         // ⚠️ From BLOQUÉ côté serveur : Gmail impose l'adresse du compte
         // authentifié (CDC section 3, règles d'en-têtes).
-        const info = await transport.sendMail({
-          from: `"${settingsRow.fromName.replace(/"/g, '')}" <${settingsRow.fromEmail}>`,
+        const from = `"${settingsRow.fromName.replace(/"/g, '')}" <${settingsRow.fromEmail}>`;
+        const mailOptions = {
+          from,
           replyTo: payload.replyTo || settingsRow.replyTo || undefined,
           to: sendNow,
           subject: payload.subject,
           html,
           text,
           attachments: queueAttachmentsToNodemailer(payload.attachments),
-        });
-        transport.close();
+        };
+
+        let messageId: string | undefined;
+        if (isGoogle) {
+          // Phase 2 — API Gmail REST (portée gmail.send, PKCE) : jeton rafraîchi
+          // en interne, une reprise sur 401, invalid_grant → Expiré.
+          const result = await this.googleOauth.sendMail(tenantId, mailOptions);
+          messageId = result.messageId;
+        } else {
+          // Phase 1 — SMTP mot de passe d'application.
+          const password = await this.settings.decryptSecret(tenantId);
+          const transport = createSmtpTransport({
+            host: settingsRow.smtpHost || 'smtp.gmail.com',
+            port: settingsRow.smtpPort || 587,
+            user: settingsRow.smtpUser || settingsRow.fromEmail,
+            password,
+          });
+          const info = await transport.sendMail(mailOptions);
+          transport.close();
+          messageId = info?.messageId;
+        }
 
         if (remaining.length > 0) {
           // Portion envoyée + reste reporté à la libération de fenêtre.
-          await this.finalizePartialSuccess(item, sendNow, remaining, info?.messageId);
+          await this.finalizePartialSuccess(item, sendNow, remaining, messageId, provider);
         } else {
-          await this.finalizeSuccess(item, info?.messageId);
+          await this.finalizeSuccess(item, messageId, provider);
         }
         await this.settings.markVerified(tenantId);
         budget -= sendNow.length;
       } catch (err: any) {
         // Clé de chiffrement changée → connexion Expirée (CDC section 7.6)
         if (err?.name === 'EmailSecretDecryptError') {
-          await this.finalizeFailure(item, 'EMAIL_SECRET_EXPIRED', err?.message || 'Secret indéchiffrable');
+          await this.finalizeFailure(
+            item,
+            'EMAIL_SECRET_EXPIRED',
+            err?.message || 'Secret indéchiffrable',
+          );
+          continue;
+        }
+        // TÂCHE 183 — invalid_grant Google → connexion Expirée (CDC section 8)
+        if (err instanceof GoogleAuthExpiredError || err?.name === 'GoogleAuthExpiredError') {
+          await this.finalizeFailure(item, 'EMAIL_SCHOOL_EXPIRE', safeGmailErrorMessage(err));
+          continue;
+        }
+        // TÂCHE 183 — erreurs API Gmail : 429/5xx → relance, 401 → auth,
+        // invalid_grant → déjà traité ci-dessus, 4xx autre → définitif.
+        if (err instanceof GmailApiError || err?.name === 'GmailApiError') {
+          const kind = classifyGmailApiError(err);
+          const safeMsg = safeGmailErrorMessage(err);
+          if (kind === 'fatal_auth' || kind === 'fatal') {
+            await this.settings.markError(tenantId, safeMsg);
+            await this.finalizeFailure(
+              item,
+              kind === 'fatal_auth' ? 'GMAIL_AUTH_FAILED' : 'GMAIL_PERMANENT_ERROR',
+              safeMsg,
+            );
+          } else {
+            const attempts = item.attempts + 1;
+            if (attempts >= item.maxAttempts) {
+              await this.finalizeFailure(item, 'GMAIL_RETRIES_EXHAUSTED', safeMsg);
+            } else {
+              const next = new Date(
+                Date.now() + BACKOFF_MS[Math.min(attempts - 1, BACKOFF_MS.length - 1)],
+              );
+              await this.prisma.emailQueue.update({
+                where: { id: item.id },
+                data: {
+                  ...prismaUpdateDefaults(),
+                  status: 'en_attente',
+                  attempts,
+                  lastError: safeMsg.slice(0, 500),
+                  nextAttemptAt: next,
+                },
+              });
+              this.armTimer(item.id, next.getTime());
+            }
+          }
           continue;
         }
         const kind = classifySmtpError(err);
@@ -315,14 +393,20 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
         if (kind === 'fatal_auth' || kind === 'fatal') {
           // 5xx / auth → arrêt immédiat + connexion en statut Erreur (CDC 5.3)
           await this.settings.markError(tenantId, safeMsg);
-          await this.finalizeFailure(item, kind === 'fatal_auth' ? 'SMTP_AUTH_FAILED' : 'SMTP_PERMANENT_ERROR', safeMsg);
+          await this.finalizeFailure(
+            item,
+            kind === 'fatal_auth' ? 'SMTP_AUTH_FAILED' : 'SMTP_PERMANENT_ERROR',
+            safeMsg,
+          );
         } else {
           // 4xx / réseau → relance avec délai croissant (3 max)
           const attempts = item.attempts + 1;
           if (attempts >= item.maxAttempts) {
             await this.finalizeFailure(item, 'SMTP_RETRIES_EXHAUSTED', safeMsg);
           } else {
-            const next = new Date(Date.now() + BACKOFF_MS[Math.min(attempts - 1, BACKOFF_MS.length - 1)]);
+            const next = new Date(
+              Date.now() + BACKOFF_MS[Math.min(attempts - 1, BACKOFF_MS.length - 1)],
+            );
             await this.prisma.emailQueue.update({
               where: { id: item.id },
               data: {
@@ -342,7 +426,11 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
 
   // ─── Finalisation ─────────────────────────────────────────────────────────
 
-  private async finalizeSuccess(item: QueueRow, messageId?: string): Promise<void> {
+  private async finalizeSuccess(
+    item: QueueRow,
+    messageId: string | undefined,
+    provider: 'google_oauth' | 'smtp' = 'smtp',
+  ): Promise<void> {
     const payload = this.parsePayload(item.payload);
     await this.prisma.$transaction(async (tx) => {
       await tx.emailQueue.update({
@@ -351,19 +439,21 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
       });
       // Journal : une ligne PAR DESTINATAIRE (To, Cc, Bcc — CDC section 4.1).
       const recipients = [...(payload.to || []), ...(payload.cc || []), ...(payload.bcc || [])];
-      await this.insertSendLogRows(tx, item, recipients, 'envoye', null);
+      await this.insertSendLogRows(tx, item, recipients, 'envoye', null, provider);
       // Marque l'EmailLog du module Communication s'il est lié (bridge).
       if (payload.emailLogId) {
-        await tx.emailLog.update({
-          where: { id: payload.emailLogId },
-          data: {
-            status: 'SENT',
-            provider: 'smtp',
-            providerId: messageId ?? null,
-            sentAt: new Date(),
-            updatedAt: new Date(),
-          },
-        }).catch(() => {});
+        await tx.emailLog
+          .update({
+            where: { id: payload.emailLogId },
+            data: {
+              status: 'SENT',
+              provider,
+              providerId: messageId ?? null,
+              sentAt: new Date(),
+              updatedAt: new Date(),
+            },
+          })
+          .catch(() => {});
       }
     });
   }
@@ -377,12 +467,13 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
     item: QueueRow,
     sentRecipients: string[],
     remaining: string[],
-    messageId?: string,
+    messageId: string | undefined,
+    provider: 'google_oauth' | 'smtp' = 'smtp',
   ): Promise<void> {
     const payload = this.parsePayload(item.payload);
     const retryAt = await this.windowReleaseTime(item.tenantId);
     await this.prisma.$transaction(async (tx) => {
-      await this.insertSendLogRows(tx, item, sentRecipients, 'envoye', null);
+      await this.insertSendLogRows(tx, item, sentRecipients, 'envoye', null, provider);
       const newPayload: EmailQueuePayload = {
         ...payload,
         to: remaining,
@@ -399,16 +490,18 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
         },
       });
       if (payload.emailLogId) {
-        await tx.emailLog.update({
-          where: { id: payload.emailLogId },
-          data: {
-            status: 'SENT',
-            provider: 'smtp',
-            providerId: messageId ?? null,
-            sentAt: new Date(),
-            updatedAt: new Date(),
-          },
-        }).catch(() => {});
+        await tx.emailLog
+          .update({
+            where: { id: payload.emailLogId },
+            data: {
+              status: 'SENT',
+              provider,
+              providerId: messageId ?? null,
+              sentAt: new Date(),
+              updatedAt: new Date(),
+            },
+          })
+          .catch(() => {});
       }
     });
     this.armTimer(item.id, retryAt.getTime());
@@ -417,7 +510,11 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
     );
   }
 
-  private async finalizeFailure(item: QueueRow, errorCode: string, errorMessage: string): Promise<void> {
+  private async finalizeFailure(
+    item: QueueRow,
+    errorCode: string,
+    errorMessage: string,
+  ): Promise<void> {
     const payload = this.parsePayload(item.payload);
     await this.prisma.$transaction(async (tx) => {
       await tx.emailQueue.update({
@@ -431,14 +528,16 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
       const recipients = [...(payload.to || []), ...(payload.cc || []), ...(payload.bcc || [])];
       await this.insertSendLogRows(tx, item, recipients, 'echec', errorCode);
       if (payload.emailLogId) {
-        await tx.emailLog.update({
-          where: { id: payload.emailLogId },
-          data: {
-            status: 'FAILED',
-            errorMessage: `${errorCode}: ${errorMessage}`.slice(0, 500),
-            updatedAt: new Date(),
-          },
-        }).catch(() => {});
+        await tx.emailLog
+          .update({
+            where: { id: payload.emailLogId },
+            data: {
+              status: 'FAILED',
+              errorMessage: `${errorCode}: ${errorMessage}`.slice(0, 500),
+              updatedAt: new Date(),
+            },
+          })
+          .catch(() => {});
       }
     });
   }
@@ -460,6 +559,7 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
     recipients: string[],
     status: 'envoye' | 'echec',
     errorCode: string | null,
+    provider: 'google_oauth' | 'smtp' = 'smtp',
   ): Promise<void> {
     if (recipients.length === 0) return;
     const payload = this.parsePayload(item.payload);
@@ -470,7 +570,7 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
       category: item.category,
       recipient,
       subject: payload.subject.slice(0, 500),
-      provider: 'smtp' as const,
+      provider,
       status,
       errorCode,
       createdAt: new Date(),
@@ -511,7 +611,9 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
     return {
       ok: false,
       used,
-      retryAt: oldest ? new Date(oldest.getTime() + 24 * 60 * 60 * 1000) : new Date(Date.now() + 5 * 60_000),
+      retryAt: oldest
+        ? new Date(oldest.getTime() + 24 * 60 * 60 * 1000)
+        : new Date(Date.now() + 5 * 60_000),
     };
   }
 }

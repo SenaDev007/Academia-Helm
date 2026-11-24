@@ -36,7 +36,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Mail, Loader2, Save, Send, PlugZap, CheckCircle2, AlertTriangle,
   XCircle, Clock, HelpCircle, ShieldCheck, KeyRound, ExternalLink,
-  RefreshCw, Inbox, LogOut,
+  RefreshCw, Inbox, LogOut, Chrome,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAppSession } from "@/contexts/AppSessionContext";
@@ -128,6 +128,11 @@ export function SchoolEmailTab() {
   const [disconnecting, setDisconnecting] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
 
+  // Tâche 183 (Phase 2) — Google OAuth2
+  const [modeChoice, setModeChoice] = useState<"smtp" | "google">("smtp");
+  const [googleConnecting, setGoogleConnecting] = useState(false);
+  const [googleAvailable, setGoogleAvailable] = useState(false);
+
   const [settings, setSettings] = useState<SchoolEmailSettingsView | null>(null);
   const [usage, setUsage] = useState<SchoolEmailUsageView | null>(null);
   const [logEntries, setLogEntries] = useState<EmailSendLogEntry[]>([]);
@@ -155,6 +160,8 @@ export function SchoolEmailTab() {
         const data = await statusRes.json();
         setSettings(data.settings);
         setUsage(data.usage);
+        setGoogleAvailable(Boolean(data.googleOauthAvailable));
+        setModeChoice(data.settings?.mode === "google_oauth" ? "google" : "smtp");
         if (data.settings?.configured) {
           setForm((f) => ({
             ...f,
@@ -189,6 +196,27 @@ export function SchoolEmailTab() {
     loadAll();
   }, [loadAll]);
 
+  // ─── Retour du consentement Google (redirection du callback) ─────────
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const google = params.get("google");
+    if (google === "ok") {
+      toast.success("Compte Google connecté — l'école envoie désormais ses e-mails via Google OAuth2.", { duration: 8000 });
+    } else if (google === "erreur") {
+      const motif = params.get("motif");
+      let msg = "La connexion Google a échoué.";
+      try { if (motif) msg = decodeURIComponent(motif); } catch { /* brut */ }
+      toast.error(msg, { duration: 10000 });
+    }
+    if (google) {
+      params.delete("google");
+      params.delete("motif");
+      const qs = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+    }
+  }, []);
+
   // ─── Rafraîchissement du compteur toutes les 60 s (léger) ──────────────
   useEffect(() => {
     const t = setInterval(async () => {
@@ -206,11 +234,18 @@ export function SchoolEmailTab() {
   }, []);
 
   // ─── Enregistrement de la configuration ────────────────────────────────
-  const saveConfig = async () => {
-    if (!form.fromName.trim()) return toast.error("Le nom affiché de l'expéditeur est requis.");
-    if (!form.fromEmail.trim()) return toast.error("L'adresse Gmail de l'école est requise.");
+  const saveConfig = async (): Promise<void> => {
+    if (!form.fromName.trim()) {
+      toast.error("Le nom affiché de l'expéditeur est requis.");
+      return;
+    }
+    if (!form.fromEmail.trim()) {
+      toast.error("L'adresse Gmail de l'école est requise.");
+      return;
+    }
     if (!settings?.secretSet && !form.smtpPassword.trim()) {
-      return toast.error("Le mot de passe d'application est requis pour une première configuration.");
+      toast.error("Le mot de passe d'application est requis pour une première configuration.");
+      return;
     }
     setSaving(true);
     try {
@@ -250,10 +285,45 @@ export function SchoolEmailTab() {
     }
   };
 
+  // ─── Connexion Google OAuth2 (tâche 183 — phase 2) ──────────────────
+  const connectGoogle = async (): Promise<void> => {
+    if (!form.fromName.trim()) {
+      toast.error("Le nom affiché de l'expéditeur est requis.");
+      return;
+    }
+    setGoogleConnecting(true);
+    try {
+      const res = await fetch("/api/school-email/google/start", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fromName: form.fromName.trim(),
+          ...(form.fromEmail.trim() ? { fromEmail: form.fromEmail.trim() } : {}),
+          ...(form.replyTo.trim() ? { replyTo: form.replyTo.trim() } : {}),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.authUrl) {
+        window.location.href = data.authUrl; // consentement Google, puis retour automatique
+        return;
+      }
+      toast.error(data?.message || data?.error || "Impossible de démarrer la connexion Google.");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur réseau pendant le démarrage de la connexion Google.");
+    } finally {
+      setGoogleConnecting(false);
+    }
+  };
+
   // ─── E-mail de test ────────────────────────────────────────────────────
-  const sendTest = async () => {
+  const sendTest = async (): Promise<void> => {
     const email = (user as any)?.email;
-    if (!email) return toast.error("Aucune adresse e-mail sur votre compte utilisateur.");
+    if (!email) {
+      toast.error("Aucune adresse e-mail sur votre compte utilisateur.");
+      return;
+    }
     setTesting(true);
     try {
       const res = await fetch("/api/school-email/test", {
@@ -334,7 +404,7 @@ export function SchoolEmailTab() {
           <div className="font-semibold">Connexion e-mail : {st.label}</div>
           <div className="text-xs opacity-80">
             {settings?.configured
-              ? `${settings.fromName} — ${settings.fromEmail}`
+              ? `${settings.fromName} — ${settings.fromEmail} · ${settings.mode === "google_oauth" ? "Google OAuth2" : "SMTP"}`
               : "Aucune adresse d'envoi configurée pour cette école."}
             {settings?.lastVerifiedAt && ` · Dernière vérification : ${fmtDate(settings.lastVerifiedAt)}`}
           </div>
@@ -357,7 +427,7 @@ export function SchoolEmailTab() {
       </div>
 
       {/* ═══ Alerte plafond : messages reportés ══════════════════════════ */}
-      {(usage?.deferredCount ?? 0) > 0 && (
+      {(usage?.deferredCount ?? 0) > 0 && usage && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex items-start gap-3 text-amber-800">
           <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
           <div className="text-sm">
@@ -403,37 +473,98 @@ export function SchoolEmailTab() {
       <div className="rounded-lg border border-gray-200 bg-white p-4">
         <div className="font-medium text-gray-800 mb-3">Mode de connexion</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* SMTP (Phase 1 — actif) */}
-          <label className={cn(
-            "rounded-lg border-2 p-4 cursor-pointer transition-all",
-            "border-blue-500 bg-blue-50/50",
-          )}>
+          {/* Google OAuth2 (tâche 183 — recommandé) */}
+          <button
+            type="button"
+            disabled={!googleAvailable}
+            onClick={() => setModeChoice("google")}
+            className={cn(
+              "rounded-lg border-2 p-4 text-left transition-all",
+              googleAvailable
+                ? modeChoice === "google"
+                  ? "border-blue-500 bg-blue-50/50 cursor-pointer"
+                  : "border-gray-200 hover:border-blue-300 cursor-pointer"
+                : "border-gray-200 opacity-60 cursor-not-allowed select-none",
+            )}
+          >
             <div className="flex items-center gap-2 font-semibold text-gray-900">
-              <KeyRound className="h-4 w-4 text-blue-600" /> SMTP avec mot de passe d'application
-              <CheckCircle2 className="h-4 w-4 text-blue-600 ml-auto" />
+              <Chrome className="h-4 w-4 text-blue-600" /> Google (OAuth2)
+              {settings?.mode === "google_oauth" ? (
+                <span className="ml-auto text-[10px] uppercase tracking-wide bg-green-100 text-green-700 rounded-full px-2 py-0.5">
+                  Connecté
+                </span>
+              ) : googleAvailable ? (
+                <span className="ml-auto text-[10px] uppercase tracking-wide bg-blue-100 text-blue-700 rounded-full px-2 py-0.5">
+                  Recommandé
+                </span>
+              ) : (
+                <span className="ml-auto text-[10px] uppercase tracking-wide bg-gray-200 text-gray-600 rounded-full px-2 py-0.5">
+                  Non disponible
+                </span>
+              )}
             </div>
             <p className="text-xs text-gray-600 mt-1">
-              Recommandé pour démarrer — fonctionne avec tout compte Gmail muni de la validation en deux étapes.
+              {googleAvailable
+                ? "Connexion en un clic, sans mot de passe — l'école autorise son compte Gmail et Academia Helm envoie en son nom (portée « envoyer des e-mails » uniquement)."
+                : "Non activé sur la plateforme pour le moment — YEHI OR Tech doit configurer le client Google."}
             </p>
-          </label>
-          {/* Google OAuth2 (Phase 2 — grisé) */}
-          <div className="rounded-lg border-2 border-gray-200 p-4 opacity-60 cursor-not-allowed select-none">
-            <div className="flex items-center gap-2 font-semibold text-gray-500">
-              <ShieldCheck className="h-4 w-4" /> Google (OAuth2)
-              <span className="ml-auto text-[10px] uppercase tracking-wide bg-gray-200 text-gray-600 rounded-full px-2 py-0.5">
-                Bientôt disponible
-              </span>
+          </button>
+
+          {/* SMTP (Phase 1 — mot de passe d'application) */}
+          <button
+            type="button"
+            onClick={() => setModeChoice("smtp")}
+            className={cn(
+              "rounded-lg border-2 p-4 text-left transition-all",
+              modeChoice === "smtp"
+                ? "border-blue-500 bg-blue-50/50 cursor-pointer"
+                : "border-gray-200 hover:border-blue-300 cursor-pointer",
+            )}
+          >
+            <div className="flex items-center gap-2 font-semibold text-gray-900">
+              <KeyRound className="h-4 w-4 text-blue-600" /> SMTP avec mot de passe d'application
+              {settings?.mode === "google_oauth" && modeChoice === "smtp" && (
+                <span className="ml-auto text-[10px] uppercase tracking-wide bg-amber-100 text-amber-700 rounded-full px-2 py-0.5">
+                  Retour arrière
+                </span>
+              )}
             </div>
-            <p className="text-xs text-gray-400 mt-1">
-              Connexion en un clic sans mot de passe — livré en phase 2. La migration se fera en un clic.
+            <p className="text-xs text-gray-600 mt-1">
+              {settings?.mode === "google_oauth"
+                ? "Revenir au SMTP — le mot de passe d'application devra être ressaisi (il est remplacé par le jeton Google)."
+                : "Fonctionne avec tout compte Gmail muni de la validation en deux étapes."}
             </p>
-          </div>
+          </button>
         </div>
       </div>
 
-      {/* ═══ 3 + 4. Formulaire commun + SMTP ═════════════════════════════ */}
+      {/* ═══ 3 + 4. Formulaire commun + mode choisi ═════════════════════════════ */}
       <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-4">
-        <div className="font-medium text-gray-800">Configuration SMTP de l&apos;école</div>
+        <div className="font-medium text-gray-800">
+          {modeChoice === "google" ? "Connexion Google de l'école" : "Configuration SMTP de l'école"}
+        </div>
+
+        {modeChoice === "google" && settings?.mode === "google_oauth" && settings?.configured && (
+          <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800 flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+            <div>
+              Compte actuellement connecté : <strong>{settings.fromEmail}</strong>. Cliquer à nouveau sur
+              « Connecter Google » remplace le jeton (utile après un changement de compte ou une révocation).
+            </div>
+          </div>
+        )}
+
+        {modeChoice === "google" && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 flex items-start gap-2">
+            <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5" />
+            <div>
+              Vous serez redirigé vers Google pour autoriser l'envoi d'e-mails depuis le compte de l'école
+              (portée <strong>gmail.send</strong> uniquement — aucun accès en lecture). Aucun mot de passe
+              n'est stocké : un jeton chiffré AES-256-GCM est conservé et peut être révoqué à tout moment
+              depuis le compte Google ou le bouton « Déconnecter ».
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -462,7 +593,9 @@ export function SchoolEmailTab() {
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
             <p className="text-xs text-gray-500 mt-1">
-              Gmail impose que l&apos;adresse d&apos;envoi soit celle du compte authentifié.
+              {modeChoice === "google"
+                ? "Facultatif — pré-sélectionne le compte Google au moment de l'autorisation. L'adresse réellement autorisée devient l'adresse d'envoi."
+                : "Gmail impose que l'adresse d'envoi soit celle du compte authentifié."}
             </p>
           </div>
 
@@ -478,69 +611,84 @@ export function SchoolEmailTab() {
             <p className="text-xs text-gray-500 mt-1">Par défaut la même adresse — modifiable.</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Serveur SMTP</label>
-              <input
-                type="text"
-                value={form.smtpHost}
-                onChange={(e) => setForm({ ...form, smtpHost: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Port</label>
-              <select
-                value={form.smtpPort}
-                onChange={(e) => setForm({ ...form, smtpPort: Number(e.target.value) })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value={587}>587 (STARTTLS — défaut)</option>
-                <option value={465}>465 (SSL)</option>
-              </select>
-            </div>
-          </div>
+          {modeChoice === "smtp" && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Serveur SMTP</label>
+                  <input
+                    type="text"
+                    value={form.smtpHost}
+                    onChange={(e) => setForm({ ...form, smtpHost: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Port</label>
+                  <select
+                    value={form.smtpPort}
+                    onChange={(e) => setForm({ ...form, smtpPort: Number(e.target.value) })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value={587}>587 (STARTTLS — défaut)</option>
+                    <option value={465}>465 (SSL)</option>
+                  </select>
+                </div>
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Identifiant SMTP</label>
-            <input
-              type="text"
-              value={form.smtpUser}
-              onChange={(e) => setForm({ ...form, smtpUser: e.target.value })}
-              placeholder={form.fromEmail || "ecole@gmail.com"}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-            <p className="text-xs text-gray-500 mt-1">En général l&apos;adresse Gmail elle-même.</p>
-          </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Identifiant SMTP</label>
+                <input
+                  type="text"
+                  value={form.smtpUser}
+                  onChange={(e) => setForm({ ...form, smtpUser: e.target.value })}
+                  placeholder={form.fromEmail || "ecole@gmail.com"}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">En général l&apos;adresse Gmail elle-même.</p>
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Mot de passe d&apos;application{" "}
-              {settings?.secretSet && <span className="text-green-600 font-normal">(enregistré : ••••)</span>}
-            </label>
-            <input
-              type="password"
-              value={form.smtpPassword}
-              onChange={(e) => setForm({ ...form, smtpPassword: e.target.value })}
-              placeholder={settings?.secretSet ? "•••• (laisser vide pour conserver)" : "16 caractères générés par Google"}
-              autoComplete="new-password"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Chiffré (AES-256-GCM) dès l&apos;enregistrement — jamais renvoyé au navigateur ensuite.
-            </p>
-          </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mot de passe d&apos;application{" "}
+                  {settings?.secretSet && <span className="text-green-600 font-normal">(enregistré : ••••)</span>}
+                </label>
+                <input
+                  type="password"
+                  value={form.smtpPassword}
+                  onChange={(e) => setForm({ ...form, smtpPassword: e.target.value })}
+                  placeholder={settings?.secretSet ? "•••• (laisser vide pour conserver)" : "16 caractères générés par Google"}
+                  autoComplete="new-password"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Chiffré (AES-256-GCM) dès l&apos;enregistrement — jamais renvoyé au navigateur ensuite.
+                </p>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-3 pt-2">
-          <button
-            onClick={saveConfig}
-            disabled={saving}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-          >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Enregistrer et vérifier
-          </button>
+          {modeChoice === "google" ? (
+            <button
+              onClick={connectGoogle}
+              disabled={googleConnecting || !googleAvailable}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {googleConnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Chrome className="h-4 w-4" />}
+              {settings?.mode === "google_oauth" ? "Reconnecter Google" : "Connecter Google"}
+            </button>
+          ) : (
+            <button
+              onClick={saveConfig}
+              disabled={saving}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Enregistrer et vérifier
+            </button>
+          )}
 
           {/* 5. Bouton test — vers l'adresse de l'utilisateur connecté */}
           <button
@@ -568,11 +716,26 @@ export function SchoolEmailTab() {
           className="w-full flex items-center gap-2 p-4 text-left font-medium text-gray-800 hover:bg-gray-50 rounded-lg"
         >
           <HelpCircle className="h-4 w-4 text-blue-600" />
-          Guide : connecter le Gmail de l&apos;école en 4 étapes
+          Guide : connecter le Gmail de l&apos;école
           <span className="ml-auto text-gray-400 text-sm">{showGuide ? "Masquer" : "Afficher"}</span>
         </button>
         {showGuide && (
-          <div className="px-4 pb-4 space-y-3 text-sm text-gray-700">
+          <div className="px-4 pb-4 space-y-4 text-sm text-gray-700">
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-2">
+              <div className="font-semibold text-blue-900 flex items-center gap-2">
+                <Chrome className="h-4 w-4" /> Méthode recommandée — Google OAuth2 (sans mot de passe)
+              </div>
+              <ol className="space-y-2 list-decimal list-inside text-blue-900/90">
+                <li>Sélectionnez le mode <strong>Google (OAuth2)</strong> ci-dessus, vérifiez le nom affiché de l&apos;école, puis cliquez <strong>Connecter Google</strong>.</li>
+                <li>Sur la page Google qui s&apos;ouvre, connectez le compte Gmail de l&apos;école et validez « Envoyer des e-mails en votre nom ». Vous revenez automatiquement ici — le statut passe à <strong>Actif</strong>.</li>
+              </ol>
+              <p className="text-xs text-blue-900/70">
+                Fonctionne même si le compte n&apos;a pas de validation en deux étapes ni de mot de passe d&apos;application
+                (y compris Google Workspace). L&apos;autorisation se révoque depuis le compte Google → Sécurité → Applications tierces.
+              </p>
+            </div>
+
+            <div className="font-medium text-gray-800">Variante — SMTP avec mot de passe d&apos;application</div>
             <ol className="space-y-3 list-decimal list-inside">
               <li>
                 <strong>Activez la validation en deux étapes</strong> sur le compte Google de l&apos;école
@@ -614,7 +777,7 @@ export function SchoolEmailTab() {
                 (domaine professionnel de l&apos;école) interdisent les mots de passe d&apos;application.
                 Demandez alors à l&apos;administrateur Workspace de votre école de les autoriser
                 (Console d&apos;administration → Sécurité → Contrôle des accès → Mots de passe des applications).
-                La connexion Google OAuth2 (phase 2) supprimera cette contrainte.
+                La connexion Google (OAuth2) ci-dessus supprime cette contrainte.
               </div>
             </div>
           </div>

@@ -43,9 +43,7 @@ import {
 export class SchoolEmailNotConfiguredError extends Error {
   readonly errorCode = 'EMAIL_SCHOOL_NOT_CONFIGURED';
   constructor() {
-    super(
-      "Configurez l'e-mail de votre école dans Paramètres, onglet E-mail.",
-    );
+    super("Configurez l'e-mail de votre école dans Paramètres, onglet E-mail.");
     this.name = 'SchoolEmailNotConfiguredError';
   }
 }
@@ -105,7 +103,7 @@ export class CentralEmailService {
       // Connexion en Erreur (5xx/auth) ou Expirée (clé changée / invalid_grant).
       const msg =
         settingsRow.status === 'erreur'
-          ? 'La connexion e-mail de votre école est en erreur — vérifiez l\'onglet E-mail des Paramètres.'
+          ? "La connexion e-mail de votre école est en erreur — vérifiez l'onglet E-mail des Paramètres."
           : 'La connexion e-mail de votre école a expiré — reconnectez-la dans Paramètres, onglet E-mail.';
       this.logger.warn(
         `Envoi refusé (tenant ${input.schoolId}) : connexion e-mail en statut « ${settingsRow.status} ».`,
@@ -151,11 +149,15 @@ export class CentralEmailService {
           status: 'echec',
           recipientCount: total,
           queueItemId,
-          error: 'Échec de l\'envoi SMTP — vérifiez la configuration.',
+          error: "Échec de l'envoi SMTP — vérifiez la configuration.",
           errorCode: 'SMTP_SEND_FAILED',
         };
       }
-      return { status: (finalStatus ?? 'en_file') as CentralEmailSendResult['status'], recipientCount: total, queueItemId };
+      return {
+        status: (finalStatus ?? 'en_file') as CentralEmailSendResult['status'],
+        recipientCount: total,
+        queueItemId,
+      };
     }
 
     return { status: 'en_file', recipientCount: total, queueItemId };
@@ -193,13 +195,15 @@ export class CentralEmailService {
           status: 'echec',
           recipientCount: rcpt.total,
           sendLogIds,
-          error: 'Échec de l\'envoi via le transporteur plateforme.',
+          error: "Échec de l'envoi via le transporteur plateforme.",
           errorCode: 'PLATFORM_SEND_FAILED',
         };
       }
       return { status: 'envoye', recipientCount: rcpt.total, sendLogIds };
     } catch (err: any) {
-      await this.writeSendLogRows(input, rcpt, 'resend', 'echec', 'PLATFORM_SEND_THREW').catch(() => {});
+      await this.writeSendLogRows(input, rcpt, 'resend', 'echec', 'PLATFORM_SEND_THREW').catch(
+        () => {},
+      );
       this.logger.error(`Envoi system (module ${input.module}) échoué : ${err?.message}`);
       return {
         status: 'echec',
@@ -213,13 +217,18 @@ export class CentralEmailService {
   /** Pièces jointes du format file (base64) vers le format EmailService. */
   private toNodemailerAttachments(
     attachments?: EmailAttachment181[],
-  ): Array<{ filename: string; content?: Buffer | string; path?: string; contentType?: string }> | undefined {
+  ):
+    | Array<{ filename: string; content?: Buffer | string; path?: string; contentType?: string }>
+    | undefined {
     if (!attachments || attachments.length === 0) return undefined;
     return attachments.map((a) => ({
       filename: a.filename,
-      content: a.content !== undefined
-        ? (a.contentBase64 ? Buffer.from(a.content, 'base64') : a.content)
-        : undefined,
+      content:
+        a.content !== undefined
+          ? a.contentBase64
+            ? Buffer.from(a.content, 'base64')
+            : a.content
+          : undefined,
       path: a.path,
       contentType: a.contentType,
     }));
@@ -281,7 +290,10 @@ export class CentralEmailService {
       errorCode: errorCode ?? null,
     }));
     try {
-      const created = await this.prisma.emailSendLog.createMany({ data: rows, skipDuplicates: true });
+      const created = await this.prisma.emailSendLog.createMany({
+        data: rows,
+        skipDuplicates: true,
+      });
       // createMany ne retourne pas les ids — les ids exacts ne sont utiles
       // qu'au dispatcher, qui écrit par updateMany (par queueItemId).
       void created;
@@ -314,7 +326,12 @@ export class CentralEmailService {
     html: string;
     text?: string;
     replyTo?: string; // reply-to calculé par EmailLogService (token ou override)
-    attachments?: Array<{ filename: string; content?: Buffer | string; path?: string; contentType?: string }>;
+    attachments?: Array<{
+      filename: string;
+      content?: Buffer | string;
+      path?: string;
+      contentType?: string;
+    }>;
     emailLogId?: string;
     triggeredByUserId?: string;
   }): Promise<'sent' | 'queued' | 'deferred' | 'failed'> {
@@ -342,9 +359,7 @@ export class CentralEmailService {
     const module181 = this.mapCommunicationModule(params.module, params.category);
     const attachments: EmailAttachment181[] | undefined = params.attachments?.map((a) => ({
       filename: a.filename,
-      content: Buffer.isBuffer(a.content)
-        ? a.content.toString('base64')
-        : a.content,
+      content: Buffer.isBuffer(a.content) ? a.content.toString('base64') : a.content,
       contentBase64: Buffer.isBuffer(a.content),
       path: a.path,
       contentType: a.contentType,
@@ -392,8 +407,14 @@ export class CentralEmailService {
   }
 
   /** Fusionne emailLogId dans le payload JSON de l'élément de file. */
-  private async mergePayloadWithEmailLogId(queueItemId: string, emailLogId: string): Promise<string> {
-    const item = await this.prisma.emailQueue.findUnique({ where: { id: queueItemId }, select: { payload: true } });
+  private async mergePayloadWithEmailLogId(
+    queueItemId: string,
+    emailLogId: string,
+  ): Promise<string> {
+    const item = await this.prisma.emailQueue.findUnique({
+      where: { id: queueItemId },
+      select: { payload: true },
+    });
     if (!item) return JSON.stringify({ emailLogId });
     try {
       const payload = JSON.parse(item.payload) as EmailQueuePayload;

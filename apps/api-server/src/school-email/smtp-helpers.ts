@@ -28,7 +28,11 @@ export function classifySmtpError(err: unknown): SmtpErrorKind {
 
   // 1. Code de réponse SMTP explicite (Nodemailer : err.responseCode)
   const code: number | undefined =
-    typeof e.responseCode === 'number' ? e.responseCode : typeof e.smtpCode === 'number' ? e.smtpCode : undefined;
+    typeof e.responseCode === 'number'
+      ? e.responseCode
+      : typeof e.smtpCode === 'number'
+        ? e.smtpCode
+        : undefined;
 
   // 2. Authentification refusée → fatal + connexion en Erreur
   //    (vérifié AVANT le 5xx générique : 535 est un 5xx de type auth)
@@ -60,8 +64,17 @@ export function classifySmtpError(err: unknown): SmtpErrorKind {
 
   // 5. Erreurs réseau / temporaires Nodemailer et Node → relance
   const retryableCodes = [
-    'ETIMEDOUT', 'ECONNECTION', 'ECONNRESET', 'ESOCKET', 'EPIPE', 'EDNS',
-    'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH',
+    'ETIMEDOUT',
+    'ECONNECTION',
+    'ECONNRESET',
+    'ESOCKET',
+    'EPIPE',
+    'EDNS',
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'ECONNREFUSED',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
   ];
   if (retryableCodes.includes(codeStr)) return 'retryable';
 
@@ -131,7 +144,13 @@ export function normalizeRecipients(
   const norm = (v?: string | string[] | null): string[] => {
     if (!v) return [];
     const arr = Array.isArray(v) ? v : [v];
-    return arr.map((s) => String(s || '').trim().toLowerCase()).filter((s) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s));
+    return arr
+      .map((s) =>
+        String(s || '')
+          .trim()
+          .toLowerCase(),
+      )
+      .filter((s) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s));
   };
   const t = norm(to);
   const c = norm(cc);
@@ -166,13 +185,23 @@ export function createSmtpTransport(cfg: SmtpTransportConfig): Transporter {
 // ─── Conversion des pièces jointes de la file (base64) vers Nodemailer ─────
 
 export function queueAttachmentsToNodemailer(
-  attachments?: Array<{ filename: string; content?: string; contentBase64?: boolean; path?: string; contentType?: string }>,
+  attachments?: Array<{
+    filename: string;
+    content?: string;
+    contentBase64?: boolean;
+    path?: string;
+    contentType?: string;
+  }>,
 ): Array<{ filename: string; content?: Buffer; path?: string; contentType?: string }> | undefined {
   if (!attachments || attachments.length === 0) return undefined;
   return attachments.map((a) => {
-    const out: { filename: string; content?: Buffer; path?: string; contentType?: string } = { filename: a.filename };
+    const out: { filename: string; content?: Buffer; path?: string; contentType?: string } = {
+      filename: a.filename,
+    };
     if (a.content !== undefined) {
-      out.content = a.contentBase64 ? Buffer.from(a.content, 'base64') : Buffer.from(a.content, 'utf8');
+      out.content = a.contentBase64
+        ? Buffer.from(a.content, 'base64')
+        : Buffer.from(a.content, 'utf8');
     } else if (a.path) {
       out.path = a.path;
     }

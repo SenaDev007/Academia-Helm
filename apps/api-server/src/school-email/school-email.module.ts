@@ -29,6 +29,7 @@ import { EmailCryptoService } from './email-crypto.service';
 import { SchoolEmailSettingsService } from './school-email-settings.service';
 import { CentralEmailService } from './central-email.service';
 import { EmailQueueDispatcherService } from './email-queue-dispatcher.service';
+import { GoogleOauthService } from './google-oauth.service';
 import { SchoolEmailController } from './school-email.controller';
 
 @Global()
@@ -44,12 +45,16 @@ import { SchoolEmailController } from './school-email.controller';
     SchoolEmailSettingsService,
     CentralEmailService,
     EmailQueueDispatcherService,
+    // ⭐ TÂCHE 183 (Phase 2) — Google OAuth2 PKCE + API Gmail (gmail.send).
+    //    CacheService (CommonModule @Global) porte les states OAuth (TTL 10 min).
+    GoogleOauthService,
   ],
   exports: [
     EmailCryptoService,
     SchoolEmailSettingsService,
     CentralEmailService,
     EmailQueueDispatcherService,
+    GoogleOauthService,
   ],
 })
 export class SchoolEmailModule implements OnModuleInit {

@@ -115,7 +115,9 @@ export class SchoolEmailSettingsService {
     const replyTo = (dto.replyTo || fromEmail).trim().toLowerCase();
 
     if (smtpPort !== 587 && smtpPort !== 465) {
-      throw new BadRequestException('Port SMTP non supporté pour Gmail : utilisez 587 (STARTTLS) ou 465 (SSL).');
+      throw new BadRequestException(
+        'Port SMTP non supporté pour Gmail : utilisez 587 (STARTTLS) ou 465 (SSL).',
+      );
     }
 
     const existing = await this.findRaw(tenantId);
@@ -132,7 +134,7 @@ export class SchoolEmailSettingsService {
       };
     } else {
       throw new BadRequestException(
-        'Le mot de passe d\'application est requis pour une première configuration.',
+        "Le mot de passe d'application est requis pour une première configuration.",
       );
     }
 
@@ -157,7 +159,72 @@ export class SchoolEmailSettingsService {
       create: { ...prismaCreateDefaults(), tenantId, ...data },
     });
 
-    this.logger.log(`Configuration e-mail enregistrée (tenant ${tenantId}, user ${userId}) — secret ${secretCols ? 'chiffré' : 'inchangé'}`);
+    this.logger.log(
+      `Configuration e-mail enregistrée (tenant ${tenantId}, user ${userId}) — secret ${secretCols ? 'chiffré' : 'inchangé'}`,
+    );
+    return this.getView(tenantId);
+  }
+
+  /**
+   * TÂCHE 183 (Phase 2, CDC section 8) — Enregistre une connexion Google
+   * OAuth2 issue du callback : refresh token chiffré AES-256-GCM (mêmes
+   * colonnes que le mot de passe SMTP), mode google_oauth, statut Actif.
+   *
+   * From bloqué : fromEmail = adresse du compte RÉELLEMENT autorisé (rule
+   * Gmail — le compte authentifié). Migration 1 clic : fromName/replyTo
+   * existants conservés (param > existant > nom du tenant), plafond conservé.
+   */
+  async saveGoogleConnection(
+    tenantId: string,
+    userId: string,
+    p: { refreshToken: string; googleEmail: string; fromName?: string; replyTo?: string },
+  ): Promise<SchoolEmailSettingsView> {
+    if (!p.refreshToken || p.refreshToken.length < 20) {
+      throw new BadRequestException('Refresh token Google invalide.');
+    }
+    const googleEmail = p.googleEmail.trim().toLowerCase();
+
+    const existing = await this.findRaw(tenantId);
+
+    // fromName : param (formulaire au moment du « Connecter Google ») >
+    // existant (migration 1 clic sans ressaisir) > nom du tenant.
+    let fromName = (p.fromName || existing?.fromName || '').trim();
+    if (!fromName) {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { name: true },
+      });
+      fromName = (tenant?.name || 'École').trim();
+    }
+
+    // Reply-To : param > existant > adresse Google (défaut).
+    const replyTo = (p.replyTo || existing?.replyTo || googleEmail).trim().toLowerCase();
+
+    const secretCols = this.crypto.encrypt(p.refreshToken.trim());
+    const data = {
+      mode: 'google_oauth' as const,
+      fromName,
+      fromEmail: googleEmail, // compte authentifié — imposé par Gmail
+      replyTo,
+      // Les réglages SMTP sont conservés pour un éventuel retour arrière
+      // (le secret étant partagé, un retour SMTP exigera de ressaisir le
+      // mot de passe d'application — documenté dans l'onglet).
+      ...secretCols,
+      status: 'actif' as const, // l'échange du code a déjà validé le jeton
+      lastError: null,
+      lastVerifiedAt: new Date(),
+      dailyCap: existing?.dailyCap ?? 490,
+    };
+
+    await this.prisma.schoolEmailSetting.upsert({
+      where: { tenantId },
+      update: { ...prismaUpdateDefaults(), ...data },
+      create: { ...prismaCreateDefaults(), tenantId, ...data },
+    });
+
+    this.logger.log(
+      `Connexion Google OAuth2 enregistrée (tenant ${tenantId}, user ${userId}, compte ${googleEmail}) — refresh token chiffré AES-256-GCM`,
+    );
     return this.getView(tenantId);
   }
 
@@ -165,7 +232,12 @@ export class SchoolEmailSettingsService {
   async markVerified(tenantId: string): Promise<void> {
     await this.prisma.schoolEmailSetting.updateMany({
       where: { tenantId },
-      data: { ...prismaUpdateDefaults(), status: 'actif', lastError: null, lastVerifiedAt: new Date() },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: 'actif',
+        lastError: null,
+        lastVerifiedAt: new Date(),
+      },
     });
   }
 
@@ -173,7 +245,12 @@ export class SchoolEmailSettingsService {
   async markError(tenantId: string, errorMessage: string): Promise<void> {
     await this.prisma.schoolEmailSetting.updateMany({
       where: { tenantId },
-      data: { ...prismaUpdateDefaults(), status: 'erreur', lastError: errorMessage.slice(0, 500), lastVerifiedAt: new Date() },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: 'erreur',
+        lastError: errorMessage.slice(0, 500),
+        lastVerifiedAt: new Date(),
+      },
     });
   }
 
@@ -227,7 +304,10 @@ export class SchoolEmailSettingsService {
       });
     } catch (err) {
       if (err instanceof EmailSecretDecryptError) {
-        await this.markExpired(tenantId, 'Secret indéchiffrable — reconfigurez la connexion e-mail de l\'école.');
+        await this.markExpired(
+          tenantId,
+          "Secret indéchiffrable — reconfigurez la connexion e-mail de l'école.",
+        );
       }
       throw err;
     }
@@ -248,18 +328,24 @@ export class SchoolEmailSettingsService {
         select: { dailyCap: true },
       }),
       // ⚠️ Adaptateur PrismaPg : raw SQL — colonnes camelCase entre guillemets.
-      this.prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM "email_send_log"
+      this.prisma.$queryRaw<
+        Array<{ count: bigint }>
+      >`SELECT COUNT(*)::bigint AS count FROM "email_send_log"
          WHERE "tenantId" = ${tenantId} AND "provider" <> 'resend'
            AND "status" IN ('pending', 'envoye')
            AND "createdAt" > ${since}`,
-      this.prisma.$queryRaw<Array<{ oldest: Date | null }>>`SELECT MIN("createdAt") AS oldest FROM "email_send_log"
+      this.prisma.$queryRaw<
+        Array<{ oldest: Date | null }>
+      >`SELECT MIN("createdAt") AS oldest FROM "email_send_log"
          WHERE "tenantId" = ${tenantId} AND "provider" <> 'resend'
            AND "status" IN ('pending', 'envoye')
            AND "createdAt" > ${since}`,
       this.prisma.emailQueue.count({
         where: { tenantId, status: 'reporte' },
       }),
-      this.prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM "email_send_log"
+      this.prisma.$queryRaw<
+        Array<{ count: bigint }>
+      >`SELECT COUNT(*)::bigint AS count FROM "email_send_log"
          WHERE "tenantId" = ${tenantId} AND "category" = 'test'
            AND "createdAt" > ${new Date(Date.now() - 60 * 60 * 1000)}`,
     ]);
@@ -270,8 +356,9 @@ export class SchoolEmailSettingsService {
     return {
       sent24h,
       dailyCap: settings?.dailyCap ?? 490,
-      windowResetsAt:
-        oldestAt ? new Date(new Date(oldestAt).getTime() + 24 * 60 * 60 * 1000).toISOString() : null,
+      windowResetsAt: oldestAt
+        ? new Date(new Date(oldestAt).getTime() + 24 * 60 * 60 * 1000).toISOString()
+        : null,
       deferredCount: deferredAgg,
       testCountLastHour: Number(testAgg[0]?.count ?? 0),
     };

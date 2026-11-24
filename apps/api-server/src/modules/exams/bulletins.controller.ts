@@ -782,7 +782,17 @@ export class BulletinsController {
     }
 
     // 4. Message WhatsApp prédéfini — structuré et professionnel
+    //    ⭐ 2026-11-24 — TROIS correctifs promoteur :
+    //      (a) FIN des emojis 📊🏅⭐ dans le texte — certains clients WhatsApp
+    //          (Desktop/WebView via lien wa.me) affichent un losange « � » à
+    //          la place des emojis hors plan BMP : message 100 % texte,
+    //          rendu propre partout ;
+    //      (b) rang accordé au sexe de l'élève — « 1ère » pour une fille
+    //          (studentGender F/FEMALE), « 1er » pour un garçon ;
+    //      (c) piste EN : « Position: 1st of 30 » (ordinal anglais) au lieu
+    //          du « Rang : 1er » français qui restait collé au message EN.
     const isEn = body.scopeLang === 'EN';
+    const isFeminine = body.studentGender === 'FEMALE' || body.studentGender === 'F';
     const isMaternelle = !!body.isMaternelle;
     const totalStudents = body.totalStudents ?? null;
     const generalAverage = typeof body.generalAverage === 'number' ? body.generalAverage : null;
@@ -790,15 +800,34 @@ export class BulletinsController {
     const appreciation = body.appreciationGlobale || null;
     const scaleLabel = isEn ? '/100' : '/20';
     const avgLine = isMaternelle
-      ? (appreciation ? `Résultat global : ${appreciation}` : null)
-      : (generalAverage !== null ? `Moyenne générale : ${Number(generalAverage).toFixed(2)}${scaleLabel}` : null);
-    const rankLine = classRank && totalStudents
-      ? `Rang : ${classRank}${Number(classRank) === 1 ? 'er' : 'e'} sur ${totalStudents}`
-      : (classRank ? `Rang : ${classRank}` : null);
-    const mentionLine = !isMaternelle && appreciation ? `Mention : ${appreciation}` : null;
+      ? (appreciation ? (isEn ? `Overall result: ${appreciation}` : `Résultat global : ${appreciation}`) : null)
+      : (generalAverage !== null ? (isEn ? `General average: ${Number(generalAverage).toFixed(2)}${scaleLabel}` : `Moyenne générale : ${Number(generalAverage).toFixed(2)}${scaleLabel}`) : null);
+    // Ordinal français accordé (1er/1ère) et ordinal anglais (1st/2nd/3rd)
+    const frOrdinal = (n: number) => (n === 1 ? (isFeminine ? '1ère' : '1er') : `${n}e`);
+    const enOrdinalW = (n: number) => {
+      const rem10 = n % 10, rem100 = n % 100;
+      const suf = rem10 === 1 && rem100 !== 11 ? 'st'
+        : rem10 === 2 && rem100 !== 12 ? 'nd'
+        : rem10 === 3 && rem100 !== 13 ? 'rd' : 'th';
+      return `${n}${suf}`;
+    };
+    const rankLine = isEn
+      ? (classRank && totalStudents
+        ? `Position: ${enOrdinalW(Number(classRank))} of ${totalStudents}`
+        : (classRank ? `Position: ${enOrdinalW(Number(classRank))}` : null))
+      : (classRank && totalStudents
+        ? `Rang : ${frOrdinal(Number(classRank))} sur ${totalStudents}`
+        : (classRank ? `Rang : ${frOrdinal(Number(classRank))}` : null));
+    const mentionLine = !isMaternelle && appreciation
+      ? (isEn ? `Mention: ${appreciation}` : `Mention : ${appreciation}`)
+      : null;
 
     const schoolName = pdfData.schoolName || "l'établissement";
     const studentName = body.studentName || 'l\'élève';
+    // ⭐ 2026-11-24 — Élision « de Élise » → « d'Élise » (même correctif que le
+    //    titre PDF « Bulletin d'évaluation » — plus de « bulletin de É… »).
+    const deStudent = /^[aeiouyàâéèêëîïôûùœyh]/i.test(studentName)
+      ? `d'${studentName}` : `de ${studentName}`;
     const periodPart = [
       body.periodName,
       body.evaluationTypeName ? `${isEn ? 'Evaluation' : 'Évaluation'} : ${body.evaluationTypeName}` : null,
@@ -812,9 +841,9 @@ export class BulletinsController {
       const message = `Hello${parentName ? ` ${parentName}` : ''},\n\n`
         + `${schoolName} — Academic year ${body.academicYearName || ''}\n\n`
         + `Please find below ${studentName}'s report card (${body.className || ''}) for ${periodPart || 'the current period'}.\n\n`
-        + (avgLine ? `📊 ${avgLine}\n` : '')
-        + (rankLine ? `🏅 ${rankLine}\n` : '')
-        + (mentionLine ? `⭐ ${mentionLine}\n` : '')
+        + (avgLine ? `${avgLine}\n` : '')
+        + (rankLine ? `${rankLine}\n` : '')
+        + (mentionLine ? `${mentionLine}\n` : '')
         + `\nThe report card PDF (signed by the Head teacher and the class teacher) is attached to this message.`
         + (pdfUrl ? `\nYou may also download it here:\n${pdfUrl}` : '')
         + `\n\nWe remain at your disposal for any further information.\n\nKind regards,\nThe Management — ${schoolName}`;
@@ -833,10 +862,10 @@ export class BulletinsController {
 
     const message = `Bonjour${parentName ? ` ${parentName}` : ''},\n\n`
       + `${schoolName} — Année scolaire ${body.academicYearName || ''}\n\n`
-      + `Nous vous transmettons le bulletin de ${studentName} (${body.className || 'classe non précisée'}) — ${periodPart || 'période courante'}.\n\n`
-      + (avgLine ? `📊 ${avgLine}\n` : '')
-      + (rankLine ? `🏅 ${rankLine}\n` : '')
-      + (mentionLine ? `⭐ ${mentionLine}\n` : '')
+      + `Nous vous transmettons le bulletin ${deStudent} (${body.className || 'classe non précisée'}) — ${periodPart || 'période courante'}.\n\n`
+      + (avgLine ? `${avgLine}\n` : '')
+      + (rankLine ? `${rankLine}\n` : '')
+      + (mentionLine ? `${mentionLine}\n` : '')
       + `\nLe bulletin PDF, visé par le directeur et l'enseignant titulaire, est joint à ce message.`
       + (pdfUrl ? `\nVous pouvez également le télécharger ici :\n${pdfUrl}` : '')
       + `\n\nNous restons à votre disposition pour toute information complémentaire${contactLine ? ` (${contactLine})` : ''}.\n\nCordialement,\nLa Direction — ${schoolName}`;

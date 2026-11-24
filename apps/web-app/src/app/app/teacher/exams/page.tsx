@@ -1336,7 +1336,7 @@ function TeacherBulletinsToSign({
         body
       );
       toastSuccess('Signature appliquée', {
-        description: `Tous les bulletins${signingClass.evaluationTypeName && signingClass.evaluationTypeName !== 'Bulletin' ? ` de ${signingClass.evaluationTypeName}` : ''} ont été signés par l'enseignant.`,
+        description: `Tous les bulletins${signingClass.evaluationTypeName && signingClass.evaluationTypeName !== 'Bulletin' ? ` ${/^[aeiouyéèêàâîôûyh]/i.test(signingClass.evaluationTypeName) ? "d'" : 'de '}${signingClass.evaluationTypeName}` : ''} ont été signés par l'enseignant.`,
       });
       setSigningClass(null);
       setSignature(null);
@@ -1373,7 +1373,7 @@ function TeacherBulletinsToSign({
       const signaturesReapplied = data.signaturesReapplied || 0;
       const returnedCount = data.returnedCount || 0;
       const evalTypeSuffix = returnClass.evaluationTypeName && returnClass.evaluationTypeName !== 'Bulletin'
-        ? ` de ${returnClass.evaluationTypeName}` : '';
+        ? ` ${/^[aeiouyéèêàâîôûyh]/i.test(returnClass.evaluationTypeName) ? "d'" : 'de '}${returnClass.evaluationTypeName}` : '';
       toastSuccess('Bulletins renvoyés au directeur', {
         description: signaturesReapplied > 0
           ? `${returnedCount} bulletin(s)${evalTypeSuffix} renvoyé(s) avec votre signature (${signaturesReapplied} signature(s) ré-appliquée(s) sur des bulletins récents).`

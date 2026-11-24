@@ -231,6 +231,19 @@ function formatRank(rank: number | null | undefined, feminine: boolean = false):
 }
 
 /**
+ * ⭐ 2026-11-24 — Élision française « de » → « d' » devant voyelle (ou h muet) :
+ *   « Bulletin de Évaluation mensuelle 1 » (faute) → « Bulletin d'Évaluation
+ *   mensuelle 1 » (correct). Retourne le complément complet avec sa
+ *   préposition : deOrD('Évaluation') → "d'Évaluation" ; deOrD('Notes') →
+ *   "de Notes".
+ */
+function deOrD(name?: string | null): string {
+  const n = (name || '').trim();
+  if (!n) return '';
+  return /^[aeiouyàâéèêëîïôûùœyh]/i.test(n) ? `d'${n}` : `de ${n}`;
+}
+
+/**
  * ⭐ 2026-11-24 — Scinde un libellé enrichi en { name, month } :
  *   « Évaluation mensuelle 1 – mois d'octobre 2026 » →
  *     { name: 'Évaluation mensuelle 1', month: 'mois d\'octobre 2026' }
@@ -638,7 +651,7 @@ export class BulletinPdfService {
            ⭐ 2026-11-24 — evaluationTypeName est désormais le libellé ENRICHI
            (nom complet + mois de la date programmée : « Évaluation mensuelle
            1 – mois d'octobre 2026 ») — plus de code brut entre parenthèses. -->
-      <div class="bulletin-title">Bulletin de ${data.evaluationTypeName || 'l\u2019évaluation'} — ${data.periodName} ${data.academicYearName}</div>
+      <div class="bulletin-title">Bulletin ${data.evaluationTypeName ? deOrD(data.evaluationTypeName) : 'de l\u2019évaluation'} — ${data.periodName} ${data.academicYearName}</div>
 
       <!-- INFOS ÉLÈVE (⭐ T37 — modèle secondaire : wrapper .info-wrap + grille
            collapse 2 lignes — Photo | Année | Nom | Classe / Effectif | Matricule | Rang) -->
@@ -1747,7 +1760,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   <!-- TITRE BULLETIN D'ÉVALUATION
       ⭐ 2026-11-24 — evaluationTypeName est désormais le libellé ENRICHI
       (nom complet + mois de la date programmée) — plus de code brut. -->
-  <div class="bulletin-title">Bulletin d'évaluation — ${data.evaluationTypeName || 'Évaluation'} — ${data.periodName}</div>
+  <div class="bulletin-title">Bulletin ${data.evaluationTypeName ? deOrD(data.evaluationTypeName) : 'd\u2019évaluation'} — ${data.periodName}</div>
 
   <!-- INFOS ÉLÈVE (Année | Trimestre | Évaluation / Nom | Effectif·Matricule | Rang) -->
   <!-- ⭐ T32 — cadre arrondi porté par le wrapper .info-wrap. -->
@@ -1756,7 +1769,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     <tr>
       <td>Année scolaire : <strong>${data.academicYearName}</strong></td>
       <td>Trimestre : <strong>${data.periodName}</strong></td>
-      <td>Évaluation : <strong>${data.evaluationTypeName || '—'}</strong></td>
+      <td>Classe : <strong>${data.className || '—'}</strong></td>
     </tr>
     <tr>
       <td>Nom et prénoms : <strong style="text-transform:uppercase;">${data.studentName}</strong></td>

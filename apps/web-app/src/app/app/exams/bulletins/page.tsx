@@ -296,6 +296,18 @@ function formatRank(rank: number | null | undefined, feminine: boolean = false):
   return `${rank}ème`;
 }
 
+/**
+ * ⭐ 2026-11-24 — Élision française « de » → « d' » devant voyelle (retour
+ *   promoteur : « tu dis bulletin de évaluation, c'est pas bon français »).
+ *   deOrD('Évaluation mensuelle 1') → "d'Évaluation mensuelle 1" ;
+ *   deOrD('Notes') → "de Notes".
+ */
+function deOrD(name?: string | null): string {
+  const n = (name || '').trim();
+  if (!n) return '';
+  return /^[aeiouyàâéèêëîïôûùœyh]/i.test(n) ? `d'${n}` : `de ${n}`;
+}
+
 interface StudentResult {
   id: string;
   studentName: string;
@@ -2186,7 +2198,7 @@ function BulletinTwoPage({
             title="Envoyer le bulletin par WhatsApp au parent (message professionnel prêt + lien PDF — cliquez Envoyer dans WhatsApp)"
             className="bg-[#25D366] hover:bg-[#1EBE5B] text-white text-sm font-bold shadow-sm"
           >
-            {whatsappSending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{isEn ? 'Preparing…' : 'Préparation…'}</> : <><WhatsAppIcon className="w-4 h-4 mr-2" />{isEn ? 'Send by WhatsApp' : 'Envoyer par WhatsApp'}</>}
+            {whatsappSending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{isEn ? 'Preparing…' : 'Préparation…'}</> : <><WhatsAppIcon className="w-4 h-4 mr-2" fill="currentColor" />{isEn ? 'Send by WhatsApp' : 'Envoyer par WhatsApp'}</>}
           </Button>
         )}
         <Button onClick={() => onGeneratePdf({ teacherSig, directorSig, parentSig })} disabled={generatingPdf || whatsappSending} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
@@ -5510,7 +5522,7 @@ function VueParMatiereTrimestriel({
                               {whatsappLoading === student.id ? (
                                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Préparation…</>
                               ) : (
-                                <><WhatsAppIcon className="w-4 h-4 mr-2" />Envoyer par WhatsApp</>
+                                <><WhatsAppIcon className="w-4 h-4 mr-2" fill="currentColor" />Envoyer par WhatsApp</>
                               )}
                             </Button>
                             <Button
@@ -6023,7 +6035,7 @@ function VueParMatiereAnnuel({
                             >
                               {whatsappLoading === student.id
                                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Préparation…</>
-                                : <><WhatsAppIcon className="w-4 h-4 mr-2" />Envoyer par WhatsApp</>}
+                                : <><WhatsAppIcon className="w-4 h-4 mr-2" fill="currentColor" />Envoyer par WhatsApp</>}
                             </Button>
                             <Button onClick={() => handleGeneratePdf(student)} disabled={generatingPdf === student.id}
                               className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-lg shadow-sm">
@@ -6341,7 +6353,7 @@ function MoyennesTrimestrielTable({ data, isMaternelle, onSendWhatsApp, labelsBy
                         title="Envoyer le bulletin trimestriel de cet élève au parent par WhatsApp"
                         className="shrink-0 p-1 rounded-full bg-[#25D366] hover:bg-[#1EBE5B] text-white shadow-sm transition-colors"
                       >
-                        <WhatsAppIcon className="w-3.5 h-3.5" />
+                        <WhatsAppIcon className="w-3.5 h-3.5" fill="currentColor" />
                       </button>
                     )}
                   </span>
@@ -6503,7 +6515,7 @@ function MoyennesAnnuelTable({ data, isMaternelle, onSendWhatsApp }: { data: any
                         title="Envoyer le bulletin annuel de cet élève au parent par WhatsApp"
                         className="shrink-0 p-1 rounded-full bg-[#25D366] hover:bg-[#1EBE5B] text-white shadow-sm transition-colors"
                       >
-                        <WhatsAppIcon className="w-3.5 h-3.5" />
+                        <WhatsAppIcon className="w-3.5 h-3.5" fill="currentColor" />
                       </button>
                     )}
                   </span>
@@ -6682,7 +6694,7 @@ function generateBulletinHtml(
 
   <!-- Bulletin Title -->
   <div class="bulletin-title">
-    Bulletin de ${evalTypeName || 'Évaluation'} ${evalTypeCode ? '(' + evalTypeCode + ')' : ''} — ${periodName} ${academicYear?.label || ''}
+    Bulletin ${evalTypeName ? deOrD(evalTypeName) : "de l'évaluation"} ${evalTypeCode ? '(' + evalTypeCode + ')' : ''} — ${periodName} ${academicYear?.label || ''}
   </div>
 
   <!-- Student Info -->

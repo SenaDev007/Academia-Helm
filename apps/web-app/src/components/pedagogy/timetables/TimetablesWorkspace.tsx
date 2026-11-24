@@ -1206,6 +1206,22 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
   const [entries, setEntries] = useState<ManualEntry[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // ⭐ 2026-11-24 — REFONTE DU WORKFLOW « Nouvelle EDT » (retour promoteur) :
+  //    1. Bouton « Nouvelle EDT » → ASSISTANT : (1) sélection du NIVEAU SCOLAIRE
+  //       → (2) sélection des CLASSES de ce niveau (plusieurs possibles si elles
+  //       partagent le même contenu d'EDT) → (3) le système CRÉE ET NOMME
+  //       automatiquement UN EDT PAR CLASSE : « EDT Maternelle 1 2026-2027 »,
+  //       « EDT Maternelle 2 2026-2027 »… → (4) l'utilisateur édite la grille
+  //       (le contenu s'applique à toutes les classes sélectionnées) et
+  //       enregistre. Fin des créations bizarres à la volée.
+  const [wizardOpen, setWizardOpen] = useState(false);
+  // classId → timetableId : l'EDT DÉDIÉ de chaque classe (une par classe,
+  // nommé « EDT {classe} {année} »). Utilisé pour router chaque séance vers
+  // l'EDT de SA classe lors de l'édition multi-classes.
+  const [classTimetableMap, setClassTimetableMap] = useState<Record<string, string>>({});
+  const classTimetableMapRef = useRef<Record<string, string>>({});
+  classTimetableMapRef.current = classTimetableMap;
+
   // ⭐ FIX BUG « Cliquez sur Nouvel EDT » (2026-09-10) :
   //    localLevelId était initialisé UNE SEULE FOIS au montage — à ce moment
   //    realLevels est souvent encore VIDE (React Query async) → localLevelId
@@ -1323,47 +1339,68 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
       setSchoolIdentity(si);
       if (tts && tts.length > 0) {
         setTimetables(tts);
+        // ⭐ 2026-11-24 — DÉRIVER la map classe → EDT dédié : chaque classe dont
+        //    l'EDT « EDT {nom de classe} {année} » existe est reliée à cet EDT.
+        //    Les EDT créés par l'assistant respectent TOUJOURS ce nommage → la
+        //    map se reconstruit toute seule au chargement (même après rechargement
+        //    de page ou changement d'onglet).
+        const yearLb = academicYearLabel || new Date().getFullYear().toString();
+        const map: Record<string, string> = {};
+        for (const c of (cls || [])) {
+          const expectedName = `EDT ${c.name} ${yearLb}`;
+          const tt = tts.find((t: any) => (t.name || '').trim() === expectedName);
+          if (tt?.id) map[c.id] = tt.id;
+        }
+        setClassTimetableMap(map);
         // ⭐ Activer l'EDT du NIVEAU courant s'il existe (au lieu du 1er EDT
         //    arbitraire de la liste, qui peut appartenir à un autre niveau)
         const lv = levelIdRef.current;
-        const levelMatch = lv ? tts.find((t: any) => t.schoolLevelId === lv) : null;
-        setActiveTimetableId((levelMatch ?? tts[0]).id);
+        const levelTts = lv ? tts.filter((t: any) => t.schoolLevelId === lv) : tts;
+        const levelMatch = lv ? levelTts[0] : null;
+        const chosen = levelMatch ?? tts[0];
+        if (chosen) {
+          setActiveTimetableId(chosen.id);
+          // ⭐ Sélectionner la classe de l'EDT actif (nommage « EDT {classe} {année} »)
+          //    plutôt que la 1ère classe arbitraire de la liste. Si l'EDT est un
+          //    ancien EDT de groupe (multi-classes), les classes seront déduites
+          //    de ses entries dans loadEntries.
+          const chosenClass = (cls || []).find(c => `EDT ${c.name} ${yearLb}` === (chosen.name || '').trim());
+          setSelectedClassIds(chosenClass ? [chosenClass.id] : []);
+        }
+      } else {
+        // Aucun EDT pour l'année : grille vide, l'utilisateur clique « Nouvelle EDT »
+        setActiveTimetableId(null);
+        setEntries([]);
+        setSelectedClassIds([]);
       }
-      if (cls && cls.length > 0) setSelectedClassIds([cls[0].id]);
     } catch (e) { console.error(e); } finally { setLoading(false); }
-  }, [academicYearId]);
+  }, [academicYearId, academicYearLabel]);
 
   const loadEntries = useCallback(async () => {
-    if (!activeTimetableId) return;
+    // ⭐ 2026-11-24 — REFONTE : on fusionne les entries de TOUS les EDT du
+    //    NIVEAU courant (un EDT par classe + éventuels anciens EDT de groupe).
+    //    La grille filtre ensuite par classes sélectionnées — ainsi, l'édition
+    //    multi-classes (ex: Maternelle 1 + Maternelle 2 au même contenu)
+    //    affiche UNE grille cohérente. Fin de l'AUTO-RENAME silencieux des EDT
+    //    (source de noms bizarres type « EDT CI + CP 2026-2027 ») : les EDT
+    //    sont nommés une fois pour toutes par l'assistant.
+    const lv = levelIdRef.current;
+    const targetIds = Array.from(new Set([
+      ...(lv ? timetables.filter((t: any) => t.schoolLevelId === lv).map(t => t.id) : timetables.map(t => t.id)),
+      ...(activeTimetableId ? [activeTimetableId] : []),
+    ]));
+    if (targetIds.length === 0) { setEntries([]); return; }
     try {
-      const data = await pedagogyFetch<any>(`/api/timetables/${activeTimetableId}`);
-      const tEntries = data?.entries || [];
-      setEntries(tEntries);
-      // ⭐ AUTO-RENAME : si le nom de l'EDT contient "#" (ancien format) ou ne mentionne
-      //    pas les classes, on le met à jour automatiquement avec les classes détectées.
-      //    Ex: "EDT Primaire #3" → "EDT CI 2026-2027" (basé sur les entries)
-      const currentTt = timetables.find(t => t.id === activeTimetableId);
-      if (currentTt && tEntries.length > 0) {
-        const yearLabel = academicYearLabel || new Date().getFullYear().toString();
-        const needsRename = currentTt.name.includes('#') || !currentTt.name.includes(yearLabel);
-        if (needsRename) {
-          // Extraire les noms de classes uniques depuis les entries
-          const classNames = Array.from(new Set(
-            tEntries.map((e: any) => e.class?.name).filter(Boolean)
-          )).sort();
-          if (classNames.length > 0) {
-            const newName = `EDT ${classNames.join(' + ')} ${yearLabel}`;
-            // Mettre à jour le nom côté backend + local
-            pedagogyFetch(`/api/timetables/${activeTimetableId}`, {
-              method: 'PUT', body: { name: newName }
-            }).then(() => {
-              setTimetables(prev => prev.map(t => t.id === activeTimetableId ? { ...t, name: newName } : t));
-            }).catch(() => {});
-          }
-        }
+      const results = await Promise.all(
+        targetIds.map(id => pedagogyFetch<any>(`/api/timetables/${id}`).catch(() => null))
+      );
+      const merged: any[] = [];
+      for (const data of results) {
+        if (Array.isArray(data?.entries)) merged.push(...data.entries);
       }
+      setEntries(merged);
     } catch (e) { console.error(e); }
-  }, [activeTimetableId, timetables, academicYearLabel]);
+  }, [activeTimetableId, timetables]);
 
   useEffect(() => { loadConfig(); loadData(); }, [loadConfig, loadData]);
   useEffect(() => { loadEntries(); }, [loadEntries]);
@@ -1386,8 +1423,35 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
   const toggleClass = (classId: string) => setSelectedClassIds(prev => prev.includes(classId) ? prev.filter(id => id !== classId) : [...prev, classId]);
 
   // ⭐ Récupérer les entries d'une cellule (jour + block)
+  //    ⭐ 2026-11-24 — DÉDUPLICATION multi-classes : quand plusieurs classes
+  //    sont sélectionnées (même contenu d'EDT), chaque classe a SA entry
+  //    (dans SON EDT dédié) — on n'affiche QU'UNE séance par créneau pour
+  //    garder une grille lisible. Le nombre de classes couvertes est badgé.
   const getCellEntries = (dayOfWeek: number, block: any) => {
-    return filteredEntries.filter(e => e.dayOfWeek === dayOfWeek && e.startTime >= block.start && e.endTime <= block.end);
+    const cell = filteredEntries.filter(e => e.dayOfWeek === dayOfWeek && e.startTime >= block.start && e.endTime <= block.end);
+    if (selectedClassIds.length <= 1) return cell;
+    const seen = new Set<string>();
+    return cell.filter(e => {
+      const key = `${e.subjectId}|${e.startTime}|${e.endTime}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
+  // ⭐ Jumelles d'une séance = les entries des AUTRES classes sélectionnées
+  //    ayant exactement le même créneau (matière + jour + heures) — créées
+  //    ensemble lors d'une sauvegarde multi-classes. Modifier/supprimer une
+  //    séance modifie/supprime AUSSI ses jumelles pour garder le contenu
+  //    identique entre les classes qui partagent l'EDT.
+  const findTwinEntries = (entry: any) => {
+    return filteredEntries.filter(e =>
+      e.id !== entry.id
+      && e.subjectId === entry.subjectId
+      && e.dayOfWeek === entry.dayOfWeek
+      && e.startTime === entry.startTime
+      && e.endTime === entry.endTime
+    );
   };
 
   // ⭐ Démarrer l'édition inline d'une cellule (NOUVELLE séance)
@@ -1500,68 +1564,13 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
     setSaving(false);
   };
 
-  // ⭐ AUTO-CRÉATION de l'EDT (2026-09-10, demande utilisateur : « il faut que
-  //    ça soit simple ») : si l'utilisateur ajoute une séance sans EDT actif,
-  //    on crée l'emploi du temps À LA VOLÉE avec un nom parlant (classes +
-  //    année), puis on enregistre la séance dedans. L'utilisateur n'a plus
-  //    JAMAIS besoin de penser au bouton « Nouvel EDT » avant de saisir.
-  //    Remplace le message bloquant « Cliquez sur Nouvel EDT d'abord » qui
-  //    créait une boucle frustrante (la création échouait silencieusement à
-  //    cause du mauvais UUID de niveau, puis le message reprochait à
-  //    l'utilisateur de ne pas avoir cliqué le bouton qu'il venait de cliquer).
-  const ensureActiveTimetable = async (): Promise<string | null> => {
-    if (activeTimetableId) return activeTimetableId;
-    if (!academicYearId) return null;
-    const levelId = resolveSchoolLevelId();
-    if (!levelId) {
-      toast({
-        title: 'Niveau scolaire introuvable',
-        description: 'Sélectionnez un niveau scolaire dans le sélecteur « Niveau scolaire », puis réessayez.',
-        variant: 'destructive',
-      });
-      return null;
-    }
-    // ⭐ RÉUTILISER un EDT existant du même niveau plutôt qu'en créer un doublon
-    //    (ex: l'utilisateur recharge la page — on rebranche sur son EDT existant)
-    const existing = timetables.find((t: any) => t.schoolLevelId === levelId);
-    if (existing?.id) {
-      setActiveTimetableId(existing.id);
-      return existing.id;
-    }
-    const levelLabel = realLevels.find((l: any) => l.schoolLevelId === levelId)?.label
-      || realLevels.find((l: any) => l.id === configLevelId)?.label
-      || 'Niveau';
-    const yearLabel = academicYearLabel || new Date().getFullYear().toString();
-    const classNames = selectedClassIds
-      .map(id => classes.find(c => c.id === id)?.name)
-      .filter(Boolean);
-    const edtName = classNames.length > 0
-      ? `EDT ${classNames.join(' + ')} ${yearLabel}`
-      : `EDT ${levelLabel} ${yearLabel}`;
-    try {
-      const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', {
-        method: 'POST', body: {
-          academicYearId,
-          schoolLevelId: levelId,
-          name: edtName,
-          startDate: new Date().toISOString(),
-        },
-      });
-      if (newTt?.id) {
-        setTimetables(prev => prev.some(t => t.id === newTt.id) ? prev : [...prev, newTt]);
-        setActiveTimetableId(newTt.id);
-        toast({
-          title: '✅ EDT créé automatiquement',
-          description: `${edtName} — vos séances y sont enregistrées.`,
-        });
-        return newTt.id;
-      }
-      return null;
-    } catch (e: any) {
-      toast({ title: 'Erreur lors de la création de l\'EDT', description: e.message, variant: 'destructive' });
-      return null;
-    }
-  };
+  // ⭐ 2026-11-24 — ensureActiveTimetable() SUPPRIMÉ (refonte workflow) :
+  //    l'auto-création d'EDT à la volée (« EDT Maternelle 2026-2027 », « EDT
+  //    CI + CP 2026-2027 »…) générait des EDT au nom générique qui se
+  //    mélangeaient aux EDT par classe — retour promoteur : « ça crée des
+  //    trucs bizarres, c'est pas bon. Il faut nettoyer tout ce qui est là et
+  //    refaire le workflow ». La création passe désormais UNIQUEMENT par
+  //    l'assistant « Nouvelle EDT » (niveau → classes → EDT nommé par classe).
 
   // ⭐ Sauvegarder l'entry inline
   const handleInlineSave = async () => {
@@ -1654,18 +1663,20 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
       calcEnd = calcEndTime(calcStart, Number(inlineForm.duration) || 30);
     }
 
-    // ⭐ SIMPLIFICATION UX (2026-09-10) : plus besoin de cliquer « Nouvel EDT »
-    //    avant de saisir. Si aucun EDT n'est actif, on en crée un
-    //    AUTOMATIQUEMENT (nommé classes + année) et on enregistre la séance
-    //    dedans dans la foulée. L'ancien message bloquant « Cliquez sur
-    //    Nouvel EDT d'abord » créait une boucle frustrante : la création
-    //    échouait en silence (mauvais UUID de niveau) puis le message
-    //    reprochait à l'utilisateur de ne pas avoir cliqué le bouton.
-    const currentTimetableId = await ensureActiveTimetable();
-    if (!currentTimetableId) {
-      // erreur actionnable déjà affichée par ensureActiveTimetable — on libère le verrou
+    // ⭐ 2026-11-24 — REFONTE WORKFLOW : plus de création d'EDT à la volée
+    //    (source des « trucs bizarres » — EDT génériques créés en arrière-plan
+    //    sans nom de classe). Pour saisir une séance, l'utilisateur passe par
+    //    « Nouvelle EDT » (assistant niveau → classes → EDT nommés par classe).
+    //    S'il n'y a pas encore d'EDT actif pour les classes sélectionnées, on
+    //    ouvre l'assistant directement.
+    if (!activeTimetableId) {
       savingRef.current = false;
       setSaving(false);
+      setWizardOpen(true);
+      toast({
+        title: 'Créez d\'abord l\'emploi du temps',
+        description: 'Sélectionnez le niveau scolaire puis les classes : l\'EDT de chaque classe sera créé et nommé automatiquement (ex : EDT Maternelle 1 2026-2027).',
+      });
       return;
     }
     // resolveSchoolLevelId() : UUID school_levels (FK valide pour les entries)
@@ -1673,20 +1684,37 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
     const resolvedSchoolLevelId = resolveSchoolLevelId() || localLevelId;
 
     // ⭐ MODE ÉDITION : PUT /api/timetables/entries/:id avec les champs modifiés
-    //    On ne met à jour qu'une seule entry (pas de boucle sur selectedClassIds).
+    //    ⭐ 2026-11-24 — JUMELLES : en édition multi-classes, la même séance
+    //    existe dans l'EDT de CHAQUE classe sélectionnée — on applique la
+    //    modification à TOUTES pour garder le contenu identique.
     if (editingEntryId) {
       try {
-        await pedagogyFetch<any>(`/api/timetables/entries/${editingEntryId}`, {
-          method: 'PUT',
-          body: {
-            subjectId: resolvedSubjectId,
-            dayOfWeek: editingCell.dayOfWeek,
-            startTime: calcStart,
-            endTime: calcEnd,
-            duration: Number(inlineForm.duration) || 30,
-            step: inlineForm.step || undefined,
-          },
-        });
+        const existingEntry = entries.find(e => e.id === editingEntryId);
+        const twins = existingEntry ? findTwinEntries(existingEntry) : [];
+        await Promise.all([
+          pedagogyFetch<any>(`/api/timetables/entries/${editingEntryId}`, {
+            method: 'PUT',
+            body: {
+              subjectId: resolvedSubjectId,
+              dayOfWeek: editingCell.dayOfWeek,
+              startTime: calcStart,
+              endTime: calcEnd,
+              duration: Number(inlineForm.duration) || 30,
+              step: inlineForm.step || undefined,
+            },
+          }),
+          ...twins.map(tw => pedagogyFetch<any>(`/api/timetables/entries/${tw.id}`, {
+            method: 'PUT',
+            body: {
+              subjectId: resolvedSubjectId,
+              dayOfWeek: editingCell.dayOfWeek,
+              startTime: calcStart,
+              endTime: calcEnd,
+              duration: Number(inlineForm.duration) || 30,
+              step: inlineForm.step || undefined,
+            },
+          }).catch(() => null)),
+        ]);
         await loadEntries();
         savingRef.current = false;
         setSaving(false);
@@ -1708,14 +1736,19 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
     }
 
     // ⭐ MODE CRÉATION : POST /api/timetables/:id/entries pour chaque classe sélectionnée
+    //    ⭐ 2026-11-24 — ROUTAGE PAR CLASSE : chaque classe a SON EDT dédié
+    //    (« EDT {classe} {année} ») — la séance de la classe X est enregistrée
+    //    dans l'EDT de la classe X (map issue de l'assistant / du chargement).
+    //    Repli : l'EDT actif (anciens EDT de groupe).
     let success = 0, failed = 0;
     let lastErrorMessage: string | null = null;
     for (const classId of selectedClassIds) {
+      const ttIdForClass = classTimetableMapRef.current[classId] || activeTimetableId;
       try {
         // ⭐ La réponse peut être une entry simple OU { count: N, entries: [...] }
         //    si le backend a résolu l'AcademicClass en plusieurs sections physiques.
-        const result = await pedagogyFetch<any>(`/api/timetables/${currentTimetableId}/entries`, {
-          method: 'POST', body: { classId, subjectId: resolvedSubjectId, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId, step: inlineForm.step || undefined }
+        const result = await pedagogyFetch<any>(`/api/timetables/${ttIdForClass}/entries`, {
+          method: 'POST', body: { classId, subjectId: resolvedSubjectId, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: ttIdForClass, academicYearId, schoolLevelId: resolvedSchoolLevelId, step: inlineForm.step || undefined }
         });
         // ⭐ Si le backend a créé plusieurs entries (multi-section), on compte le total
         //    sinon on compte 1 entry par POST réussi.
@@ -1724,7 +1757,7 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
         failed++;
         lastErrorMessage = e.message || 'Erreur inconnue';
         // ⭐ Console.error pour faciliter le debug depuis la console navigateur
-        console.error('[handleInlineSave] POST entries failed:', { classId, subjectId: resolvedSubjectId, error: e.message, body: { classId, subjectId: resolvedSubjectId, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId, step: inlineForm.step || undefined } });
+        console.error('[handleInlineSave] POST entries failed:', { classId, subjectId: resolvedSubjectId, error: e.message, body: { classId, subjectId: resolvedSubjectId, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: ttIdForClass, academicYearId, schoolLevelId: resolvedSchoolLevelId, step: inlineForm.step || undefined } });
       }
     }
     await loadEntries();
@@ -1774,10 +1807,10 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
     const isValidSubject = inlineForm.subjectId &&
       !inlineForm.subjectId.startsWith('__') &&
       !(inlineForm.subjectId === '__CUSTOM__' && !(inlineForm as any).customSubjectName?.trim());
-    // ⭐ FIX : l'auto-save ne requiert PLUS d'EDT actif — la sauvegarde
-    //    auto-crée l'EDT à la volée (ensureActiveTimetable). On exige juste
-    //    qu'une classe soit sélectionnée (sinon pas de grille visible).
-    if (!isValidSubject || selectedClassIds.length === 0) {
+    // ⭐ 2026-11-24 — L'auto-save exige une matière valide + une classe
+    //    sélectionnée. Si aucun EDT n'est actif, handleInlineSave ouvre
+    //    l'assistant « Nouvelle EDT » (plus d'auto-création à la volée).
+    if (!isValidSubject || selectedClassIds.length === 0 || !activeTimetableId) {
       return;
     }
     // ⭐ Écouteurs d'activité globale — reset du compteur sur n'importe quelle
@@ -1831,8 +1864,23 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
     // ⚠️ Ne pas inclure handleInlineSave dans les deps — il change à chaque render
   }, [editingCell, editingEntryId, inlineForm.subjectId, inlineForm.customSubjectName, inlineForm.step, inlineForm.duration, saving, activeTimetableId, selectedClassIds]);
 
+  // ⭐ 2026-11-24 — Supprimer une séance + SES JUMELLES (edition multi-classes :
+  //    la même séance existe dans l'EDT de chaque classe sélectionnée — on les
+  //    supprime TOUTES pour garder le contenu identique entre classes jumelles).
   const handleDeleteEntry = async (id: string) => {
-    try { await pedagogyFetch(`/api/timetables/entries/${id}`, { method: 'DELETE' }); await loadEntries(); toast({ title: '✅ Séance supprimée' }); }
+    try {
+      const entry = entries.find(e => e.id === id);
+      const twins = entry ? findTwinEntries(entry) : [];
+      await Promise.all([
+        pedagogyFetch(`/api/timetables/entries/${id}`, { method: 'DELETE' }),
+        ...twins.map(tw => pedagogyFetch(`/api/timetables/entries/${tw.id}`, { method: 'DELETE' }).catch(() => null)),
+      ]);
+      await loadEntries();
+      toast({
+        title: '✅ Séance supprimée',
+        ...(twins.length > 0 ? { description: `Supprimée dans les ${twins.length + 1} classes sélectionnées (contenu partagé).` } : {}),
+      });
+    }
     catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
   };
 
@@ -1869,70 +1917,108 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
     } catch {}
   };
 
-  // ⭐ Créer un NOUVEL EDT pour d'autres classes
-  //    (NB : ce bouton est désormais OPTIONNEL — l'EDT se crée aussi
-  //    automatiquement à la première séance via ensureActiveTimetable.
-  //    Ce bouton sert à repartir sur un EDT vierge.)
+  // ⭐ 2026-11-24 — REFONTE « Nouvelle EDT » : le bouton ouvre l'ASSISTANT
+  //    (niveau scolaire → classes → EDT nommé PAR CLASSE). Fin de la création
+  //    directe d'un EDT générique « EDT {niveau} {année} » (source de
+  //    doublons bizarres type « EDT Maternelle 2026-2027 » à côté de
+  //    « EDT Maternelle 1 2026-2027 »).
   const handleNewTimetable = async () => {
     if (!academicYearId) return;
-    // ⭐ FIX : resolveSchoolLevelId() retourne l'UUID school_levels (FK valide).
-    //    Avant : localLevelId || schoolLevelId → si localLevelId était null
-    //    (course d'initialisation), on envoyait l'UUID education_levels →
-    //    FK invalide → échec SILENCIEUX de la création → boucle « Cliquez
-    //    sur Nouvel EDT » alors que l'utilisateur venait de cliquer.
-    const levelId = resolveSchoolLevelId();
-    if (!levelId || levelId === 'ALL') {
-      toast({ title: 'Erreur', description: 'Sélectionnez un niveau scolaire dans le sélecteur ci-dessus avant de créer un EDT.', variant: 'destructive' });
+    setWizardOpen(true);
+  };
+
+  // ⭐ Exécuté par l'assistant (NewEdtWizard) : crée UN EDT PAR CLASSE
+  //    sélectionnée, nommé « EDT {classe} {année} » — les classes
+  //    sélectionnées ensemble partagent le MÊME contenu (l'utilisateur
+  //    édite une seule grille, chaque séance est enregistrée dans l'EDT de
+  //    sa classe). Les EDT déjà existants (même nom) sont RÉUTILISÉS au
+  //    lieu d'être dupliqués.
+  const handleCreateEdtsFromWizard = async (levelItem: any, classIds: string[]) => {
+    if (!academicYearId || classIds.length === 0) return;
+    const yearLabel = academicYearLabel || new Date().getFullYear().toString();
+    const schoolLevelUuid = levelItem?.schoolLevelId || resolveSchoolLevelId();
+    if (!schoolLevelUuid || schoolLevelUuid === 'ALL') {
+      toast({ title: 'Erreur', description: 'Niveau scolaire introuvable — réessayez.', variant: 'destructive' });
       return;
     }
-    // Désélectionner les classes actuelles
-    setSelectedClassIds([]);
-    setEntries([]);
-    // ⭐ Nommer l'EDT de façon professionnelle : niveau + année scolaire
-    //    Ex: "EDT Primaire 2026-2027" au lieu de "EDT Primaire #3"
-    const levelLabel = realLevels.find((l: any) => l.schoolLevelId === levelId)?.label || realLevels.find((l: any) => l.id === configLevelId)?.label || 'Niveau';
-    // ⭐ FIX CRITIQUE : « academicYear » n'existe PAS dans le scope de ManualEditor
-    //    (la prop s'appelle academicYearLabel). L'ancienne ligne provoquait une
-    //    ReferenceError silencieuse → le clic sur « Nouvel EDT » plantait SANS
-    //    aucun message → l'utilisateur croyait avoir créé l'EDT alors que rien
-    //    ne s'était passé → « Cliquez sur Nouvel EDT d'abord » à la première
-    //    séance. C'était LE bug signalé par l'utilisateur.
-    const yearLabel = academicYearLabel || new Date().getFullYear().toString();
-    const edtName = `EDT ${levelLabel} ${yearLabel}`;
-    // Créer un nouveau timetable
+    const createdNames: string[] = [];
+    const reusedNames: string[] = [];
+    const nextMap: Record<string, string> = { ...classTimetableMapRef.current };
+    const newTts: ManualTimetable[] = [];
     try {
-      const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', {
-        method: 'POST', body: {
-          academicYearId, schoolLevelId: levelId,
-          name: edtName,
-          startDate: new Date().toISOString(),
-        },
-      });
-      if (newTt?.id) {
-        setTimetables(prev => prev.some(t => t.id === newTt.id) ? prev : [...prev, newTt]);
-        setActiveTimetableId(newTt.id);
-        toast({ title: '✅ Nouvel EDT créé', description: 'Sélectionnez les classes pour ce nouvel emploi du temps.' });
+      for (const classId of classIds) {
+        const cls = classes.find(c => c.id === classId);
+        if (!cls) continue;
+        const edtName = `EDT ${cls.name} ${yearLabel}`;
+        // ⭐ RÉUTILISER l'EDT existant de cette classe (même nom) — pas de doublon
+        const existing = timetables.find((t: any) => (t.name || '').trim() === edtName);
+        if (existing?.id) {
+          nextMap[classId] = existing.id;
+          reusedNames.push(edtName);
+          continue;
+        }
+        const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', {
+          method: 'POST', body: {
+            academicYearId,
+            schoolLevelId: schoolLevelUuid,
+            name: edtName,
+            startDate: new Date().toISOString(),
+          },
+        });
+        if (newTt?.id) {
+          nextMap[classId] = newTt.id;
+          newTts.push(newTt);
+          createdNames.push(edtName);
+        }
       }
+      setClassTimetableMap(nextMap);
+      classTimetableMapRef.current = nextMap;
+      setTimetables(prev => [...prev, ...newTts.filter(nt => !prev.some(t => t.id === nt.id))]);
+      // Activer le premier EDT du groupe + sélectionner TOUTES les classes
+      // choisies → l'utilisateur édite une grille unique dont le contenu
+      // s'applique à toutes les classes.
+      const firstId = classIds.map(id => nextMap[id]).find(Boolean) || null;
+      setActiveTimetableId(firstId);
+      setSelectedClassIds(classIds);
+      setWizardOpen(false);
+      await loadEntries();
+      const clsCount = classIds.length;
+      toast({
+        title: createdNames.length > 0 ? `✅ ${createdNames.length} EDT créé(s)` : '✅ EDT existant(s) réutilisé(s)',
+        description: [
+          ...createdNames, ...reusedNames,
+        ].slice(0, 4).join(' · ')
+          + (createdNames.length + reusedNames.length > 4 ? ` …` : '')
+          + (clsCount > 1 ? ` — remplissez la grille : le contenu s'applique aux ${clsCount} classes.` : ' — remplissez la grille puis cliquez Enregistrer.'),
+      });
     } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+      toast({ title: 'Erreur lors de la création des EDT', description: e.message, variant: 'destructive' });
     }
   };
 
   // ⭐ Basculer vers un EDT existant
+  //    ⭐ 2026-11-24 — les EDT sont désormais nommés PAR CLASSE : cliquer sur
+  //    « EDT Maternelle 1 2026-2027 » sélectionne directement la classe
+  //    Maternelle 1 (même si l'EDT est encore vide). Les anciens EDT de groupe
+  //    gardent la déduction des classes depuis les entries.
   const handleSwitchTimetable = async (ttId: string) => {
     setActiveTimetableId(ttId);
     const tt = timetables.find(t => t.id === ttId);
-    if (tt) {
-      // Charger les entries de cet EDT
-      try {
-        const data = await pedagogyFetch<any>(`/api/timetables/${ttId}`);
-        setEntries(data?.entries || []);
-        // Déduire les classes depuis les entries
-        const entryClassIds = new Set<string>();
-        (data?.entries || []).forEach((e: any) => { if (e.classId) entryClassIds.add(e.classId); if (e.class?.id) entryClassIds.add(e.class.id); });
-        setSelectedClassIds(Array.from(entryClassIds));
-      } catch { setEntries([]); }
+    if (!tt) return;
+    const yearLabel = academicYearLabel || new Date().getFullYear().toString();
+    // 1) Classe dédiée (nommage « EDT {classe} {année} ») — même EDT vide
+    const dedicatedClass = classes.find(c => `EDT ${c.name} ${yearLabel}` === (tt.name || '').trim());
+    if (dedicatedClass) {
+      setSelectedClassIds([dedicatedClass.id]);
+      return;
     }
+    // 2) Repli : déduire les classes depuis les entries (anciens EDT de groupe)
+    try {
+      const data = await pedagogyFetch<any>(`/api/timetables/${ttId}`);
+      const entryClassIds = new Set<string>();
+      (data?.entries || []).forEach((e: any) => { if (e.classId) entryClassIds.add(e.classId); if (e.class?.id) entryClassIds.add(e.class.id); });
+      setSelectedClassIds(Array.from(entryClassIds));
+    } catch { /* EDT vide */ }
   };
 
   // ⭐ Export PDF A4 paysage — généré depuis le BACKEND (Puppeteer)
@@ -1967,6 +2053,28 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
 
   if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-blue-600" /><span className="ml-2 text-sm text-slate-500">Chargement…</span></div>;
 
+  // ⭐ 2026-11-24 — FILTRAGE PAR NIVEAU (refonte workflow) : la liste des EDT
+  //    et les chips de classes ne montrent QUE ceux du niveau sélectionné
+  //    (avant : TOUT se mélangeait — EDT Maternelle à côté des classes 1ère D).
+  const currentLevelUuid = resolveSchoolLevelId();
+  const levelTimetables = currentLevelUuid
+    ? timetables.filter((t: any) => t.schoolLevelId === currentLevelUuid)
+    : timetables;
+  // Alias de noms de niveau pédagogique (FR + miroirs EN) pour matcher les
+  // classes de pedagogy_academic_classes (level.name) au niveau sélectionné.
+  const norm = (s: any) => String(s || '').trim().toLowerCase();
+  const currentLevelLabel = norm(realLevels.find((l: any) => l.id === configLevelId)?.label
+    || realLevels.find((l: any) => l.schoolLevelId === currentLevelUuid)?.label);
+  const levelAliases: Record<string, string[]> = {
+    maternelle: ['maternelle', 'nursery'],
+    primaire: ['primaire', 'primary'],
+    secondaire: ['secondaire', 'secondary'],
+  };
+  const currentAliases = levelAliases[currentLevelLabel] || [currentLevelLabel];
+  const levelClasses = classes.filter((c: any) =>
+    currentAliases.includes(norm(c.level?.name)) || currentAliases.includes(norm(c.levelName))
+  );
+
   // ⭐ Couleurs pour les matières (cycle)
   const SUBJECT_COLORS = ['bg-blue-50 border-blue-200 text-blue-700','bg-emerald-50 border-emerald-200 text-emerald-700','bg-amber-50 border-amber-200 text-amber-700','bg-rose-50 border-rose-200 text-rose-700','bg-indigo-50 border-indigo-200 text-indigo-700','bg-purple-50 border-purple-200 text-purple-700','bg-cyan-50 border-cyan-200 text-cyan-700'];
   const getSubjectColor = (subjectId?: string) => {
@@ -1989,6 +2097,13 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
               // ⭐ Synchroniser localLevelId (schoolLevelId) avec configLevelId (education_structure)
               const match = realLevels.find((l: any) => l.id === e.target.value);
               setLocalLevelId(match?.schoolLevelId || null);
+              // ⭐ 2026-11-24 — REFONTE : changer de niveau REBASCULE la vue sur
+              //    les EDT de ce niveau (premier EDT du niveau actif) et vide la
+              //    sélection de classes — plus de mélange inter-niveaux.
+              const lvUuid = match?.schoolLevelId;
+              const lvTts = lvUuid ? timetables.filter((t: any) => t.schoolLevelId === lvUuid) : [];
+              setActiveTimetableId(lvTts[0]?.id || null);
+              setSelectedClassIds([]);
             }}
             className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-medium bg-white"
           >
@@ -1999,15 +2114,15 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
         </div>
 
         <div className="flex-1 min-w-[250px]">
-          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Emplois du temps sauvegardés</label>
-          {/* ⭐ SIMPLIFICATION (2026-09-10) : plus besoin de cliquer « Nouvel EDT » —
-              l'EDT se crée automatiquement à la première séance. Ce message guide
-              l'utilisateur vers le flux simple : classe → case → matière. */}
-          {timetables.length === 0 ? (
-                <span className="text-xs text-slate-400 italic">Aucun EDT — sélectionnez une classe et remplissez la grille : l'EDT sera créé automatiquement.</span>
+          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Emplois du temps de ce niveau</label>
+          {/* ⭐ 2026-11-24 — REFONTE : les EDT sont créés et nommés PAR CLASSE via
+              l’assistant « Nouvelle EDT » (niveau → classes → EDT {classe} {année}).
+              Cette liste ne montre QUE les EDT du niveau sélectionné. */}
+          {levelTimetables.length === 0 ? (
+                <span className="text-xs text-slate-400 italic">Aucun EDT pour ce niveau — cliquez sur « Nouvelle EDT » : sélectionnez le niveau, puis les classes.</span>
           ) : (
             <div className="flex flex-wrap gap-1.5">
-              {timetables.map(tt => {
+              {levelTimetables.map(tt => {
                 const isActive = tt.id === activeTimetableId;
                 const entryCount = entries.filter(e => e.timetableId === tt.id).length;
                 return (
@@ -2053,9 +2168,9 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
         <div className="flex flex-col items-end gap-1">
           <div className="flex gap-2">
             <button onClick={handleNewTimetable}
-              title="Optionnel : un EDT est créé automatiquement à la première séance. Ce bouton sert à repartir sur un EDT vierge."
+              title="Créer les emplois du temps : choisissez d'abord le niveau scolaire, puis les classes — chaque EDT est nommé automatiquement (ex : EDT Maternelle 1 2026-2027)."
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold">
-              <Plus className="w-3.5 h-3.5" /> Nouvel EDT
+              <Plus className="w-3.5 h-3.5" /> Nouvelle EDT
             </button>
             <button onClick={handleSaveTimetable} disabled={!activeTimetableId}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
@@ -2080,13 +2195,15 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
         </div>
       </div>
 
-      {/* ≹ Toolbar : sélecteur multi-classes */}
+      {/* ≹ Toolbar : sélecteur multi-classes — ⭐ 2026-11-24 : uniquement les
+          classes du NIVEAU sélectionné (le niveau filtre les classes, comme
+          dans l'assistant « Nouvelle EDT ») */}
       <div className="flex flex-wrap items-start gap-3 bg-slate-50 rounded-xl border border-slate-200 p-3">
         <div className="flex-1 min-w-[250px]">
-          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Classe(s) — sélection multiple possible</label>
+          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Classe(s) du niveau — sélection multiple possible</label>
           <div className="flex flex-wrap gap-1.5 max-h-[80px] overflow-y-auto">
-            {classes.length === 0 ? <span className="text-xs text-slate-400 italic">Aucune classe</span> :
-              classes.map(c => {
+            {levelClasses.length === 0 ? <span className="text-xs text-slate-400 italic">Aucune classe pour ce niveau</span> :
+              levelClasses.map(c => {
                 const isSelected = selectedClassIds.includes(c.id);
                 return (
                   <button key={c.id} onClick={() => toggleClass(c.id)}
@@ -2097,7 +2214,7 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
               })
             }
           </div>
-          {selectedClassIds.length > 1 && <span className="text-[10px] text-blue-600 font-semibold mt-1 inline-block">⭐ {selectedClassIds.length} classes — EDT identique</span>}
+          {selectedClassIds.length > 1 && <span className="text-[10px] text-blue-600 font-semibold mt-1 inline-block">⭐ {selectedClassIds.length} classes — même contenu d'EDT appliqué à toutes</span>}
         </div>
       </div>
 
@@ -2105,8 +2222,8 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
       {selectedClassIds.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
           <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-          <p className="text-sm font-medium text-slate-700">Sélectionnez une ou plusieurs classes</p>
-          <p className="text-xs text-slate-400 mt-1">Cliquez sur les badges ci-dessus. Multi-sélection possible (CI+CP).</p>
+          <p className="text-sm font-medium text-slate-700">Aucune classe sélectionnée</p>
+          <p className="text-xs text-slate-400 mt-1">Cliquez sur « Nouvelle EDT » (niveau → classes, EDT nommé automatiquement) ou sélectionnez une classe ci-dessus.</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
@@ -2524,6 +2641,199 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
           </table>
         </div>
       )}
+
+      {/* ⭐ 2026-11-24 — ASSISTANT « Nouvelle EDT » (refonte workflow promoteur) :
+          étape 1 niveau scolaire → étape 2 classes de ce niveau → création
+          automatique d'UN EDT PAR CLASSE nommé « EDT {classe} {année} ». */}
+      {wizardOpen && (
+        <NewEdtWizard
+          levels={realLevels}
+          classes={classes}
+          timetables={timetables}
+          academicYearLabel={academicYearLabel || new Date().getFullYear().toString()}
+          defaultLevelId={configLevelId}
+          onClose={() => setWizardOpen(false)}
+          onCreate={handleCreateEdtsFromWizard}
+        />
+      )}
+    </div>
+  );
+}
+
+// ═══ ASSISTANT « Nouvelle EDT » — workflow promoteur (2026-11-24) ═══
+//   Étape 1 : Sélection du NIVEAU SCOLAIRE (le système le demande EN PREMIER).
+//   Étape 2 : Le niveau FILTRE les classes → sélection de la classe ou des
+//             classes (plusieurs classes peuvent partager le même contenu
+//             d'EDT — ex : les 2 classes de maternelle).
+//   Étape 3 : À la confirmation, le système CRÉE ET NOMME automatiquement
+//             l'emploi du temps de CHACUNE des classes :
+//             « EDT Maternelle 1 2026-2027 », « EDT Maternelle 2 2026-2027 »…
+//             puis l'utilisateur édite la grille et enregistre.
+function NewEdtWizard({
+  levels, classes, timetables, academicYearLabel, defaultLevelId, onClose, onCreate,
+}: {
+  levels: any[];
+  classes: any[];
+  timetables: any[];
+  academicYearLabel: string;
+  defaultLevelId?: string | null;
+  onClose: () => void;
+  onCreate: (levelItem: any, classIds: string[]) => Promise<void>;
+}) {
+  const [step, setStep] = useState<1 | 2>(1);
+  const [levelId, setLevelId] = useState<string | null>(defaultLevelId || null);
+  const [pickedClassIds, setPickedClassIds] = useState<string[]>([]);
+  const [creating, setCreating] = useState(false);
+
+  const normW = (s: any) => String(s || '').trim().toLowerCase();
+  const levelItem = levels.find(l => l.id === levelId) || null;
+  const levelLabel = normW(levelItem?.label);
+  const WIZARD_ALIASES: Record<string, string[]> = {
+    maternelle: ['maternelle', 'nursery'],
+    primaire: ['primaire', 'primary'],
+    secondaire: ['secondaire', 'secondary'],
+  };
+  const aliases = WIZARD_ALIASES[levelLabel] || [levelLabel];
+  const levelClasses = useMemo(
+    () => classes.filter((c: any) => aliases.includes(normW(c.level?.name)) || aliases.includes(normW(c.levelName))),
+    [classes, levelLabel]
+  );
+  const togglePick = (id: string) =>
+    setPickedClassIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  // Noms des EDT qui seront créés (aperçu avant confirmation)
+  const previewNames = pickedClassIds
+    .map(id => `EDT ${classes.find(c => c.id === id)?.name || '?'} ${academicYearLabel}`);
+  // Classes dont l'EDT existe DÉJÀ (même nom) — sera réutilisé, pas recréé
+  const alreadyExist = previewNames.filter(n => timetables.some(t => (t.name || '').trim() === n));
+
+  const handleCreate = async () => {
+    if (!levelItem || pickedClassIds.length === 0) return;
+    setCreating(true);
+    try {
+      await onCreate(levelItem, pickedClassIds);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => !creating && onClose()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* En-tête */}
+        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-gradient-to-r from-indigo-600 to-blue-700 text-white">
+          <div>
+            <h3 className="font-bold text-lg">Nouvelle EDT</h3>
+            <p className="text-xs text-indigo-100">
+              {step === 1 ? 'Étape 1 sur 2 — Sélectionnez le niveau scolaire' : 'Étape 2 sur 2 — Sélectionnez la ou les classes'}
+            </p>
+          </div>
+          <button onClick={onClose} disabled={creating} className="p-2 hover:bg-white/15 rounded-lg disabled:opacity-40"><X className="w-5 h-5" /></button>
+        </div>
+
+        {/* Corps */}
+        <div className="overflow-y-auto p-5 bg-slate-50 flex-1">
+          {step === 1 ? (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-600">
+                Le niveau scolaire détermine les classes parmi lesquelles vous choisirez :
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {levels.map(l => {
+                  const isPicked = levelId === l.id;
+                  const lvCount = (() => {
+                    const lb = normW(l.label);
+                    const al = WIZARD_ALIASES[lb] || [lb];
+                    return classes.filter((c: any) => al.includes(normW(c.level?.name)) || al.includes(normW(c.levelName))).length;
+                  })();
+                  return (
+                    <button key={l.id} onClick={() => setLevelId(l.id)}
+                      className={cn('p-4 rounded-xl border-2 text-left transition-all',
+                        isPicked ? 'border-indigo-600 bg-indigo-50 shadow-sm' : 'border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/40')}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900">{l.label || l.name || l.code}</span>
+                        {isPicked && <CheckCircle className="w-5 h-5 text-indigo-600" />}
+                      </div>
+                      <span className="text-xs text-slate-500 block mt-1">{lvCount} classe(s)</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="text-sm text-slate-600">
+                  Classes de <span className="font-bold text-indigo-700">{levelItem?.label}</span> — sélectionnez celles qui vont recevoir cet emploi du temps :
+                </p>
+                {levelClasses.length > 1 && (
+                  <button onClick={() => setPickedClassIds(pickedClassIds.length === levelClasses.length ? [] : levelClasses.map((c: any) => c.id))}
+                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline">
+                    {pickedClassIds.length === levelClasses.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+                  </button>
+                )}
+              </div>
+              {levelClasses.length === 0 ? (
+                <div className="bg-white rounded-xl border border-slate-200 p-6 text-center">
+                  <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-slate-700">Aucune classe pour ce niveau</p>
+                  <p className="text-xs text-slate-400 mt-1">Créez d'abord les classes du niveau (Pédagogie {'>'} Structure académique).</p>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {levelClasses.map(c => {
+                    const isPicked = pickedClassIds.includes(c.id);
+                    return (
+                      <button key={c.id} onClick={() => togglePick(c.id)}
+                        className={cn('px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-all',
+                          isPicked ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-300')}>
+                        {isPicked && '✓ '}{c.name || c.code}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-xs text-slate-500">
+                Plusieurs classes peuvent partager le <span className="font-semibold">même contenu</span> d'emploi du temps (ex : les classes de maternelle) — sélectionnez-les ensemble, vous ne remplirez la grille qu'une seule fois.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Aperçu des EDT qui seront créés */}
+        {step === 2 && pickedClassIds.length > 0 && (
+          <div className="px-5 py-3 bg-indigo-50 border-t border-indigo-100">
+            <p className="text-[11px] font-bold text-indigo-800 uppercase mb-1">Seront créés / réutilisés :</p>
+            <p className="text-xs text-indigo-900 font-medium">
+              {previewNames.slice(0, 3).join('  ·  ')}{previewNames.length > 3 ? `  ·  +${previewNames.length - 3} autre(s)` : ''}
+            </p>
+            {alreadyExist.length > 0 && (
+              <p className="text-[10px] text-indigo-600 mt-0.5">
+                {alreadyExist.length} EDT existant(s) avec ce nom — ils seront réutilisés (pas de doublon).
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Pied */}
+        <div className="flex items-center justify-between gap-3 p-4 border-t border-slate-100 bg-white">
+          <button onClick={() => (step === 2 ? setStep(1) : onClose())} disabled={creating}
+            className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 disabled:opacity-40">
+            {step === 2 ? '← Retour' : 'Annuler'}
+          </button>
+          {step === 1 ? (
+            <button onClick={() => levelId && setStep(2)} disabled={!levelId}
+              className="inline-flex items-center gap-1.5 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-bold">
+              Continuer <Plus className="w-4 h-4" />
+            </button>
+          ) : (
+            <button onClick={handleCreate} disabled={creating || pickedClassIds.length === 0}
+              className="inline-flex items-center gap-1.5 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-bold">
+              {creating ? <><Loader2 className="w-4 h-4 animate-spin" /> Création…</> : <><CheckCircle className="w-4 h-4" /> Créer {pickedClassIds.length > 1 ? `les ${pickedClassIds.length} EDT` : 'l\'EDT'}</>}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

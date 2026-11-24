@@ -23,6 +23,7 @@
 
 import { Global, Module, OnModuleInit } from '@nestjs/common';
 import { CommunicationModule } from '../communication/communication.module';
+import { SettingsModule } from '../settings/settings.module';
 import { EmailService as PlatformEmailService } from '../communication/services/email.service';
 import { EmailCryptoService } from './email-crypto.service';
 import { SchoolEmailSettingsService } from './school-email-settings.service';
@@ -32,7 +33,11 @@ import { SchoolEmailController } from './school-email.controller';
 
 @Global()
 @Module({
-  imports: [CommunicationModule],
+  // ⭐ SettingsModule : fournit RolesPermissionsService + FeatureFlagsService
+  //    au PermissionGuard de SchoolEmailController (pattern identique à
+  //    pedagogy/finance/exams/teacher-portal). Sans cet import, Nest ne peut
+  //    pas résoudre le guard → crash au démarrage (boucle Railway 24/11).
+  imports: [CommunicationModule, SettingsModule],
   controllers: [SchoolEmailController],
   providers: [
     EmailCryptoService,

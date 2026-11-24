@@ -15221,3 +15221,19 @@ Stage Summary:
 - ✅✅ Migration APPLIQUÉE EN PRODUCTION (3 tables + 9 index + _prisma_migrations) ; tsc module 0 erreur (harnais) ; 41/41 tests logique pure ; syntaxe 12 back + 6 front OK ; prisma validate OK.
 - ⏳ Après déploiement (build Railway régénère le client complet) : E2E — configurer le Gmail d'une école de recette (guide 4 étapes), Envoyer un e-mail test, vérifier From/Reply-To/footer chez le destinataire, journal + compteur ; ajouter EMAIL_ENCRYPTION_KEY sur Railway (openssl rand -hex 32) sinon repli dérivé DATABASE_URL (fonctionne, mais rotation = secrets expirés).
 - ⏳ Phase 2 (CDC §8) : Google OAuth2 PKCE (gmail.send), migration un clic des SMTP actifs, invalid_grant→Expiré — bouton déjà grisé « Bientôt disponible » dans l'onglet.
+
+---
+
+Task ID: 182-hotfix-crash-railway-school-email
+Agent: Super Z (agent principal)
+Task: HOTFIX production — crash-loop Railway depuis le déploiement du build 1.0.45 (tâche 181). Nest refusait de démarrer : « Nest can't resolve dependencies of the PermissionGuard (Reflector, ?, FeatureFlagsService). Please make sure that the argument RolesPermissionsService at index [1] is available in the SchoolEmailModule context. » Redémarrage du conteneur toutes les ~2 s.
+
+Work Log:
+- CAUSE : SchoolEmailModule n'importait que CommunicationModule. Or SchoolEmailController utilise @UseGuards(JwtAuthGuard, PermissionGuard) et PermissionGuard injecte RolesPermissionsService (index 1) + FeatureFlagsService (index 2) — tous deux fournis/exportés par SettingsModule, que les 4 autres modules consommateurs du guard (pedagogy, finance, exams, teacher-portal) importent déjà. Sans cet import, le guard est instanciable dans aucun contexte school-email → l'app meurt à l'injection → Railway restart en boucle.
+- FIX (1 ligne fonctionnelle) : imports: [CommunicationModule, SettingsModule] dans school-email.module.ts + commentaire explicatif. Aucun cycle vérifié (ni SettingsModule ni CommunicationModule n'importent school-email ; le pont anti-cycle par setter vers EmailService est inchangé).
+- VALIDATION LOCALE sous contrainte : `prisma generate` OOM-killé (exit 137, cgroup 4 Go, DMMF WASM sur schéma 536 modèles — même contrainte que tâche 181) → parse syntaxique API TypeScript OK, wiring vérifié à la lecture (SettingsModule exporte bien les 2 services ; pattern identique aux 4 modules existants). Build Railway = porte finale.
+- Version 1.0.46 (app.controller + health.controller ×3).
+
+Stage Summary:
+- ✅ Hotfix poussé : SettingsModule importé → PermissionGuard résout ses dépendances → démarrage normal attendu au prochain déploiement Railway.
+- ⏳ Vérifier les logs Railway après push (docker ps côté Railway : « Nest application successfully started »), puis E2E de la tâche 181 (config SMTP école de recette + e-mail test).

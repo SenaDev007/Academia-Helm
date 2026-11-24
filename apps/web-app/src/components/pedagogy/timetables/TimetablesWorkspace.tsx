@@ -1362,10 +1362,20 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
           setActiveTimetableId(chosen.id);
           // ⭐ Sélectionner la classe de l'EDT actif (nommage « EDT {classe} {année} »)
           //    plutôt que la 1ère classe arbitraire de la liste. Si l'EDT est un
-          //    ancien EDT de groupe (multi-classes), les classes seront déduites
-          //    de ses entries dans loadEntries.
+          //    ancien EDT de groupe (nom ≠ classe), les classes sont déduites de
+          //    ses entries (ex : « EDT Secondaire 2026-2027 » → la classe de ses
+          //    séances).
           const chosenClass = (cls || []).find(c => `EDT ${c.name} ${yearLb}` === (chosen.name || '').trim());
-          setSelectedClassIds(chosenClass ? [chosenClass.id] : []);
+          if (chosenClass) {
+            setSelectedClassIds([chosenClass.id]);
+          } else {
+            try {
+              const data = await pedagogyFetch<any>(`/api/timetables/${chosen.id}`);
+              const entryClassIds = new Set<string>();
+              (data?.entries || []).forEach((e: any) => { if (e.classId) entryClassIds.add(e.classId); if (e.class?.id) entryClassIds.add(e.class.id); });
+              setSelectedClassIds(Array.from(entryClassIds));
+            } catch { setSelectedClassIds([]); }
+          }
         }
       } else {
         // Aucun EDT pour l'année : grille vide, l'utilisateur clique « Nouvelle EDT »

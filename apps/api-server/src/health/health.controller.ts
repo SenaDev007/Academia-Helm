@@ -37,7 +37,12 @@ export class HealthController {
       status: 'ok',
       timestamp: new Date().toISOString(),
       service: 'Academia Helm API',
-      version: '1.0.21',
+      version: '1.0.43',
+      // ⭐ 2026-11-24 — commit git déployé (RAILWAY_GIT_COMMIT_SHA) — cf. app.controller
+      commit: process.env.RAILWAY_GIT_COMMIT_SHORT_SHA
+        || (process.env.RAILWAY_GIT_COMMIT_SHA
+          ? process.env.RAILWAY_GIT_COMMIT_SHA.slice(0, 7)
+          : undefined),
       // db: intentionnellement absent — voir commentaire d'entête.
       process: {
         uptime_s: Math.round(process.uptime()),
@@ -63,7 +68,10 @@ export class HealthController {
         status: 'ok',
         timestamp: new Date().toISOString(),
         service: 'Academia Helm API',
-        version: '1.0.21',
+        version: '1.0.43',
+        commit: process.env.RAILWAY_GIT_COMMIT_SHA
+          ? process.env.RAILWAY_GIT_COMMIT_SHA.slice(0, 7)
+          : undefined,
         db: 'connected',
       };
     } catch (error) {
@@ -71,7 +79,7 @@ export class HealthController {
         status: 'error',
         timestamp: new Date().toISOString(),
         service: 'Academia Helm API',
-        version: '1.0.21',
+        version: '1.0.43',
         db: 'disconnected',
         error: error instanceof Error ? error.message : 'Unknown DB error',
       };

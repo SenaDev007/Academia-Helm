@@ -15129,3 +15129,44 @@ Stage Summary:
 - ✅✅ Nettoyage complet : 3 sources de créations fantômes supprimées (auto-création à la volée, auto-rename, composant mort) + EDT générique vide purgé de la production ; plus AUCUN « truc bizarre » ne peut plus apparaître.
 - ✅✅ Multi-classes coherent : une seule grille éditée, chaque séance enregistrée dans l'EDT de sa classe, jumelles synchronisées (modification/suppression), affichage dédupliqué.
 - ⏳ Après déploiement : Pédagogie > Emploi du temps > sous-onglet Emploi du temps → « Nouvelle EDT » → choisir Maternelle → cocher Maternelle 1 + Maternelle 2 → « Créer les 2 EDT » → remplir la grille (le contenu s'applique aux 2 classes) → Enregistrer ; les chips « EDT Maternelle 1 2026-2027 » / « EDT Maternelle 2 2026-2027 » basculent chaque classe individuellement.
+---
+Task ID: 178-bulletins-pdf-rang-sexe-elision-diagnostic-prod-donnees-genre
+Agent: Super Z (agent principal)
+Task: Retour promoteur : « La correction premier/première selon le sexe s'applique bien dans l'UI mais PAS dans les PDF générés (sous-onglets bulletin d'évaluation, moyenne trimestrielle, moyenne annuelle) — ça garde toujours "premier" quel que soit le sexe. Pareil pour "bulletin d'évaluation" : appliqué dans l'UI mais pas dans les PDF. »
+
+Work Log:
+- DIAGNOSTIC EN PROFONDEUR (code + production + base) : la chaîne de code est INTÉGRALEMENT correcte — test local du VRAI BulletinPdfService (ts-node + Chromium) : les 4 gabarits FR affichent « 1ère » pour studentGender=F et aucune faute d'élision ; test PRODUCTION via API (login recette + POST generate-pdf, payload fille rang 1) : le backend déployé rend « Rang : 1ère » et « Bulletin d'Évaluation… » ; test E2E Playwright sur le flux réel (login → /app/exams/bulletins?level=PRIMAIRE&lang=FR → Générer PDF, sous-onglet trimestriel vue par matière + moyenne annuelle) : payloads interceptés studentGender='F' + PDF téléchargés contiennent « Rang : 1ère » (bulletin d'évaluation ET moyenne annuelle ; trimestriel « 6ème » correct) — la correction ÉTAIT déjà en production (redéploiement du matin même).
+- CAUSE RÉELLE OBSERVÉE PAR LE PROMOTEUR : LA BASE DE DONNÉES — (a) 707 élèves actifs sur 1739 avaient gender NULL (affichage « 1er » masculin par défaut) ; (b) ~35 genres en CONTRADICTION manifeste avec le prénom (Anaïs=M, Nathalie=M, Emmanuel=F, Samuel=F, Adèle=M…), dont les élèves de test du promoteur. Le code affiche « 1ère » dès que le genre est correct.
+- CORRECTION DE DONNÉES (3 passes, dry-run → backup JSON → apply → re-scan ; scripts commités scripts/exams/) : P1 = 35 contradictions prénom↔genre corrigées + 103 NULL backfillés (prénoms français/internationaux non ambigus) ; P2 = 212 NULL backfillés par conventions de nommage musulmanes/béninoises (suffixes -atou/-ath/-iatou/-anatou = féminin ; Mouhamadou/Adamou/Ousmane = masculin) ; P3 = 150 NULL backfillés (jeux étendus : Adèle/Béatrice/Adrien/Alexandre/Fatima/Gabrielle…). RÉSULTAT : 0 contradiction, 0 backfill possible restant, 242 NULL ambigus (Exaucé, Ange, Miracle, Rayane…) listés pour saisie manuelle — Mon Avenir Plus : 2 NULL restants (8→2), La Gaïenne : 424→157 (fichier importé sans colonne Sexe), Le Palmares : 237→74.
+- LIVRABLE PROMOTEUR : download/eleves_sans_genre_a_renseigner_20261124.xlsx (242 élèves, école/classe/matricule/prénom/nom, validé xlsx 0 issue) — à corriger via Élèves > fiche élève > Sexe ; l'import en masse mappe déjà la colonne Sexe (M/GARCON/F/FILLE).
+- BACKUPS : download/backup_genre_eleves_20261124_*.json (P1 138 lignes, P2, P3 — état avant, id/prénom/nom/genre/tenant).
+- OBSERVABILITÉ DÉPLOIEMENT : le marqueur de version du /health était resté bloqué à « 1.0.21 » (codé en dur) alors que les builds 1.0.40+ tournaient — une heure d'enquête gaspillée pour dater le code déployé. Corrigé : version portée à 1.0.43 + champ commit (RAILWAY_GIT_COMMIT_SHORT_SHA || RAILWAY_GIT_COMMIT_SHA tronqué) sur /health, /health/db et / (app.controller + health.controller).
+- TESTS COMMITÉS : apps/api-server/scripts/test-bulletin-gender.ts (4 gabarits × genre/élision, exécutable ts-node) ; vérifié après refonte A4 (aucune régression).
+
+Stage Summary:
+- ✅✅ PDF genre + élision VÉRIFIÉS en production (API directe + flux E2E complet) : « 1ère » pour une fille et « Bulletin d'Évaluation » dans les 3 types de bulletins — le promoteur voyait des cas dus aux DONNÉES, pas au code.
+- ✅✅ Base assainie : 500 genres corrigés/backfillés (35 contradictions + 465 NULL), backups JSON, liste Excel des 242 restants pour saisie manuelle.
+- ✅✅ /health daté précisément : version 1.0.43 + SHA git du build déployé.
+- ⏳ Après déploiement : re-générer les bulletins des filles précédemment vues « 1er » (le genre vient de la base) ; saisir le Sexe des 242 élèves de l'Excel ; vérifier un nouvel import en masse avec colonne Sexe remplie.
+
+---
+Task ID: 179-bulletins-pdf-a4-portrait-page-unique
+Agent: Super Z (agent principal)
+Task: Retour promoteur : « Les PDF des bulletins générés (bulletin d'évaluation, trimestriels, annuels — maternelle, primaire, secondaire) doivent être au format A4 portrait avec TOUTES les données sur UNE page : ceux qui sont en A5 vont sur deux pages, ce qui n'est pas bon. Il faut que tout reste sur une page au format A4 portrait. »
+
+Work Log:
+- DIAGNOSTIC : le format était passé à l'A5 portrait le 2026-10-05 (meilleur taux de remplissage) MAIS (a) les gabarits buildHtml (FR maternelle/primaire) et buildHtmlAnglophone (EN Report Book) avaient une structure DEUX PAGES EXPLICITE (page-break-after:always + règle CSS .page:not(:last-child)) : notes/synthèse en page 1, appréciations/signatures rejetées en page 2 ; (b) la vue par matière débordait sur 2 pages A5 quand le nombre de matières était élevé.
+- FORMAT : page.pdf format 'A5' → 'A4' portrait (mêmes marges 8/10mm, footerTemplate Chromium inchangé) — 595.92×841.92 pts vérifiés.
+- GABARIT FR MATERNELLE/PRIMAIRE (buildHtml) refondu en PAGE UNIQUE : saut de page explicite supprimé, en-tête raccourci de page 2 supprimé, « Symbole mérité » dédoublonné (il restait en synthèse de page 1 ET en page 2 maternelle), mention de conservation déplacée en toute fin (après signatures + QR), lignes pointillées compactées (analyse maternelle 12→6 ; défauts/qualités 2→1 ; analyse primaire 4→2), stats de synthèse primaire passées en UNE ligne 3 colonnes (même information, ⅓ de hauteur).
+- GABARIT EN REPORT BOOK (buildHtmlAnglophone) refondu en PAGE UNIQUE : short header page 2 supprimé, header compacté (14→8px), grilles A-E padding 2→1px, signatures 35→30px, headmaster comment min-height 40→22px, QR 40→36px.
+- RÈGLE CSS .page:not(:last-child) { page-break-after:always } RETIRÉE des 4 gabarits : plus AUCUN saut explicite — flux continu ; le débordement naturel reste possible (jamais de blanc forcé) mais les pires cas réels tiennent.
+- Secondaire trimestriel (modèle CEG) et secondaire évaluation étaient déjà mono-page : simple gain de canvas A4, aucune refonte nécessaire.
+- TESTS (apps/api-server/scripts/test-bulletin-a4-une-page.ts — Chromium réel, MÊMES options page.pdf que le service, pires cas : 10-12 matières, textes longs, conduct + grilles EN) : 7/7 gabarits sur UNE page A4 (FR maternelle, FR primaire 10 matières, FR secondaire trimestriel 12 matières, FR secondaire évaluation, EN Report Book secondary complet, vue par matière trimestrielle et annuelle 12 matières). Mesure EN : 1065px → 1023px (budget 1054px).
+- VÉRIFICATION CONTENU + VISUELLE : pdftotext — signatures + mention de conservation + « Page 1/1 » présents partout (rien de coupé) ; inspection visuelle (VLM) des 4 rendus principaux — aucun texte coupé, aucun chevauchement, tableaux alignés, tout présent sur la page.
+- NOTE UI : l'aperçu écran BulletinTwoPage garde son organisation 2 écrans (notes / appréciations) — c'est un aperçu interactif, le PDF généré est désormais une seule page A4 (demande porte sur les PDF).
+
+Stage Summary:
+- ✅✅ TOUS les bulletins PDF (évaluation / trimestriel / annuel — maternelle, primaire, secondaire, pistes FR et EN) en A4 PORTRAIT sur UNE SEULE page : fin des structures 2 pages et du débordement A5.
+- ✅✅ Aucune perte d'information : toutes les sections conservées (notes, synthèse, symbole, attitudes, analyses, signatures, cachets, QR) — seulement les doublons retirés (symbole affiché 2×, en-tête raccourci) et les espacements compactés.
+- ✅✅ Vérifié empiriquement sur rendu Chromium réel : 7/7 variantes à 1 page A4 + inspection visuelle.
+- ⏳ Après déploiement : générer un bulletin de chaque type (les 3 sous-onglets × les 3 niveaux) et vérifier l'aperçu PDF ; les bulletins WhatsApp envoyés aux parents suivent (même service de génération).

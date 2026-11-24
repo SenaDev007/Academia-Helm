@@ -56,6 +56,9 @@ import {
   getLabels, getEvaluationTypes, getMaxScoreForType,
   translatePeriodName, EN_EVALUATION_TYPES,
 } from '@/lib/exam-anglophone-config';
+// ⭐ 2026-11-24 — Libellés enrichis des types d'évaluation (nom complet +
+//    mois dérivé de la date programmée — fin du code brut [EM1]).
+import { enrichedEvalLabel, evalTypeName as evalTypeFullName } from '@/lib/evaluation-labels';
 import { translateClassName } from '@/lib/pedagogy/class-name-en';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -314,6 +317,10 @@ interface GroupedEvaluation {
   evaluationTypeId: string;
   evaluationTypeName: string;
   evaluationTypeCode?: string;
+  // ⭐ 2026-11-24 — Libellé ENRICHI (nom complet + mois dérivé de la date
+  // programmée : « Évaluation mensuelle 1 – mois d'octobre 2026 ») — fin du
+  // code brut [EM1] sur les cartes.
+  evaluationTypeLabel?: string;
   periodId: string;
   periodName: string;
   startDate: string | null;
@@ -365,6 +372,9 @@ function buildEvaluationGroups(evaluations: Evaluation[], isEN?: boolean): Group
         evaluationTypeId,
         evaluationTypeName: ev.evaluationType?.name || 'Évaluation',
         evaluationTypeCode: ev.evaluationType?.code,
+        // ⭐ 2026-11-24 — Libellé enrichi (rempli après la boucle : le mois est
+        // dérivé des evaluationDate des évaluations du groupe).
+        evaluationTypeLabel: undefined,
         periodId,
         periodName: ev.period?.name || '',
         startDate: ev.startDate || null,
@@ -400,6 +410,17 @@ function buildEvaluationGroups(evaluations: Evaluation[], isEN?: boolean): Group
     }
     g.evaluationIds.push(ev.id);
     g.statuses.push(ev.status);
+  }
+  // ⭐ 2026-11-24 — Libellé enrichi par groupe : nom complet + mois dérivé
+  //    des evaluationDate du groupe (« Évaluation mensuelle 1 – mois
+  //    d'octobre 2026 » / « First CA – October 2026 »).
+  for (const g of map.values()) {
+    g.evaluationTypeLabel = enrichedEvalLabel(
+      g.evaluationTypeCode || null,
+      g.evaluationTypeName || null,
+      g.evaluations,
+      isEN ? 'EN' : 'FR',
+    );
   }
   return Array.from(map.values()).sort((a, b) => {
     // Trier par classe (ordre pédagogique) puis par date de début
@@ -571,8 +592,9 @@ function EvaluationProgramCard({
         {/* Type d'évaluation + période */}
         <div>
           <p className="text-sm font-semibold text-navy-900">
-            {group.evaluationTypeCode ? `[${group.evaluationTypeCode}] ` : ''}
-            {group.evaluationTypeName}
+            {/* ⭐ 2026-11-24 — Libellé COMPLET enrichi : nom + mois de la date
+                programmée (fin du code brut [EM1]). */}
+            {group.evaluationTypeLabel || `${group.evaluationTypeCode ? `[${group.evaluationTypeCode}] ` : ''}${group.evaluationTypeName}`}
           </p>
           {group.periodName && (
             <p className="text-xs text-gray-500 mt-0.5">{translatePeriodName(group.periodName, isEN ? 'EN' : 'FR')}</p>
@@ -738,7 +760,8 @@ function ClassCardGrid({
                       title={t.name}
                       className="inline-flex items-center px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100"
                     >
-                      {t.code ? `[${t.code}] ` : ''}{t.name}
+                      {/* ⭐ 2026-11-24 — Nom complet (fin du code brut [EM1]). */}
+                      {evalTypeFullName(t.code, t.name)}
                     </span>
                   ))}
                 </div>
@@ -795,7 +818,8 @@ function ClassDetailHeader({
               title={t.name}
               className="inline-flex items-center px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100"
             >
-              {t.code ? `[${t.code}] ` : ''}{t.name}
+              {/* ⭐ 2026-11-24 — Nom complet (fin du code brut [EM1]). */}
+              {evalTypeFullName(t.code, t.name)}
             </span>
           ))}
         </div>
@@ -2747,7 +2771,8 @@ export default function EvaluationsPage() {
                         className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
                       <span className="text-sm text-gray-700">
-                        {t.code ? `[${t.code}] ` : ''}{t.name}
+                        {/* ⭐ 2026-11-24 — Nom complet (fin du code brut [EM1]). */}
+                        {evalTypeFullName(t.code, t.name)}
                       </span>
                     </label>
                   ))
@@ -2973,7 +2998,8 @@ export default function EvaluationsPage() {
               ) : (
                 evaluationTypes.map(t => (
                   <SelectItem key={t.id} value={t.id}>
-                    {t.code ? `[${t.code}] ` : ''}{t.name}
+                    {/* ⭐ 2026-11-24 — Nom complet (fin du code brut [EM1]). */}
+                    {evalTypeFullName(t.code, t.name)}
                   </SelectItem>
                 ))
               )}
@@ -3534,14 +3560,14 @@ export default function EvaluationsPage() {
                   <SelectValue placeholder={labels.selectPlaceholder}>
                     {(() => {
                       const t = evaluationTypes.find((x) => x.id === bulkForm.evaluationTypeId);
-                      return t ? (t.code ? `[${t.code}] ${t.name}` : t.name) : null;
+                      return t ? evalTypeFullName(t.code, t.name) : null;
                     })()}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {evaluationTypes.map((t) => (
                     <SelectItem key={t.id} value={t.id}>
-                      {t.code ? `[${t.code}] ${t.name}` : t.name}
+                      {evalTypeFullName(t.code, t.name)}
                     </SelectItem>
                   ))}
                 </SelectContent>

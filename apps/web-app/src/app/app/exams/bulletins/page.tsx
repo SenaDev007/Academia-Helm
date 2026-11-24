@@ -56,6 +56,12 @@ import { SchoolIdentityHeader } from '@/components/exams/SchoolIdentityHeader';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import apiClient from '@/lib/api/client';
 import { enComponentForCode, translatePeriodName } from '@/lib/exam-anglophone-config';
+// ⭐ 2026-11-24 — Libellés COMPLETS des types d'évaluation (exige promoteur :
+//    « au lieu d'afficher EM1, on affiche Évaluation mensuelle 1 – mois
+//    d'octobre 2026 » — le mois est dérivé de la date programmée).
+import {
+  enrichedEvalLabel, buildEvalLabels, buildEvalLabelsByPeriod, splitEnrichedLabel,
+} from '@/lib/evaluation-labels';
 import { translateClassName } from '@/lib/pedagogy/class-name-en';
 import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
@@ -481,6 +487,12 @@ function BulletinsContent() {
   const [selectedEvalTypeId, setSelectedEvalTypeId] = useState('');
   const [loadingBulletins, setLoadingBulletins] = useState(false);
   const [bulletinData, setBulletinData] = useState<BulletinData | null>(null);
+  // ⭐ 2026-11-24 — Évaluations PROGRAMMÉES (tous statuts) de la classe :
+  //    source des DATES (evaluationDate) pour enrichir les libellés des types
+  //    d'évaluation avec le mois (« Évaluation mensuelle 1 – mois d'octobre
+  //    2026 »). Chargées séparément des évaluations VALIDATED des bulletins :
+  //    une évaluation PLANNED a déjà sa date programmée.
+  const [evalsWithDates, setEvalsWithDates] = useState<any[]>([]);
   const [expandedStudents, setExpandedStudents] = useState<Set<string>>(new Set());
   const [generatingPdf, setGeneratingPdf] = useState<string | null>(null);
   // ⭐ Sub-tabs: 'bulletin' (Bulletin d'évaluation) | 'trimestriel' (Bulletin
@@ -640,6 +652,21 @@ function BulletinsContent() {
   useEffect(() => { loadClasses(); }, [loadClasses]);
   useEffect(() => { loadPeriods(); }, [loadPeriods]);
   useEffect(() => { loadEvaluationTypes(); }, [loadEvaluationTypes]);
+
+  // ⭐ 2026-11-24 — Charge les évaluations PROGRAMMÉES (tous statuts) de la
+  //    classe pour dériver le MOIS de chaque type d'évaluation (libellés
+  //    enrichis « Évaluation mensuelle 1 – mois d'octobre 2026 »).
+  useEffect(() => {
+    if (!selectedClassId || !academicYear?.id) { setEvalsWithDates([]); return; }
+    let cancelled = false;
+    institutionalExamsService.getEvaluations({
+      academicYearId: academicYear.id,
+      classId: selectedClassId,
+    })
+      .then((evals: any) => { if (!cancelled) setEvalsWithDates(Array.isArray(evals) ? evals : []); })
+      .catch(() => { if (!cancelled) setEvalsWithDates([]); });
+    return () => { cancelled = true; };
+  }, [selectedClassId, academicYear?.id]);
 
   // ── Load bulletins (auto-calculate — same pattern as registre) ─────────────
   const loadBulletins = useCallback(async () => {
@@ -1247,8 +1274,34 @@ function BulletinsContent() {
       //    (au lieu de isCurrent=true qui peut ne pas être marqué).
       periodId: selectedPeriodId,
       evaluationTypeId: selectedEvalTypeId || null,
-      evaluationTypeName: selectedEvalTypeName,
+      // ⭐ 2026-11-24 — evaluationTypeName ENRICHI : nom complet + mois dérivé
+      //    de la date programmée (« Évaluation mensuelle 1 – mois d'octobre
+      //    2026 ») — le PDF et le ReportCard du parent portent le libellé
+      //    complet, plus jamais le code brut EM1.
+      evaluationTypeName: selectedEvalTypeEnriched || selectedEvalTypeName,
       evaluationTypeCode: selectedEvalTypeCode,
+      // ⭐ 2026-11-24 — evalColumnLabels : libellés enrichis des colonnes du
+      //    tableau (EM1/EM2/EC, IE1/IE2/DS1/DS2 ou First CA/Second CA/Exam
+      //    selon la piste) — utilisés par les gabarits PDF côté backend.
+      evalColumnLabels: scopeLang === 'EN'
+        ? {
+          fca: selectedPeriodEvalLabels.FCA || selectedPeriodEvalLabels.FIRST_CA,
+          sca: selectedPeriodEvalLabels.SCA || selectedPeriodEvalLabels.SECOND_CA,
+          exam: selectedPeriodEvalLabels.EXAM || selectedPeriodEvalLabels.EXAMINATION,
+        }
+        : secondaryConsolidated
+          ? {
+            int1: selectedPeriodEvalLabels.INT1 || selectedPeriodEvalLabels.IE1,
+            int2: selectedPeriodEvalLabels.INT2 || selectedPeriodEvalLabels.IE2,
+            ds1: selectedPeriodEvalLabels.DS1,
+            ds2: selectedPeriodEvalLabels.DS2,
+          }
+          : {
+            em1: selectedPeriodEvalLabels.EM1,
+            em2: selectedPeriodEvalLabels.EM2,
+            ec: selectedPeriodEvalLabels.EC,
+            ep: selectedPeriodEvalLabels.EP,
+          },
       className: selectedClassName,
       studentName: student.studentName,
       studentMatricule: student.matricule,
@@ -1529,6 +1582,23 @@ function BulletinsContent() {
   const selectedPeriodName = periods.find(p => p.id === selectedPeriodId)?.name || '';
   const selectedEvalTypeName = evaluationTypes.find(t => t.id === selectedEvalTypeId)?.name || '';
   const selectedEvalTypeCode = evaluationTypes.find(t => t.id === selectedEvalTypeId)?.code || '';
+  // ⭐ 2026-11-24 — Libellé ENRICHI du type sélectionné : nom complet + mois
+  //    dérivé de la date programmée (« Évaluation mensuelle 1 – mois
+  //    d'octobre 2026 » / « First CA – October 2026 »). Utilisé partout :
+  //    badge de sélection, aperçu BulletinTwoPage, payload PDF.
+  const selectedEvalTypeEnriched = useMemo(() => enrichedEvalLabel(
+    selectedEvalTypeCode || null,
+    selectedEvalTypeName || null,
+    evalsWithDates.filter((ev: any) =>
+      ev.period?.id === selectedPeriodId && ev.evaluationType?.id === selectedEvalTypeId),
+    scopeLang === 'EN' ? 'EN' : 'FR',
+  ), [selectedEvalTypeCode, selectedEvalTypeName, evalsWithDates, selectedPeriodId, selectedEvalTypeId, scopeLang]);
+  // ⭐ 2026-11-24 — Libellés enrichis par code pour la période sélectionnée
+  //    (colonnes EM1/EM2/EC du tableau détaillé + payload PDF).
+  const selectedPeriodEvalLabels = useMemo(() => buildEvalLabels(
+    evalsWithDates.filter((ev: any) => ev.period?.id === selectedPeriodId),
+    scopeLang === 'EN' ? 'EN' : 'FR',
+  ), [evalsWithDates, selectedPeriodId, scopeLang]);
 
   // ⭐ Calcul de la date de fin du trimestre (TERM ENDING — Report Book EN)
   //    Format long anglais : "Friday, December 12, 2025"
@@ -1628,7 +1698,7 @@ function BulletinsContent() {
           periodId={selectedPeriodId}
           userRole={user?.role}
           evaluationTypeId={selectedEvalTypeId || undefined}
-          evaluationTypeName={selectedEvalTypeName || undefined}
+          evaluationTypeName={selectedEvalTypeEnriched || selectedEvalTypeName || undefined}
           evaluationTypeCode={selectedEvalTypeCode || undefined}
           language={scopeLang as 'FR' | 'EN'}
           onRefresh={() => {
@@ -1683,14 +1753,24 @@ function BulletinsContent() {
               <select value={selectedEvalTypeId} onChange={(e) => setSelectedEvalTypeId(e.target.value)}
                 className="w-full text-sm font-semibold border border-gray-200 bg-gray-50 rounded-lg py-2 px-3 focus:ring-2 focus:ring-blue-500">
                 <option value="">{isEN ? '— Select —' : '— Sélectionner —'}</option>
-                {evaluationTypes.map(t => <option key={t.id} value={t.id}>[{t.code}] {t.name}</option>)}
+                {/* ⭐ 2026-11-24 — Libellé COMPLET enrichi (nom + mois de la
+                    date programmée) — fin du code brut [EM1]. */}
+                {evaluationTypes.map(t => {
+                  const enriched = enrichedEvalLabel(
+                    t.code, t.name,
+                    evalsWithDates.filter((ev: any) =>
+                      ev.period?.id === selectedPeriodId && ev.evaluationType?.id === t.id),
+                    scopeLang === 'EN' ? 'EN' : 'FR',
+                  );
+                  return <option key={t.id} value={t.id}>{enriched}</option>;
+                })}
               </select>
             </div>
           )}
           {secondaryConsolidated && (
             <div className="flex-1 self-end">
               <div className="bg-blue-50 border border-blue-200 rounded-lg py-2.5 px-3 text-xs font-bold text-blue-700">
-                Bulletin trimestriel (IE1 &amp; IE2 + DS1 &amp; DS2)
+                Bulletin trimestriel (Interrogations écrites 1 &amp; 2 + Devoirs surveillés 1 &amp; 2)
               </div>
             </div>
           )}
@@ -1717,7 +1797,7 @@ function BulletinsContent() {
             {/* ⭐ EN track has no eval type selector (consolidated 1st CA + 2nd CA + Exam),
                 so the eval badge is hidden. For FR track, show the eval type badge. */}
             {!isEN && selectedEvalTypeName && (
-              <><span>·</span><Badge variant="outline" className="text-xs">{selectedEvalTypeCode ? `[${selectedEvalTypeCode}] ` : ''}{selectedEvalTypeName || '—'}</Badge></>
+              <><span>·</span><Badge variant="outline" className="text-xs">{selectedEvalTypeEnriched || selectedEvalTypeName || '—'}</Badge></>
             )}
           </div>
         )}
@@ -1832,7 +1912,7 @@ function BulletinsContent() {
                       selectedPeriodName={selectedPeriodName}
                       selectedClassName={selectedClassName}
                       selectedEvalTypeCode={selectedEvalTypeCode}
-                      selectedEvalTypeName={selectedEvalTypeName}
+                      selectedEvalTypeName={selectedEvalTypeEnriched || selectedEvalTypeName}
                       onGeneratePdf={(sigs) => handleGeneratePdf(student, sigs)}
                       generatingPdf={generatingPdf === student.id}
                       canDownload={!isTeacher}
@@ -1847,6 +1927,17 @@ function BulletinsContent() {
                       directorName={directorName}
                       onWhatsAppBulletin={handleWhatsAppBulletin}
                       whatsappSending={whatsappSending === student.id}
+                      enEvalLabels={{
+                        fca: selectedPeriodEvalLabels.FCA || selectedPeriodEvalLabels.FIRST_CA,
+                        sca: selectedPeriodEvalLabels.SCA || selectedPeriodEvalLabels.SECOND_CA,
+                        exam: selectedPeriodEvalLabels.EXAM || selectedPeriodEvalLabels.EXAMINATION,
+                      }}
+                      secEvalLabels={{
+                        int1: selectedPeriodEvalLabels.INT1 || selectedPeriodEvalLabels.IE1,
+                        int2: selectedPeriodEvalLabels.INT2 || selectedPeriodEvalLabels.IE2,
+                        ds1: selectedPeriodEvalLabels.DS1,
+                        ds2: selectedPeriodEvalLabels.DS2,
+                      }}
                     />
                   </div>
                 )}
@@ -1904,7 +1995,7 @@ function BulletinTwoPage({
   selectedPeriodName, selectedClassName, selectedEvalTypeCode, selectedEvalTypeName,
   onGeneratePdf, generatingPdf, canDownload = true, directorSignature, teacherSignature,
   selectedPeriodId, scopeLang, nextTermStartDate, termEndingDate, isSecondaire, isSecondaryTrack, directorName,
-  onWhatsAppBulletin, whatsappSending,
+  onWhatsAppBulletin, whatsappSending, enEvalLabels, secEvalLabels,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
@@ -1930,6 +2021,12 @@ function BulletinTwoPage({
   isSecondaire?: boolean;           // ⭐ SECONDAIRE « Bulletin trimestriel » (consolidé CEG) — sinon standard primaire
   isSecondaryTrack?: boolean;       // ⭐ SECONDAIRE piste FR (les 2 onglets) — page 2 modèle secondaire
   directorName?: string | null;     // ⭐ Nom du directeur résolu depuis le module RH (administration)
+  // ⭐ 2026-11-24 — Libellés enrichis des colonnes EN (First CA/Second CA/
+  //    Examination + mois de la date programmée) pour le tableau du Report Book.
+  enEvalLabels?: { fca?: string; sca?: string; exam?: string };
+  // ⭐ 2026-11-24 — Libellés enrichis des sous-colonnes du tableau CEG
+  //    secondaire (Interrogation écrite 1/2 + Devoir surveillé 1/2 + mois).
+  secEvalLabels?: { int1?: string; int2?: string; ds1?: string; ds2?: string };
 }) {
   const isEn = scopeLang === 'EN';
   const isSecondaryBulletin = !!isSecondaire && !isEn;
@@ -1994,9 +2091,9 @@ function BulletinTwoPage({
         </div>
         <div className="text-[10px] text-slate-600 mt-0.5">
           {isEn ? <>Pupil: <strong>{student.studentName}</strong> · Admission N°: {student.matricule || '—'} · Report Card (1st CA + 2nd CA + Exam)</>
-            : isSecondaryBulletin ? <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · Bulletin trimestriel (IE1 &amp; IE2 + DS1 &amp; DS2)</>
-            : isSecondaryEvalMode ? <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · Bulletin d'évaluation ({selectedEvalTypeCode ? `${selectedEvalTypeCode} ` : ''}{selectedEvalTypeName})</>
-            : <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · {selectedEvalTypeCode} {selectedEvalTypeName}</>}
+            : isSecondaryBulletin ? <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · Bulletin trimestriel (Interrogations écrites 1 &amp; 2 + Devoirs surveillés 1 &amp; 2)</>
+            : isSecondaryEvalMode ? <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · Bulletin d'évaluation ({selectedEvalTypeName})</>
+            : <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · {selectedEvalTypeName}</>}
         </div>
       </div>
 
@@ -2037,6 +2134,7 @@ function BulletinTwoPage({
                 periodName={selectedPeriodName}
                 academicYearLabel={academicYear?.label}
                 academicYearId={academicYear?.id}
+                secEvalLabels={secEvalLabels}
               />
             ) : isMaternelle ? (
               <BulletinMaternellePage1
@@ -2045,9 +2143,10 @@ function BulletinTwoPage({
                 academicYearLabel={academicYear?.label}
                 periodName={selectedPeriodName}
                 classLabel={selectedClassName}
+                evalTypeLabel={selectedEvalTypeName}
               />
             ) : scopeLang === 'EN' ? (
-              <BulletinAnglophonePage1 student={student} bulletinData={bulletinData} selectedClassName={selectedClassName} termEndingDate={termEndingDate} sessionYear={academicYear?.label} />
+              <BulletinAnglophonePage1 student={student} bulletinData={bulletinData} selectedClassName={selectedClassName} termEndingDate={termEndingDate} sessionYear={academicYear?.label} enEvalLabels={enEvalLabels} />
             ) : (
               <BulletinPrimairePage1
                 student={student}
@@ -2102,7 +2201,7 @@ function BulletinTwoPage({
 // ─── Maternelle Page 1: Notes table (TS/S/PS columns) ──────────────────────
 
 function BulletinMaternellePage1({
-  student, bulletinData, academicYearLabel, periodName, classLabel,
+  student, bulletinData, academicYearLabel, periodName, classLabel, evalTypeLabel,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
@@ -2110,6 +2209,9 @@ function BulletinMaternellePage1({
   academicYearLabel?: string;
   periodName?: string;
   classLabel?: string;
+  /** ⭐ 2026-11-24 — Libellé ENRICHI du type d'évaluation (nom complet +
+   *  mois de la date programmée) — titre du carnet. */
+  evalTypeLabel?: string;
 }) {
   // ⭐ Visa du directeur par matière — éditable, auto-save on blur
   // Auto-rempli depuis l'appréciation enseignant si vide
@@ -2175,9 +2277,12 @@ function BulletinMaternellePage1({
       </div>
 
       {/* ⭐ T37 — TITRE : barre encadrée navy (même standard que le PDF et le
-          secondaire — plus de simple texte nu, design unifié). */}
+          secondaire — plus de simple texte nu, design unifié).
+          ⭐ 2026-11-24 — Le titre porte le libellé ENRICHI du type
+          d'évaluation (nom complet + mois de la date programmée) au lieu
+          de l'ancien générique « Évaluation Sommative Mensuelle ». */}
       <div className="text-center border-2 border-[#0A2A5E] bg-slate-50 rounded-lg px-3 py-1.5">
-        <h4 className="text-xs font-bold text-[#0A2A5E] uppercase">Évaluation Sommative Mensuelle</h4>
+        <h4 className="text-xs font-bold text-[#0A2A5E] uppercase">{evalTypeLabel || 'Évaluation Sommative Mensuelle'}</h4>
         <p className="text-[10px] text-slate-500">(à remplir après avoir observé l'enfant)</p>
       </div>
       {/* ⭐ T27/T37 — Corps « façon Frederis » : cadre arrondi noir UNIQUE (le
@@ -2526,6 +2631,7 @@ function BulletinSecondairePage1({
   periodName,
   academicYearLabel,
   academicYearId,
+  secEvalLabels,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
@@ -2533,6 +2639,9 @@ function BulletinSecondairePage1({
   periodName: string;
   academicYearLabel?: string;
   academicYearId?: string;
+  // ⭐ 2026-11-24 — Libellés enrichis des sous-colonnes (Interrogation
+  //    écrite 1/2 + Devoir surveillé 1/2 + mois de la date programmée).
+  secEvalLabels?: { int1?: string; int2?: string; ds1?: string; ds2?: string };
 }) {
   const isJunior = isJuniorSecondaryClass2(className || '');
 
@@ -2629,17 +2738,19 @@ function BulletinSecondairePage1({
               <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '70px' }}>Appréciation</th>
               <th rowSpan={2} className="border-b border-black px-1 py-1 font-bold uppercase text-center w-14">Signature</th>
             </tr>
-            {/* Sous-colonnes abrégées IE1/IE2 (Interrogation écrite) + DS1/DS2
-                (Devoir surveillé) — TOUJOURS sous leur colonne parente */}
+            {/* Sous-colonnes — ⭐ 2026-11-24 : nom complet abrégé + MOIS de
+                la date programmée (fin des codes bruts IE1/IE2/DS1/DS2).
+                TOUJOURS sous leur colonne parente. */}
             <tr className="bg-white">
-              <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px] uppercase min-w-[36px]">IE1</th>
-              <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px] uppercase min-w-[36px]">IE2</th>
-              <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px] uppercase min-w-[36px]">DS1</th>
-              {/* ⭐ T30 — FIX : border-r sur DS2 (le filet vertical DS2|Moyenne
-                  manquait). Le sous-en-tête vit dans sa propre ligne <tr>, la
-                  règle « dernière colonne sans filet » ne doit s'appliquer
-                  qu'à la colonne Signature, pas à DS2. */}
-              <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px] uppercase min-w-[36px]">DS2</th>
+              {[['Interro. 1', secEvalLabels?.int1], ['Interro. 2', secEvalLabels?.int2], ['Devoir 1', secEvalLabels?.ds1], ['Devoir 2', secEvalLabels?.ds2]].map(([name, label], i) => {
+                const parts = splitEnrichedLabel(label as string | undefined);
+                return (
+                  <th key={i} className={`border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px] uppercase min-w-[46px] ${i === 3 ? '' : ''}`}>
+                    <span className="block leading-tight">{name}</span>
+                    {parts?.month && <span className="block text-[7px] font-semibold normal-case leading-tight opacity-80">{parts.month}</span>}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -2811,7 +2922,7 @@ function BulletinSecondaireEvalPage1({
               Trimestre : <span className="text-slate-900">{periodName || '—'}</span>
             </td>
             <td className="border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700 w-1/3">
-              Évaluation : <span className="text-slate-900">{evalTypeCode ? `[${evalTypeCode}] ` : ''}{evalTypeName || '—'}</span>
+              Évaluation : <span className="text-slate-900">{evalTypeName || '—'}</span>
             </td>
           </tr>
           <tr>
@@ -2903,14 +3014,23 @@ function BulletinSecondaireEvalPage1({
 //      Highest in class | Lowest in class | Position | Grade | Remark
 
 function BulletinAnglophonePage1({
-  student, bulletinData, selectedClassName, termEndingDate, sessionYear,
+  student, bulletinData, selectedClassName, termEndingDate, sessionYear, enEvalLabels,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
   selectedClassName?: string;
   termEndingDate?: string | null;
   sessionYear?: string | null;
+  // ⭐ 2026-11-24 — Libellés enrichis (First CA/Second CA/Examination + mois
+  //    de la date programmée) — affichés dans les en-têtes du tableau.
+  enEvalLabels?: { fca?: string; sca?: string; exam?: string };
 }) {
+  // ⭐ 2026-11-24 — Mois enrichis pour les 3 composantes (sous les libellés
+  //    1st CA / 2nd CA / Exam) : « First CA – October 2026 » → nom + mois.
+  const fcaParts = splitEnrichedLabel(enEvalLabels?.fca);
+  const scaParts = splitEnrichedLabel(enEvalLabels?.sca);
+  const examParts = splitEnrichedLabel(enEvalLabels?.exam);
+
   // Moyenne de l'élève sur /100 (déjà calculée dans generalAverage pour EN)
   const pupilAvg = student.generalAverage ?? 0;
   const tier = enTierFor(student.generalAverage);
@@ -2972,9 +3092,9 @@ function BulletinAnglophonePage1({
         <thead>
           <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
             <th className="border-r border-b border-black px-2 py-1 font-bold uppercase text-left" style={{ minWidth: '110px' }}>Subjects</th>
-            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">1st<br/>CA<br/><span className="font-normal text-[8px]">/20</span></th>
-            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">2nd<br/>CA<br/><span className="font-normal text-[8px]">/20</span></th>
-            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">Exam<br/><span className="font-normal text-[8px]">/60</span></th>
+            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">1st<br/>CA<br/><span className="font-normal text-[8px]">/20</span>{fcaParts?.month && <><br/><span className="font-semibold text-[7px] normal-case leading-tight">{fcaParts.month}</span></>}</th>
+            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">2nd<br/>CA<br/><span className="font-normal text-[8px]">/20</span>{scaParts?.month && <><br/><span className="font-semibold text-[7px] normal-case leading-tight">{scaParts.month}</span></>}</th>
+            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">Exam<br/><span className="font-normal text-[8px]">/60</span>{examParts?.month && <><br/><span className="font-semibold text-[7px] normal-case leading-tight">{examParts.month}</span></>}</th>
             <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ backgroundColor: '#0D3B85' }}>Total<br/><span className="font-normal text-[8px]">/100</span></th>
             <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">Highest<br/>in class</th>
             <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">Lowest<br/>in class</th>
@@ -4281,6 +4401,10 @@ function MoyennesTab({
   const [loading, setLoading] = useState(true);
   const [trimesterData, setTrimesterData] = useState<any[]>([]);
   const [annualData, setAnnualData] = useState<any[]>([]);
+  // ⭐ 2026-11-24 — Libellés enrichis par NOM DE PÉRIODE (code → « Évaluation
+  //    mensuelle 1 – mois d'octobre 2026 ») pour les en-têtes du tableau des
+  //    moyennes trimestrielles (colonnes EM1/EM2/EC PAR trimestre).
+  const [labelsByPeriodName, setLabelsByPeriodName] = useState<Record<string, Record<string, string>>>({});
   // ⭐ 2026-11-23 — Envoi WhatsApp depuis la VUE GLOBALE : un clic sur une
   //    ligne d'élève bascule en « Vue par matière » (le bulletin complet —
   //    EM1/EM2/Moy.EM/EC par matière) et déclenche automatiquement l'envoi du
@@ -4438,6 +4562,25 @@ function MoyennesTab({
       const periodsRes = await fetch(`/api/settings/academic-years/${academicYear.id}/periods`, { credentials: 'include' });
       const periodsData = await periodsRes.json();
       const periods = Array.isArray(periodsData) ? periodsData : [];
+
+      // ⭐ 2026-11-24 — Libellés enrichis par période (nom complet + mois de la
+      //    date programmée) : TOUTES les évaluations (tous statuts — une
+      //    PLANNED a déjà sa date) — EM1 du T1 = octobre, EM1 du T2 = janvier…
+      try {
+        const allScheduled = await institutionalExamsService.getEvaluations({
+          academicYearId: academicYear.id,
+          classId: selectedClassId,
+        });
+        const labelsById = buildEvalLabelsByPeriod(
+          Array.isArray(allScheduled) ? allScheduled : [],
+          scopeLang === 'EN' ? 'EN' : 'FR',
+        );
+        const byName: Record<string, Record<string, string>> = {};
+        for (const p of periods) {
+          if (labelsById[p.id]) byName[p.name] = labelsById[p.id];
+        }
+        setLabelsByPeriodName(byName);
+      } catch { setLabelsByPeriodName({}); }
 
       const results: any[] = [];
       for (const period of periods) {
@@ -4665,6 +4808,7 @@ function MoyennesTab({
             data={trimesterData}
             isMaternelle={isMaternelle}
             onSendWhatsApp={isTeacher ? undefined : handleRowSendWhatsApp}
+            labelsByPeriodName={labelsByPeriodName}
           />
         )
       ) : (
@@ -4711,6 +4855,28 @@ function avgColor(value: number | null | undefined, isMaternelle: boolean, thres
   return value >= threshold ? 'text-emerald-700' : 'text-red-600';
 }
 
+// ─── ⭐ 2026-11-24 — En-tête de colonne d'un type d'évaluation ────────────────
+//    Libellé COMPLET sur 2 lignes : nom (« Évaluation mensuelle 1 ») + mois
+//    dérivé de la date programmée (« mois d'octobre 2026 ») — fin du code
+//    brut EM1 dans les tableaux (exige promoteur).
+function EvalTh({ label, fallback, className, style }: {
+  label?: string;
+  fallback: string;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  const parts = splitEnrichedLabel(label);
+  const name = parts?.name || fallback;
+  return (
+    <th className={className} style={style}>
+      <span className="block leading-tight">{name}</span>
+      {parts?.month && (
+        <span className="block text-[9px] font-semibold normal-case opacity-80 leading-tight">{parts.month}</span>
+      )}
+    </th>
+  );
+}
+
 // ─── Vue Par Matière Trimestriel (maternelle uniquement) ────────────────────
 //
 // ⭐ Refonte (2026-09-27) — Vue par matière demandée par l'utilisateur :
@@ -4749,6 +4915,10 @@ function VueParMatiereTrimestriel({
   const [subjects, setSubjects] = useState<any[]>([]);
   const [expandedStudents, setExpandedStudents] = useState<Set<string>>(new Set());
   const [generatingPdf, setGeneratingPdf] = useState<string | null>(null);
+  // ⭐ 2026-11-24 — Libellés enrichis par code (« Évaluation mensuelle 1 –
+  //    mois d'octobre 2026 ») pour la période sélectionnée — en-têtes du
+  //    tableau + payload PDF (vue par matière TRIMESTRIELLE).
+  const [evalLabels, setEvalLabels] = useState<Record<string, string>>({});
   // ⭐ 2026-11-23 — Envoi WhatsApp du bulletin par matière (un chargement par élève)
   const [whatsappLoading, setWhatsappLoading] = useState<string | null>(null);
   const isTeacher = ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'PEDAGOGIC_COORDINATOR'].includes(user?.role || '');
@@ -4788,6 +4958,22 @@ function VueParMatiereTrimestriel({
         }
         return true;
       });
+
+      // ⭐ 2026-11-24 — Libellés enrichis (nom complet + mois de la date
+      //    programmée) : TOUTES les évaluations de la classe (tous statuts —
+      //    une PLANNED a déjà sa date) filtrées sur la période, pour couvrir
+      //    aussi les types programmés non encore notés (cache partagé avec
+      //    le composant principal).
+      try {
+        const allScheduled = await institutionalExamsService.getEvaluations({
+          academicYearId: academicYear.id,
+          classId: selectedClassId,
+        });
+        setEvalLabels(buildEvalLabels(
+          (Array.isArray(allScheduled) ? allScheduled : []).filter((ev: any) => ev.period?.id === selectedPeriodId),
+          scopeLang === 'EN' ? 'EN' : 'FR',
+        ));
+      } catch { setEvalLabels({}); }
 
       if (periodEvals.length === 0) {
         setStudents([]);
@@ -4988,6 +5174,13 @@ function VueParMatiereTrimestriel({
         //    sans lui, le bulletin envoyé reste invisible dans le portail parent).
         periodId: selectedPeriodId || undefined,
         evaluationTypeName: 'Vue par matière',
+        // ⭐ 2026-11-24 — Libellés enrichis des colonnes (EM1/EM2/EC + mois)
+        //    pour le gabarit PDF buildHtmlVueParMatiere côté backend.
+        evalColumnLabels: {
+          em1: evalLabels.EM1,
+          em2: evalLabels.EM2,
+          ec: evalLabels.EC,
+        },
         className,
         studentName: student.studentName,
         studentMatricule: student.matricule,
@@ -5219,10 +5412,11 @@ function VueParMatiereTrimestriel({
                           <thead>
                             <tr className="bg-white">
                               <th className="border-r border-b border-black px-3 py-2 font-bold uppercase text-left" style={{ minWidth: '200px' }}>Matière</th>
-                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">EM1</th>
-                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">EM2</th>
+                              {/* ⭐ 2026-11-24 — Libellés COMPLETS + mois (fin des codes EM1/EM2/EC). */}
+                              <EvalTh label={evalLabels.EM1} fallback="Évaluation mensuelle 1" className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '110px' }} />
+                              <EvalTh label={evalLabels.EM2} fallback="Évaluation mensuelle 2" className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '110px' }} />
                               <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">Moy. EM</th>
-                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">EC</th>
+                              <EvalTh label={evalLabels.EC} fallback="Évaluation certificative" className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '110px' }} />
                               <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '90px' }}>Moyenne gén.</th>
                               <th className="border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '90px' }}>Appréciation</th>
                             </tr>
@@ -5301,7 +5495,7 @@ function VueParMatiereTrimestriel({
                       {/* Boutons d'action : PDF + signatures + envoi parents */}
                       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-2 text-xs text-slate-500">
-                          <span>Formule : Moy. EM = (EM1 + EM2) / 2 · Moyenne gén. = (Moy. EM + EC) / 2</span>
+                          <span>Formule : Moy. EM = (Évaluation mensuelle 1 + Évaluation mensuelle 2) / 2 · Moyenne gén. = (Moy. EM + Évaluation certificative) / 2</span>
                         </div>
                         {!isTeacher && (
                           <div className="flex items-center gap-2 flex-wrap">
@@ -5606,6 +5800,14 @@ function VueParMatiereAnnuel({
         //    ANNUEL est rattaché à la DERNIÈRE période de l'année.
         periodId: lastPeriodId || undefined,
         evaluationTypeName: 'Moyenne annuelle',
+        // ⭐ 2026-11-24 — Libellés complets des colonnes annuelles (agrégats
+        //    sur l'année — pas de mois unique) pour le gabarit PDF.
+        evalColumnLabels: {
+          em1: 'Évaluations mensuelles (année)',
+          em2: undefined,
+          ec: 'Évaluation certificative (année)',
+          ep: 'Évaluation de passage',
+        },
         className,
         studentName: student.studentName,
         studentMatricule: student.matricule,
@@ -5770,9 +5972,11 @@ function VueParMatiereAnnuel({
                           <thead>
                             <tr className="bg-white">
                               <th className="border-r border-b border-black px-3 py-2 font-bold uppercase text-left" style={{ minWidth: '200px' }}>Matière</th>
-                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">EM annuel</th>
-                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">EC annuel</th>
-                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">EP</th>
+                              {/* ⭐ 2026-11-24 — Noms complets (fin des codes EM/EC/EP) —
+                                  agrégats annuels : pas de mois unique. */}
+                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '130px' }}>Évaluations mensuelles (année)</th>
+                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '130px' }}>Évaluation certificative (année)</th>
+                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '110px' }}>Évaluation de passage</th>
                               <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">Moyenne annuelle</th>
                               <th className="border-b border-black px-2 py-2 font-bold uppercase text-center">Appréciation</th>
                             </tr>
@@ -6034,7 +6238,14 @@ function generateVueParMatiereHtml({
 //    Nom | EM1 | EM2 | Moy. EM | EC | Moyenne générale  (× nb trimestres)
 //    Bordures arrondies (border-radius) sur le conteneur et les en-têtes.
 
-function MoyennesTrimestrielTable({ data, isMaternelle, onSendWhatsApp }: { data: any[]; isMaternelle: boolean; onSendWhatsApp?: (studentId: string) => void }) {
+function MoyennesTrimestrielTable({ data, isMaternelle, onSendWhatsApp, labelsByPeriodName }: {
+  data: any[];
+  isMaternelle: boolean;
+  onSendWhatsApp?: (studentId: string) => void;
+  // ⭐ 2026-11-24 — Libellés enrichis par nom de période (code → nom complet
+  //    + mois de la date programmée) pour les en-têtes EM1/EM2/EC.
+  labelsByPeriodName?: Record<string, Record<string, string>>;
+}) {
   if (data.length === 0) {
     return (
       <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
@@ -6064,7 +6275,7 @@ function MoyennesTrimestrielTable({ data, isMaternelle, onSendWhatsApp }: { data
         <p className="text-xs text-slate-500 mt-0.5">
           {isMaternelle
             ? 'Valeurs qualitatives : TS = Très Satisfaisant, S = Satisfaisant, PS = Peu Satisfaisant'
-            : 'Formule : Moy. EM = (EM1 + EM2) / 2  ·  Moyenne générale = (Moy. EM + EC) / 2'}
+            : 'Formule : Moy. EM = (Évaluation mensuelle 1 + Évaluation mensuelle 2) / 2  ·  Moyenne générale = (Moy. EM + Évaluation certificative) / 2'}
         </p>
       </div>
       <div className="overflow-x-auto">
@@ -6089,20 +6300,26 @@ function MoyennesTrimestrielTable({ data, isMaternelle, onSendWhatsApp }: { data
                 </th>
               ))}
             </tr>
-            {/* Row 2 : EM1 | EM2 | Moy. EM | EC | Moy. gén. (× nb trimestres) */}
+            {/* Row 2 : EM1 | EM2 | Moy. EM | EC | Moy. gén. (× nb trimestres)
+                ⭐ 2026-11-24 — Libellés COMPLETS + mois PAR TRIMESTRE (EM1 du
+                T1 = « Évaluation mensuelle 1 – mois d'octobre 2026 », EM1 du
+                T2 = « … – mois de janvier 2027 ») — fin des codes bruts. */}
             <tr className="bg-white">
-              {periodNames.map((p, pi) => (
+              {periodNames.map((p, pi) => {
+                const labels = labelsByPeriodName?.[p] || {};
+                return (
                 <Fragment key={p}>
-                  <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '70px' }}>EM1</th>
-                  <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '70px' }}>EM2</th>
+                  <EvalTh label={labels.EM1} fallback="Évaluation mensuelle 1" className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '105px' }} />
+                  <EvalTh label={labels.EM2} fallback="Évaluation mensuelle 2" className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '105px' }} />
                   <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '80px' }}>Moy. EM</th>
-                  <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '70px' }}>EC</th>
+                  <EvalTh label={labels.EC} fallback="Évaluation certificative" className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '105px' }} />
                   {/* ⭐ T37 — filet vertical entre les groupes de trimestres :
                       la dernière sous-colonne d'un groupe NON FINAL porte le
                       border-r (avant : aucune séparation entre trimestres). */}
                   <th className={`border-b border-black px-2 py-2 font-bold uppercase text-center ${pi < periodNames.length - 1 ? 'border-r' : ''}`} style={{ minWidth: '100px' }}>Moyenne gén.</th>
                 </Fragment>
-              ))}
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -6214,8 +6431,8 @@ function MoyennesTrimestrielTable({ data, isMaternelle, onSendWhatsApp }: { data
       {/* Légende */}
       <div className="px-5 py-2 bg-slate-50 border-t border-slate-200 text-[10px] text-slate-500">
         {isMaternelle
-          ? <>TS = Très Satisfaisant · S = Satisfaisant · PS = Peu Satisfaisant — Moy. EM = moyenne des EM1/EM2, Moyenne gén. = (Moy. EM + EC) / 2</>
-          : <>Moy. EM = (EM1 + EM2) / 2 · Moyenne générale = (Moy. EM + EC) / 2 — seuil de réussite : 10/20</>}
+          ? <>TS = Très Satisfaisant · S = Satisfaisant · PS = Peu Satisfaisant — Moy. EM = moyenne des évaluations mensuelles 1 et 2, Moyenne gén. = (Moy. EM + Évaluation certificative) / 2</>
+          : <>Moy. EM = (Évaluation mensuelle 1 + Évaluation mensuelle 2) / 2 · Moyenne générale = (Moy. EM + Évaluation certificative) / 2 — seuil de réussite : 10/20</>}
       </div>
     </div>
   );
@@ -6251,7 +6468,7 @@ function MoyennesAnnuelTable({ data, isMaternelle, onSendWhatsApp }: { data: any
         <p className="text-xs text-slate-500 mt-0.5">
           {isMaternelle
             ? 'Valeurs qualitatives : TS = Très Satisfaisant, S = Satisfaisant, PS = Peu Satisfaisant'
-            : 'EM annuel = moyenne des Moy. EM des 3 trimestres · EC annuel = moyenne des EC des 3 trimestres · Moyenne annuelle = ((EM annuel + EC annuel) / 2 + EP) / 2'}
+            : 'Évaluations mensuelles (année) = moyenne des Moy. EM des 3 trimestres · Évaluation certificative (année) = moyenne des EC · Moyenne annuelle = ((Éval. mens. + Éval. cert.) / 2 + Évaluation de passage) / 2'}
         </p>
       </div>
       <div className="overflow-x-auto">
@@ -6259,9 +6476,10 @@ function MoyennesAnnuelTable({ data, isMaternelle, onSendWhatsApp }: { data: any
           <thead>
             <tr className="bg-white">
               <th className="border-r border-b border-black px-3 py-2 font-bold uppercase text-left" style={{ minWidth: '200px' }}>Nom et prénom</th>
-              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '90px' }}>EM annuel</th>
-              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '90px' }}>EC annuel</th>
-              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '70px' }}>EP</th>
+              {/* ⭐ 2026-11-24 — Noms complets (fin des codes EM/EC/EP). */}
+              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '130px' }}>Évaluations mensuelles (année)</th>
+              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '130px' }}>Évaluation certificative (année)</th>
+              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '110px' }}>Évaluation de passage</th>
               <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '110px' }}>Moyenne annuelle</th>
               <th className="border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '130px' }}>Appréciation</th>
             </tr>
@@ -6359,8 +6577,8 @@ function MoyennesAnnuelTable({ data, isMaternelle, onSendWhatsApp }: { data: any
       </div>
       <div className="px-5 py-2 bg-slate-50 border-t border-slate-200 text-[10px] text-slate-500">
         {isMaternelle
-          ? <>EM annuel = moyenne des Moy. EM des 3 trimestres · EC annuel = moyenne des EC · EP = évaluation de passage (T3)</>
-          : <>Moyenne annuelle = ((EM annuel + EC annuel) / 2 + EP) / 2 — seuil de réussite : 10/20</>}
+          ? <>Évaluations mensuelles (année) = moyenne des Moy. EM des 3 trimestres · Évaluation certificative (année) = moyenne des EC · Évaluation de passage = 3e trimestre</>
+          : <>Moyenne annuelle = ((Évaluations mensuelles + Évaluation certificative) / 2 + Évaluation de passage) / 2 — seuil de réussite : 10/20</>}
       </div>
     </div>
   );

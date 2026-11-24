@@ -19,6 +19,9 @@ import { useState, useEffect, useCallback } from "react";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useSchoolIdentity } from "@/hooks/useSchoolIdentity";
+// ⭐ 2026-11-24 — Libellé enrichi du type d'évaluation (nom complet + mois
+//    de la date programmée : « Évaluation mensuelle 1 – mois d'octobre 2026 »).
+import { enrichedEvalLabel } from "@/lib/evaluation-labels";
 import {
   ArrowLeft, Loader2, CalendarCheck, Wallet, FileText, BookOpen,
   CheckCircle2, XCircle, Clock, Download, CreditCard, GraduationCap,
@@ -839,11 +842,16 @@ function NotesSubTab({ grades, loading, child }: { grades: any[]; loading: boole
                 {quarter.evaluations.map((ev: any) => (
                   <div key={ev.evaluationTypeId} className="p-4">
                     <div className="flex items-center gap-3 mb-3">
-                      <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-purple-100 text-purple-700 text-xs font-bold">
-                        {ev.evaluationTypeCode}
+                      {/* ⭐ 2026-11-24 — Libellé COMPLET (fin du badge code
+                          brut [EM1]) — le nom du type est désormais enrichi
+                          du mois de la date programmée. */}
+                      <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-purple-100 text-purple-700">
+                        <BookOpen className="w-4 h-4" />
                       </span>
                       <div>
-                        <div className="text-sm font-semibold text-slate-900">{ev.evaluationTypeName}</div>
+                        <div className="text-sm font-semibold text-slate-900">
+                          {enrichedEvalLabel(ev.evaluationTypeCode, ev.evaluationTypeName, [{ evaluationDate: ev.evaluationDate }])}
+                        </div>
                         {ev.evaluationDate && (
                           <div className="text-xs text-slate-500 flex items-center gap-1">
                             <Calendar className="w-3 h-3" />

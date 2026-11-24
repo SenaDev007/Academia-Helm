@@ -1485,7 +1485,7 @@ function TeacherBulletinsToSign({
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 mb-3">
               <p className="text-sm font-bold text-slate-900">
                 {signingClass.evaluationTypeName && signingClass.evaluationTypeName !== 'Bulletin'
-                  ? `${signingClass.evaluationTypeName}${signingClass.evaluationTypeCode ? ` [${signingClass.evaluationTypeCode}]` : ''}`
+                  ? signingClass.evaluationTypeName
                   : 'Bulletin'}
               </p>
               <p className="text-xs text-slate-600">
@@ -1559,8 +1559,6 @@ function ReturnConfirmModal({
     : 'Bulletin';
   const periodLabel = cls.periodName || 'période en cours';
   const fullBulletinLabel = `${evalTypeLabel} — ${periodLabel}`;
-  // ⭐ Suffixe avec code (ex: "[EM1]") si dispo
-  const codeSuffix = cls.evaluationTypeCode ? ` [${cls.evaluationTypeCode}]` : '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -1574,7 +1572,7 @@ function ReturnConfirmModal({
             <div className="min-w-0">
               <h3 className="text-base font-bold text-white">Renvoyer au directeur</h3>
               <p className="text-xs text-white/90 truncate">
-                {fullBulletinLabel}{codeSuffix} · {cls.className}
+                {fullBulletinLabel} · {cls.className}
               </p>
             </div>
           </div>
@@ -1588,7 +1586,7 @@ function ReturnConfirmModal({
               Bulletin concerné
             </p>
             <p className="text-sm font-bold text-slate-900">
-              {evalTypeLabel}{codeSuffix}
+              {evalTypeLabel}
             </p>
             <p className="text-xs text-slate-600 mt-0.5">
               Période : <strong>{periodLabel}</strong>
@@ -1684,7 +1682,7 @@ function ClassBulletinCard({
   //    Ex: "Évaluation mensuelle 1 [EM1]" ou "Bulletin" si pas de type
   const hasEvalType = cls.evaluationTypeName && cls.evaluationTypeName !== 'Bulletin';
   const evalTypeDisplay = hasEvalType
-    ? `${cls.evaluationTypeName}${cls.evaluationTypeCode ? ` [${cls.evaluationTypeCode}]` : ''}`
+    ? cls.evaluationTypeName
     : 'Bulletin';
 
   return (

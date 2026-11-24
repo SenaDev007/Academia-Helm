@@ -27,6 +27,9 @@ import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { RegistreTable } from "@/components/exams/RegistreTable";
 import type { GroupedEvaluation } from "@/components/exams/GradingSheet";
+// ⭐ 2026-11-24 — Libellé enrichi du type d'évaluation (nom complet + mois
+//    de la date programmée : « Évaluation mensuelle 1 – mois d'octobre 2026 »).
+import { enrichedEvalLabel } from "@/lib/evaluation-labels";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -321,13 +324,17 @@ function NotesTab({ studentId, academicYearId, child }: { studentId: string; aca
 
                   return (
                     <div key={ev.evaluationTypeId} className="p-4">
-                      {/* Evaluation header */}
+                      {/* Evaluation header — ⭐ 2026-11-24 : libellé COMPLET
+                          (le nom du type est désormais enrichi du mois de la
+                          date programmée) — fin du badge code brut [EM1]. */}
                       <div className="flex items-center gap-3 mb-3">
-                        <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-purple-100 text-purple-700 text-xs font-bold">
-                          {ev.evaluationTypeCode}
+                        <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-purple-100 text-purple-700">
+                          <BookOpen className="w-4 h-4" />
                         </span>
                         <div>
-                          <div className="text-sm font-semibold text-slate-900">{ev.evaluationTypeName}</div>
+                          <div className="text-sm font-semibold text-slate-900">
+                            {enrichedEvalLabel(ev.evaluationTypeCode, ev.evaluationTypeName, [{ evaluationDate: ev.evaluationDate }])}
+                          </div>
                           {ev.evaluationDate && (
                             <div className="text-xs text-slate-500 flex items-center gap-1">
                               <Calendar className="w-3 h-3" />

@@ -205,6 +205,16 @@ export interface BulletinPdfData {
   // ⭐ SECONDAIRE — Catégorisation des matières (Lettres / Sciences / Autres)
   //    Chaque matière peut avoir une catégorie pour regroupement + bilan par catégorie
   // subjectCategory is per-subject (see subjects[].subjectCategory below)
+  // ⭐ 2026-11-24 — LIBELLÉS ENRICHIS des colonnes d'évaluation (exige
+  //    promoteur : « au lieu d'afficher EM1, on affiche Évaluation mensuelle
+  //    1 – mois d'octobre 2026 »). Clés selon la piste :
+  //      FR maternelle/primaire : em1 | em2 | ec | ep
+  //      FR secondaire (CEG)   : int1 | int2 | ds1 | ds2
+  //      Piste EN (Report Book) : fca | sca | exam
+  //    Chaque valeur = « Nom complet – mois d'octobre 2026 » (mois dérivé de
+  //    la date programmée par le frontend). Sans valeur : repli sur les
+  //    libellés courts actuels.
+  evalColumnLabels?: Record<string, string | undefined>;
 }
 
 /**
@@ -218,6 +228,24 @@ function formatRank(rank: number | null | undefined, feminine: boolean = false):
   if (rank === null || rank === undefined) return '—';
   if (rank === 1) return feminine ? '1ère' : '1er';
   return `${rank}ème`;
+}
+
+/**
+ * ⭐ 2026-11-24 — Scinde un libellé enrichi en { name, month } :
+ *   « Évaluation mensuelle 1 – mois d'octobre 2026 » →
+ *     { name: 'Évaluation mensuelle 1', month: 'mois d\'octobre 2026' }
+ *   « First CA – October 2026 » → { name: 'First CA', month: 'October 2026' }
+ *   Sans mois → { name: libellé complet, month: null }.
+ */
+function splitEnrichedLabelPdf(label?: string | null): { name: string; month: string | null } {
+  if (!label) return { name: '', month: null };
+  const idx = label.lastIndexOf(' – mois ');
+  if (idx !== -1) {
+    return { name: label.slice(0, idx), month: label.slice(idx + 3) };
+  }
+  const m = label.match(/^(.*) – ([A-Z][a-z]+ \d{4})$/);
+  if (m) return { name: m[1], month: m[2] };
+  return { name: label, month: null };
 }
 
 @Injectable()
@@ -606,8 +634,11 @@ export class BulletinPdfService {
         </table>
       </div>
 
-      <!-- TITRE BULLETIN (⭐ T37 — barre encadrée navy, même standard que le secondaire) -->
-      <div class="bulletin-title">Bulletin de ${data.evaluationTypeName} ${data.evaluationTypeCode ? '(' + data.evaluationTypeCode + ')' : ''} — ${data.periodName} ${data.academicYearName}</div>
+      <!-- TITRE BULLETIN (⭐ T37 — barre encadrée navy, même standard que le secondaire)
+           ⭐ 2026-11-24 — evaluationTypeName est désormais le libellé ENRICHI
+           (nom complet + mois de la date programmée : « Évaluation mensuelle
+           1 – mois d'octobre 2026 ») — plus de code brut entre parenthèses. -->
+      <div class="bulletin-title">Bulletin de ${data.evaluationTypeName || 'l\u2019évaluation'} — ${data.periodName} ${data.academicYearName}</div>
 
       <!-- INFOS ÉLÈVE (⭐ T37 — modèle secondaire : wrapper .info-wrap + grille
            collapse 2 lignes — Photo | Année | Nom | Classe / Effectif | Matricule | Rang) -->
@@ -1159,6 +1190,19 @@ ${page2Content}
     //    [Coef | Note coef] | Rang | Appréciation | Professeur | Signature
     //    Raccourcir les libellés permet d'ajouter la colonne « Professeur »
     //    sans déborder en largeur sur l'A4 portrait.
+    //    ⭐ 2026-11-24 — LIBELLÉS ENRICHIS (exige promoteur : « au lieu
+    //    d'afficher EM1/IE1, on affiche le nom complet + le mois de la date
+    //    programmée ») : chaque sous-colonne porte « Interro. 1 » + le mois
+    //    (« mois d'octobre 2026 ») sur une 2e ligne en petit — le tout reste
+    //    compact verticalement, la largeur A4 est préservée.
+    const secLabels = data.evalColumnLabels || {};
+    const secSub = (label: string | undefined, fallbackShort: string): string => {
+      const parts = splitEnrichedLabelPdf(label);
+      const name = parts.name || fallbackShort;
+      return parts.month
+        ? `${name}<br/><span style="font-weight:600;font-size:6.5px;text-transform:none;line-height:1.1;">${parts.month}</span>`
+        : name;
+    };
     const tableHeader = `
       <tr>
         <th rowspan="2" style="padding:4px 3px;font-size:9px;text-transform:uppercase;text-align:left;">Discipline</th>
@@ -1174,10 +1218,10 @@ ${page2Content}
         <th rowspan="2" style="padding:4px 3px;font-size:8px;text-transform:uppercase;">Professeur</th>
       </tr>
       <tr>
-        <th style="padding:3px;font-size:9px;">IE1</th>
-        <th style="padding:3px;font-size:9px;">IE2</th>
-        <th style="padding:3px;font-size:9px;">DS1</th>
-        <th style="padding:3px;font-size:9px;border-right:1px solid rgba(255,255,255,0.35);">DS2</th>
+        <th style="padding:3px;font-size:8px;line-height:1.15;">${secSub(secLabels.int1, 'IE1')}</th>
+        <th style="padding:3px;font-size:8px;line-height:1.15;">${secSub(secLabels.int2, 'IE2')}</th>
+        <th style="padding:3px;font-size:8px;line-height:1.15;">${secSub(secLabels.ds1, 'DS1')}</th>
+        <th style="padding:3px;font-size:8px;line-height:1.15;border-right:1px solid rgba(255,255,255,0.35);">${secSub(secLabels.ds2, 'DS2')}</th>
       </tr>`;
 
     // ── Lignes de totaux + moyenne trimestrielle (colspans : 6e/5e = 10
@@ -1700,8 +1744,10 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
-  <!-- TITRE BULLETIN D'ÉVALUATION -->
-  <div class="bulletin-title">Bulletin d'évaluation — ${data.evaluationTypeName || 'Évaluation'}${data.evaluationTypeCode ? ' (' + data.evaluationTypeCode + ')' : ''} — ${data.periodName}</div>
+  <!-- TITRE BULLETIN D'ÉVALUATION
+      ⭐ 2026-11-24 — evaluationTypeName est désormais le libellé ENRICHI
+      (nom complet + mois de la date programmée) — plus de code brut. -->
+  <div class="bulletin-title">Bulletin d'évaluation — ${data.evaluationTypeName || 'Évaluation'} — ${data.periodName}</div>
 
   <!-- INFOS ÉLÈVE (Année | Trimestre | Évaluation / Nom | Effectif·Matricule | Rang) -->
   <!-- ⭐ T32 — cadre arrondi porté par le wrapper .info-wrap. -->
@@ -1710,7 +1756,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     <tr>
       <td>Année scolaire : <strong>${data.academicYearName}</strong></td>
       <td>Trimestre : <strong>${data.periodName}</strong></td>
-      <td>Évaluation : <strong>${data.evaluationTypeName || '—'}${data.evaluationTypeCode ? ' (' + data.evaluationTypeCode + ')' : ''}</strong></td>
+      <td>Évaluation : <strong>${data.evaluationTypeName || '—'}</strong></td>
     </tr>
     <tr>
       <td>Nom et prénoms : <strong style="text-transform:uppercase;">${data.studentName}</strong></td>
@@ -1944,6 +1990,20 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     const ministry = (data.isSecondary || data.isSecondaryEval || data.isSecondaryLevel)
       ? 'Ministry of Secondary, Technical and Vocational Education and Youth Insertion'
       : 'Ministry of Pre-Primary and Primary Education';
+
+    // ⭐ 2026-11-24 — Mois enrichis des 3 composantes (exige promoteur : le
+    //    mois est dérivé de la date programmée) — affichés sous les libellés
+    //    1st CA / 2nd CA / Exam du tableau des notes.
+    const enLabels = data.evalColumnLabels || {};
+    const enMonth = (label?: string): string => {
+      const parts = splitEnrichedLabelPdf(label);
+      return parts.month
+        ? `<br/><span style="font-size:6px;font-weight:600;">${parts.month}</span>`
+        : '';
+    };
+    const fcaMonthHtml = enMonth(enLabels.fca);
+    const scaMonthHtml = enMonth(enLabels.sca);
+    const examMonthHtml = enMonth(enLabels.exam);
 
     // Benin flag (SVG data URL)
     const beninFlagSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`;
@@ -2224,9 +2284,9 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
           <thead>
             <tr>
               <th style="text-align:left;">Subjects</th>
-              <th>1st<br/>CA<br/><span style="font-size:6px;font-weight:normal;">/20</span></th>
-              <th>2nd<br/>CA<br/><span style="font-size:6px;font-weight:normal;">/20</span></th>
-              <th>Exam<br/><span style="font-size:6px;font-weight:normal;">/60</span></th>
+              <th>1st<br/>CA<br/><span style="font-size:6px;font-weight:normal;">/20</span>${fcaMonthHtml}</th>
+              <th>2nd<br/>CA<br/><span style="font-size:6px;font-weight:normal;">/20</span>${scaMonthHtml}</th>
+              <th>Exam<br/><span style="font-size:6px;font-weight:normal;">/60</span>${examMonthHtml}</th>
               <th style="background:#0D3B85;">Total<br/><span style="font-size:6px;font-weight:normal;">/100</span></th>
               <th style="font-size:7px;line-height:1.2;">Highest in class</th>
               <th style="font-size:7px;line-height:1.2;">Lowest in class</th>
@@ -2629,6 +2689,17 @@ ${page2Content}
    * + ministère + école + logo + slogan + contact).
    */
   private buildHtmlVueParMatiere(data: BulletinPdfData, qrCode: string, _bulletinId: string): string {
+    // ⭐ 2026-11-24 — Libellés ENRICHIS des colonnes (nom complet + mois de la
+    //    date programmée) — fin des codes bruts EM1/EM2/EC dans le PDF de la
+    //    vue par matière (trimestrielle comme annuelle).
+    const vpmLabels = data.evalColumnLabels || {};
+    const vpmTh = (label: string | undefined, fallbackShort: string): string => {
+      const parts = splitEnrichedLabelPdf(label);
+      const name = parts.name || fallbackShort;
+      return parts.month
+        ? `${name}<br/><span style="font-weight:600;font-size:7px;line-height:1.1;">${parts.month}</span>`
+        : name;
+    };
     const isMaternelle = data.isMaternelle;
     // ⭐ 2026-11-15 — FIX ternaire cassé (les 2 branches affichaient « Maternel
     //    et Primaire ») : un document du niveau secondaire reçoit désormais le
@@ -2791,10 +2862,10 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     <table class="notes">
       <thead><tr>
         <th style="text-align:left">Matière</th>
-        <th>EM1</th>
-        <th>EM2</th>
+        <th>${vpmTh(vpmLabels.em1, 'EM1')}</th>
+        <th>${vpmTh(vpmLabels.em2, 'EM2')}</th>
         <th>Moy. EM</th>
-        <th>EC</th>
+        <th>${vpmTh(vpmLabels.ec, 'EC')}</th>
         <th>Moyenne gén.</th>
         <th>Appréciation</th>
       </tr></thead>

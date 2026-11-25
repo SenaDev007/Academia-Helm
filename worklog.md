@@ -15259,3 +15259,21 @@ Stage Summary:
 - ✅✅ Envois via l'API Gmail REST dans la file existante : plafond 490/24h glissantes, débit 20/min/école, relances 1/5/15 min, découpage partiel du 491e destinataire — tout le CDC §4/§5 inchangé, provider google_oauth journalisé.
 - ✅✅ Option invisible tant que la plateforme n'a pas configuré GOOGLE_OAUTH_CLIENT_ID/SECRET ; SMTP phase 1 reste pleinement fonctionnel (retour arrière documenté).
 - ⏳ AVANT ACTIVATION (YEHI OR Tech, opérationnel) : créer le client OAuth dans Google Cloud Console (Application Web, redirect URI https://api.academiahelm.com/api/school-email/google/callback + éventuellement l'URL de recette), publier l'écran de consentement (portée sensible gmail.send — vérification Google possible) ou mode test avec les comptes des écoles de recette, poser GOOGLE_OAUTH_CLIENT_ID/SECRET sur Railway. Puis E2E : Connecter Google avec le Gmail d'une école de recette, e-mail test, vérifier From/pied de page/journal (provider google_oauth), révoquer l'accès côté Google → statut Expiré + reconnexion.
+
+---
+
+Task ID: 184-email-ecole-ux-avertissement-google
+Agent: Super Z (agent principal)
+Task: Retour terrain post-183 — après sélection du compte, Google affiche « Google n'a pas validé cette application » (écran standard des applications non vérifiées). Aucun bug côté code : guidage du directeur d'école + documentation d'exploitation de l'écran de consentement Google Cloud.
+
+Work Log:
+- DIAGNOSTIC (URL d'autorisation analysée) : tous les paramètres du flux sont CORRECTS (code_challenge S256, access_type=offline, prompt=consent, include_granted_scopes, scope gmail.send+userinfo.email, redirect_uri callback production, state 64 hex). L'écran rouge est le comportement Google NORMAL pour un client OAuth non encore vérifié qui demande un scope SENSIBLE. Confirmé sur la doc officielle des portées Gmail : gmail.send = SENSIBLE (et NON restreint — contrairement à gmail.modify/gmail.readonly/mail.google.com) → pas d'évaluation de sécurité CASA requise pour la vérification future.
+- BOUTON D'ÉCHAPPEMENT UTILISATEUR : « Paramètres avancés » (lien discret bas-gauche de l'écran d'avertissement) → « Continuer vers Academia Helm (non sécurisé) » → écran de consentement normal « Envoyer des e-mails en votre nom ».
+- UX SchoolEmailTab.tsx (2 ajouts texte uniquement, 0 logique touchée) : (1) encart ambre sous le bouton « Connecter Google » (mode google uniquement) expliquant la manipulation Paramètres avancés → Continuer ; (2) guide directeur : méthode Google passée de 2 à 4 étapes avec l'étape d'avertissement Google explicite entre la sélection du compte et le consentement.
+- DOC EXPLOITATION (livrée dans la réponse à l'équipe) : Google Cloud Console → APIs & Services → OAuth consent screen — ajouter les Gmail des écoles de recette (dont cspmonavenirplusndali@gmail.com) dans Test users ; compléter le branding (logo, homepage, politique de confidentialité) ; PIÈGE mode Testing = refresh tokens expirent après 7 JOURS (couvert côté app : invalid_grant → statut Expirée + message de reconnexion) ; passage production = « Publish app » (bypass Paramètres avancés toujours possible, plafond ~100 nouveaux utilisateurs glissants) ; vérification Google à programmer avant le scale (sensible-scope uniquement : branding + politique de confidentialité + justification d'usage + vidéo démo — gratuit, sans CASA).
+- VALIDATION : web-app tsc --noEmit filtré school-email → 0 erreur.
+- Version 1.0.48 (app.controller + health.controller ×3).
+
+Stage Summary:
+- ✅ Directeurs d'école guidés face à l'écran d'avertissement Google (encart sous le bouton + guide 4 étapes) — plus d'abandon au moment du consentement.
+- ⏳ Côté Google Cloud Console (opérationnel, pas du code) : ajouter les testeurs de recette, compléter le branding, puis décider Publishing (Testing vs In production) et programmer la vérification sensible-scope avant le déploiement large.

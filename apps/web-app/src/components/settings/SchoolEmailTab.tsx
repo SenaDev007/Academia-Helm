@@ -707,6 +707,15 @@ export function SchoolEmailTab() {
             Envoyer un e-mail test
           </button>
         </div>
+
+        {modeChoice === "google" && (
+          <p className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+            Si Google affiche « Google n&apos;a pas validé cette application » : cliquez sur{" "}
+            <strong>Paramètres avancés</strong> (lien discret en bas de la page Google), puis sur{" "}
+            <strong>Continuer vers Academia Helm (non sécurisé)</strong>. C&apos;est un écran normal
+            en attendant la vérification de l&apos;application par Google — vos e-mails restent protégés.
+          </p>
+        )}
       </div>
 
       {/* ═══ 9. Guide pas à pas pour le directeur ════════════════════════ */}
@@ -727,7 +736,9 @@ export function SchoolEmailTab() {
               </div>
               <ol className="space-y-2 list-decimal list-inside text-blue-900/90">
                 <li>Sélectionnez le mode <strong>Google (OAuth2)</strong> ci-dessus, vérifiez le nom affiché de l&apos;école, puis cliquez <strong>Connecter Google</strong>.</li>
-                <li>Sur la page Google qui s&apos;ouvre, connectez le compte Gmail de l&apos;école et validez « Envoyer des e-mails en votre nom ». Vous revenez automatiquement ici — le statut passe à <strong>Actif</strong>.</li>
+                <li>Sur la page Google qui s&apos;ouvre, sélectionnez le compte Gmail de l&apos;école.</li>
+                <li>Si Google affiche l&apos;avertissement « Google n&apos;a pas validé cette application » : cliquez sur <strong>Paramètres avancés</strong> (lien discret en bas de la page), puis sur <strong>Continuer vers Academia Helm (non sécurisé)</strong> — écran normal en attendant la vérification de l&apos;application par Google.</li>
+                <li>Validez « Envoyer des e-mails en votre nom ». Vous revenez automatiquement ici — le statut passe à <strong>Actif</strong>.</li>
               </ol>
               <p className="text-xs text-blue-900/70">
                 Fonctionne même si le compte n&apos;a pas de validation en deux étapes ni de mot de passe d&apos;application

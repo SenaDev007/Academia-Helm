@@ -350,7 +350,12 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
         }
         // TÂCHE 183 — invalid_grant Google → connexion Expirée (CDC section 8)
         if (err instanceof GoogleAuthExpiredError || err?.name === 'GoogleAuthExpiredError') {
-          await this.finalizeFailure(item, 'EMAIL_SCHOOL_EXPIRE', safeGmailErrorMessage(err));
+          await this.finalizeFailure(
+            item,
+            'EMAIL_SCHOOL_EXPIRE',
+            safeGmailErrorMessage(err),
+            'google_oauth',
+          );
           continue;
         }
         // TÂCHE 183 — erreurs API Gmail : 429/5xx → relance, 401 → auth,
@@ -364,11 +369,12 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
               item,
               kind === 'fatal_auth' ? 'GMAIL_AUTH_FAILED' : 'GMAIL_PERMANENT_ERROR',
               safeMsg,
+              'google_oauth',
             );
           } else {
             const attempts = item.attempts + 1;
             if (attempts >= item.maxAttempts) {
-              await this.finalizeFailure(item, 'GMAIL_RETRIES_EXHAUSTED', safeMsg);
+              await this.finalizeFailure(item, 'GMAIL_RETRIES_EXHAUSTED', safeMsg, 'google_oauth');
             } else {
               const next = new Date(
                 Date.now() + BACKOFF_MS[Math.min(attempts - 1, BACKOFF_MS.length - 1)],
@@ -514,6 +520,7 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
     item: QueueRow,
     errorCode: string,
     errorMessage: string,
+    provider: 'google_oauth' | 'smtp' = 'smtp',
   ): Promise<void> {
     const payload = this.parsePayload(item.payload);
     await this.prisma.$transaction(async (tx) => {
@@ -526,7 +533,7 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
         },
       });
       const recipients = [...(payload.to || []), ...(payload.cc || []), ...(payload.bcc || [])];
-      await this.insertSendLogRows(tx, item, recipients, 'echec', errorCode);
+      await this.insertSendLogRows(tx, item, recipients, 'echec', errorCode, provider);
       if (payload.emailLogId) {
         await tx.emailLog
           .update({

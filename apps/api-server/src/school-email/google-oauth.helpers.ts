@@ -37,6 +37,11 @@ export const GOOGLE_USERINFO_EMAIL_SCOPE = 'https://www.googleapis.com/auth/user
 /** URL d'envoi de l'API Gmail — `me` = compte du jeton d'accès. */
 export const GMAIL_API_SEND_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
 
+/** Sonde légère (users.getProfile) — sert UNIQUEMENT à détecter l'API Gmail
+ *  désactivée au moment de la connexion (l'erreur classique console.cloud :
+ *  « Gmail API has not been used in project X before or it is disabled »). */
+export const GMAIL_API_PROFILE_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/profile';
+
 /** Chemin du callback (préfixe /api de l'api-server). */
 export const GOOGLE_CALLBACK_PATH = '/api/school-email/google/callback';
 
@@ -198,11 +203,30 @@ export function safeGmailErrorMessage(err: unknown): string {
 }
 
 /**
+ * true si le corps d'erreur provient d'une API Gmail désactivée dans le projet
+ * Google Cloud (erreur 403 « Gmail API has not been used in project X before or
+ * it is disabled »). Distinct d'un refus de portée (« Request had insufficient
+ * authentication scopes ») qui ne bloque PAS la connexion.
+ */
+export function isGmailApiDisabledError(bodyText: string): boolean {
+  const t = String(bodyText || '').toLowerCase();
+  return t.includes('has not been used in project') || t.includes('it is disabled');
+}
+
+/**
  * Extrait la raison d'un refus du point de terminaison token Google
  * (réponses form-encoded OU JSON) — sans jamais inclure le jeton.
  */
 export function tokenErrorReason(responseText: string): string {
   const t = String(responseText || '');
+  // Gmail API REST : {"error":{"code":403,"message":"…","status":"PERMISSION_DENIED"}}
+  // (imbrication objet — le motif "error":"valeur" ne matche pas).
+  const gmailMsg = t.match(/"error"\s*:\s*\{[\s\S]*?"message"\s*:\s*"([^"]+)"/);
+  if (gmailMsg) {
+    const gmailStatus = t.match(/"error"\s*:\s*\{[\s\S]*?"status"\s*:\s*"([^"]+)"/);
+    const msg = gmailMsg[1].slice(0, 250);
+    return gmailStatus ? `${msg} (${gmailStatus[1]})` : msg;
+  }
   // JSON : {"error":"invalid_grant","error_description":"..."}
   const jsonMatch = t.match(/"error"\s*:\s*"([^"]+)"/);
   if (jsonMatch) {

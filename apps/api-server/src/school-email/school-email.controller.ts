@@ -180,6 +180,10 @@ export class SchoolEmailController {
       text: `E-mail de test réussi.\n\nBonjour ${String(user?.firstName || user?.fullName || '')},\n\nCet e-mail confirme que ${raw.fromName} envoie désormais ses e-mails depuis sa propre adresse Gmail ${raw.fromEmail} via Academia Helm.\n\nSi vous recevez ce message, la configuration est opérationnelle.`,
       triggeredByUserId: user?.id,
       wait: true,
+      // TÂCHE 185 — le test agit comme diagnostic : même si la connexion est
+      // Erreur/Expirée, on tente l'envoi (un succès rétablit Actif via
+      // markVerified ; un échec remonte la vraie cause au directeur).
+      allowUnhealthyConnection: true,
     });
 
     switch (result.status) {

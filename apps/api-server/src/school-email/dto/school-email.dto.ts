@@ -99,6 +99,14 @@ export interface CentralEmailSendInput {
    * test »). false (défaut) = mettre en file et rendre la main immédiatement.
    */
   wait?: boolean;
+  /**
+   * TÂCHE 185 — bouton « Envoyer un e-mail test » UNIQUEMENT : tente l'envoi
+   * même si la connexion est Erreur/Expirée. Un succès rétablit Actif
+   * (markVerified au dispatcher) — le test devient ainsi l'outil de diagnostic
+   * ET d'auto-réparation ; un échec remonte la vraie cause (lastError de la
+   * file) au lieu du message générique. Jamais utilisé par les envois métier.
+   */
+  allowUnhealthyConnection?: boolean;
 }
 
 export interface CentralEmailSendResult {

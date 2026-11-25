@@ -99,7 +99,7 @@ export class CentralEmailService {
         errorCode: 'EMAIL_SCHOOL_NOT_CONFIGURED',
       };
     }
-    if (settingsRow.status !== 'actif') {
+    if (settingsRow.status !== 'actif' && !input.allowUnhealthyConnection) {
       // Connexion en Erreur (5xx/auth) ou Expirée (clé changée / invalid_grant).
       const msg =
         settingsRow.status === 'erreur'
@@ -145,12 +145,22 @@ export class CentralEmailService {
         return { status: 'envoye', recipientCount: total, queueItemId };
       }
       if (finalStatus === 'echec') {
+        // TÂCHE 185 — remonte la VRAIE cause (lastError de la file, déjà
+        // assainie par safeGmailErrorMessage/safeSmtpErrorMessage) au lieu
+        // du message générique qui masquait p.ex. « API Gmail désactivée ».
+        const failed = await this.prisma.emailQueue
+          .findUnique({ where: { id: queueItemId }, select: { lastError: true } })
+          .catch(() => null);
+        const isGoogle = settingsRow.mode === 'google_oauth';
+        const fallback = isGoogle
+          ? "Échec de l'envoi via Google — vérifiez la connexion de l'école."
+          : "Échec de l'envoi SMTP — vérifiez la configuration.";
         return {
           status: 'echec',
           recipientCount: total,
           queueItemId,
-          error: "Échec de l'envoi SMTP — vérifiez la configuration.",
-          errorCode: 'SMTP_SEND_FAILED',
+          error: (failed?.lastError || fallback).slice(0, 500),
+          errorCode: isGoogle ? 'GMAIL_SEND_FAILED' : 'SMTP_SEND_FAILED',
         };
       }
       return {

@@ -22,6 +22,7 @@ import {
   classifyGmailApiError,
   generateCodeVerifier,
   generateOauthState,
+  isGmailApiDisabledError,
   pkceChallengeS256,
   safeGmailErrorMessage,
   tokenErrorReason,
@@ -157,6 +158,45 @@ passed++;
 assert.strictEqual(tokenErrorReason('corps illisible…'), 'corps illisible…', '6c. corps brut renvoyé tel quel');
 ok(tokenErrorReason('').includes('erreur inconnue'), '6d. corps vide → erreur inconnue');
 
+// TÂCHE 185 — format IMBRIQUÉ de l'API Gmail REST (rencontré en production :
+// API désactivée → 403 {"error":{"code":403,"message":"…","status":…}}).
+const gmailDisabledBody = JSON.stringify({
+  error: {
+    code: 403,
+    message:
+      'Gmail API has not been used in project 709396505816 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project=709396505816 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.',
+    status: 'PERMISSION_DENIED',
+  },
+});
+const reasonGmail = tokenErrorReason(gmailDisabledBody);
+ok(
+  reasonGmail.startsWith('Gmail API has not been used in project 709396505816'),
+  '6e. erreur Gmail imbriquée : message extrait (pas le JSON brut)',
+);
+ok(reasonGmail.includes('PERMISSION_DENIED'), '6f. statut Gmail annexé');
+ok(!reasonGmail.includes('{'), '6g. aucun reste de JSON dans le message');
+const gmailQuota = tokenErrorReason(
+  JSON.stringify({ error: { code: 429, message: 'User rate limit exceeded.', status: 'RESOURCE_EXHAUSTED' } }),
+);
+ok(gmailQuota.includes('User rate limit exceeded'), '6h. autre erreur Gmail imbriquée parsée');
+
+// ─── 6bis. Détection « API Gmail désactivée » (tâche 185) ───────────────────
+
+ok(isGmailApiDisabledError(gmailDisabledBody), '6bis-a. corps 403 API désactivée détecté');
+ok(
+  isGmailApiDisabledError('{"error":{"code":403,"message":"it is disabled"}}'),
+  '6bis-b. variante « it is disabled »',
+);
+ok(
+  !isGmailApiDisabledError(
+    JSON.stringify({
+      error: { code: 403, message: 'Request had insufficient authentication scopes.', status: 'PERMISSION_DENIED' },
+    }),
+  ),
+  '6bis-c. portée insuffisante ≠ API désactivée (ne bloque pas la connexion)',
+);
+ok(!isGmailApiDisabledError(''), '6bis-d. corps vide → non bloquant');
+
 // ─── 7. base64url ───────────────────────────────────────────────────────────
 
 const buf = Buffer.from('Hello Academia Helm +/ = test');
@@ -202,7 +242,8 @@ async function buildRawMime(mail: Record<string, unknown>): Promise<string> {
 
   console.log(`\n✅ TÂCHE 183 — ${passed} tests de logique pure Google OAuth2 : OK`);
   console.log('   (PKCE RFC 7636, state, URL d\'autorisation, classification API Gmail,');
-  console.log('    masquage jetons, erreurs token, base64url, composition MIME réelle)');
+  console.log('    masquage jetons, erreurs token, base64url, composition MIME réelle,');
+  console.log('    erreurs Gmail REST imbriquées + détection API désactivée [tâche 185])');
 })().catch((err) => {
   console.error('\n❌ Échec des tests tâche 183 :', err);
   process.exit(1);

@@ -15277,3 +15277,25 @@ Work Log:
 Stage Summary:
 - ✅ Directeurs d'école guidés face à l'écran d'avertissement Google (encart sous le bouton + guide 4 étapes) — plus d'abandon au moment du consentement.
 - ⏳ Côté Google Cloud Console (opérationnel, pas du code) : ajouter les testeurs de recette, compléter le branding, puis décider Publishing (Testing vs In production) et programmer la vérification sensible-scope avant le déploiement large.
+
+---
+
+Task ID: 185-email-ecole-diagnostic-api-gmail-desactivee
+Agent: Super Z (agent principal)
+Task: Retour terrain post-184 — connexion Google établie (statut Actif) mais « Envoyer un e-mail test » échoue avec « Échec de l'envoi SMTP — vérifiez la configuration » ; page « Connexion instable » au retour du callback Google.
+
+Work Log:
+- DIAGNOSTIC DÉFINITIF (lecture directe de la base Neon de production, table email_queue.lastError + school_email_settings) : Google 403 « Gmail API has not been used in project 709396505816 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/gmail… » → **l'API Gmail n'était pas activée dans le projet Google Cloud** (l'oubli classique : consentement + échange de jeton + userinfo fonctionnent SANS elle, seul l'envoi réel messages/send la réclame). La connexion CSP Mon Avenir Plus N'Dali était passée en statut erreur (markError via classifyGmailApiError 403 → fatal_auth), le log email_send_log portait provider 'smtp' à tort (défaut de finalizeFailure).
+- Page « Connexion instable » : bénin — déploiement Vercel 1.0.48 pendant l'aller-retour Google (fragments JS périmés) ; la redirection callback était correcte (l'utilisateur a atterri sur l'onglet, connexion bien enregistrée). Aucun correctif code.
+- CORRECTIFS CODE (4) :
+  1. central-email.service.ts — le bouton test remonte la VRAIE cause : lecture de email_queue.lastError (déjà assainie par safeGmail/safeSmtpErrorMessage) au lieu du message générique masquant « API Gmail désactivée » ; errorCode mode-aware (GMAIL_SEND_FAILED vs SMTP_SEND_FAILED) + fallbacks distincts.
+  2. tokenErrorReason (google-oauth.helpers.ts) — parse le format IMBRIQUÉ de l'API Gmail REST {"error":{"code":403,"message":"…","status":"PERMISSION_DENIED"}} (rencontré en prod : l'ancien motif "error":"valeur" ne matchait pas le JSON imbriqué → message tronqué illisible). Extrait message + statut, 250 car.
+  3. google-oauth.service.ts — sonde assertGmailApiEnabled au CALLBACK (users.getProfile, best-effort) : si le corps matche isGmailApiDisabledError (helpers : « has not been used in project » / « it is disabled ») → refus de connexion avec message actionnable pour YEHI OR Tech (console.cloud.google.com → APIs & Services → Bibliothèque → Gmail API → Activer). Tout autre résultat (200, portée insuffisante, réseau) ne bloque pas.
+  4. Bouton test = outil d'auto-réparation : CentralEmailSendInput.allowUnhealthyConnection (DTO + send() gate + contrôleur test uniquement) — tente l'envoi même si la connexion est Erreur/Expirée (un succès rétablit Actif via markVerified du dispatcher ; un échec remonte la vraie cause). Les envois métier gardent le garde-fou intact. Au passage : finalizeFailure accepte le provider → journal google_oauth correct (n'était plus 'smtp' à tort pour les échecs Gmail).
+- VALIDATION : harnais 183 étendu 61/61 (+8 : tokenErrorReason format imbriqué ×4, isGmailApiDisabledError ×4 dont garde-fou « portée insuffisante ≠ désactivée ») ; non-régression 181 : 41/41 ; harnais tsc school-email SANS prisma generate (contrainte OOM) : 0 erreur — reproductible via scripts/tsc-check-school-email.sh (stub @prisma/client signature d'index posé/restauré par trap) ; ESLint non exécutable dans ce sandbox (conflit flat-config/eslintrc) — build Railway = porte finale. npm install exécuté (node_modules absent du sandbox neuf).
+- Version 1.0.49 (app.controller + health.controller ×3).
+
+Stage Summary:
+- ✅✅ Cause racine identifiée et corrigée : l'API Gmail doit être activée dans le projet Google Cloud (709396505816) — opérationnel, 1 clic dans la console ; à partir de 1.0.49 le bouton test remonte la vraie erreur et la connexion future détecte l'oubli immédiatement au consentement.
+- ✅✅ Bouton test auto-réparant : après activation de l'API Gmail, un simple « Envoyer un e-mail test » rétablit la connexion CSP Mon Avenir Plus N'Dali en Actif (pas besoin de reconnecter Google).
+- ⏳ UTILISATEUR : activer l'API Gmail (console.cloud.google.com → APIs & Services → Bibliothèque → « Gmail API » → Activer), attendre le déploiement 1.0.49, puis « Envoyer un e-mail test » → statut Actif + e-mail reçu.

@@ -38,6 +38,7 @@ import { PrismaService } from '../database/prisma.service';
 import { SchoolEmailSettingsService } from './school-email-settings.service';
 import {
   GmailApiError,
+  GMAIL_API_PROFILE_URL,
   GMAIL_API_SEND_URL,
   GOOGLE_TOKEN_ENDPOINT,
   GOOGLE_USERINFO_ENDPOINT,
@@ -45,6 +46,7 @@ import {
   buildGoogleAuthUrl,
   generateCodeVerifier,
   generateOauthState,
+  isGmailApiDisabledError,
   pkceChallengeS256,
   safeGmailErrorMessage,
   tokenErrorReason,
@@ -235,6 +237,11 @@ export class GoogleOauthService {
       );
     }
 
+    // TÂCHE 185 — l'oubli classique : consentement + jetons OK mais API Gmail
+    // non activée dans le projet Google Cloud → le 1ᵉʳ envoi échouerait en 403.
+    // Détecté ICI, au moment de la connexion, avec un message actionnable.
+    await this.assertGmailApiEnabled(tokens.access_token);
+
     // Persistance chiffrée : mode google_oauth, statut Actif, From imposé.
     await this.settings.saveGoogleConnection(payload.tenantId, payload.userId, {
       refreshToken: tokens.refresh_token,
@@ -294,6 +301,32 @@ export class GoogleOauthService {
     if (!res.ok) return null;
     const json = (await res.json()) as { email?: string };
     return json.email?.toLowerCase() || null;
+  }
+
+  /**
+   * Sonde users.getProfile : ne bloque la connexion QUE si l'API Gmail est
+   * désactivée dans le projet Google Cloud (défaut de configuration plateforme,
+   * déterministe). Tout autre résultat (200, portée insuffisante, réseau…)
+   * laisse passer — le premier envoi remonterait alors la cause réelle.
+   */
+  private async assertGmailApiEnabled(accessToken: string): Promise<void> {
+    let res: Response;
+    try {
+      res = await fetch(GMAIL_API_PROFILE_URL, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+    } catch {
+      return; // réseau : ne bloque pas la connexion sur une sonde best-effort
+    }
+    if (res.ok) return;
+    const text = await res.text().catch(() => '');
+    if (isGmailApiDisabledError(text)) {
+      throw new BadRequestException(
+        "L'API Gmail n'est pas activée dans le projet Google Cloud de la plateforme (Academia Helm). " +
+          'YEHI OR Tech doit l’activer une seule fois : console.cloud.google.com → APIs & Services → ' +
+          'Bibliothèque → « Gmail API » → Activer — puis relancez la connexion.',
+      );
+    }
   }
 
   // ─── 3. Access tokens (cache mémoire + refresh) ───────────────────────────

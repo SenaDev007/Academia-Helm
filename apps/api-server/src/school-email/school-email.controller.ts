@@ -120,10 +120,24 @@ export class SchoolEmailController {
       verified = true;
       await this.settings.markVerified(tenantId);
     } catch (err: any) {
+      // ⭐ Retour promoteur 2026-11-26 — diagnostic différencié : un timeout
+      // de connexion n'est PAS un mauvais mot de passe. L'API est hébergée sur
+      // Railway, qui BLOQUE les ports SMTP sortants (25/465/587) par défaut
+      // → le mode « mot de passe d'application » ne peut pas s'y connecter,
+      // quelle que soit la configuration. La connexion Google (API Gmail sur
+      // le port 443) n'est pas concernée : c'est la voie recommandée.
+      const code = String(err?.code || '');
+      const msg = String(err?.message || err || '');
+      const isNetworkBlock =
+        ['ETIMEDOUT', 'ECONNREFUSED', 'ENETUNREACH', 'EHOSTUNREACH', 'EAI_AGAIN'].includes(
+          code,
+        ) || /connection timeout|connect timeout/i.test(msg);
       verifyError =
-        err?.responseCode === 535 || /auth/i.test(String(err?.message || ''))
+        err?.responseCode === 535 || /auth/i.test(msg)
           ? "Authentification refusée par Gmail — vérifiez le mot de passe d'application (et que la validation en deux étapes est active)."
-          : `Connexion SMTP échouée : ${String(err?.message || err).slice(0, 200)}`;
+          : isNetworkBlock
+            ? "Connexion SMTP impossible : les ports SMTP sortants (587/465) sont bloqués par l'hébergeur de l'application. Utilisez plutôt la connexion Google (bouton « Connecter Google ») : elle passe par une API sécurisée sur le port 443 et fonctionne sur cet hébergement."
+            : `Connexion SMTP échouée : ${msg.slice(0, 200)}`;
       await this.settings.markError(tenantId, verifyError);
       this.logger.warn(`Vérification SMTP échouée (tenant ${tenantId}) : ${verifyError}`);
     }
@@ -289,7 +303,15 @@ export class SchoolEmailController {
       this.logger.log(
         `Callback Google OAuth2 OK (tenant ${result.tenantId}, compte ${result.googleEmail})`,
       );
-      return res.redirect(302, `${base}&google=ok`);
+      // ⭐ tenant explicite dans l'URL de retour : la navigation de retour
+      // OAuth est un chargement de page COMPLET (redirection cross-site) —
+      // le paramètre évite toute dépendance à la relecture de session par le
+      // middleware et toute redirection intermédiaire (source du crash
+      // « Connexion instable » constaté en production 25/11/2026).
+      return res.redirect(
+        302,
+        `${base}&google=ok&tenant=${encodeURIComponent(result.tenantId)}`,
+      );
     } catch (err: any) {
       const motif = encodeURIComponent(String(err?.message || 'Erreur inconnue').slice(0, 300));
       this.logger.warn(`Callback Google OAuth2 échoué : ${err?.message}`);

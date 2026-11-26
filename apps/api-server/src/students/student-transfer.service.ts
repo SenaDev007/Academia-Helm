@@ -811,7 +811,7 @@ export class StudentTransferService {
           <!-- Footer -->
           <tr>
             <td style="background:#f8fafc;padding:24px 40px;border-top:1px solid #e2e8f0;">
-              <p style="color:#94a3b8;font-size:11px;margin:0;text-align:center;">Cet email a été envoyé automatiquement par Academia Helm. Ne pas répondre.</p>
+              <p style="color:#94a3b8;font-size:11px;margin:0;text-align:center;">Cet e-mail a été envoyé via Academia Helm. Vous pouvez répondre directement : votre réponse parviendra à l'école.</p>
               <p style="color:#94a3b8;font-size:11px;margin:4px 0 0;text-align:center;">© 2026 Academia Helm — YEHI OR Tech</p>
             </td>
           </tr>

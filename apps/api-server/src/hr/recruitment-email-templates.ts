@@ -234,8 +234,8 @@ export function renderFooter(branding: TenantBranding): string {
           </tr>
         </table>
         <div style="font-size:11px;color:#94a3b8;line-height:1.6;">
-          Cet email a été envoyé automatiquement par la plateforme Academia Helm.<br />
-          Merci de ne pas répondre directement à ce message.
+          Cet e-mail a été envoyé via la plateforme Academia Helm.<br />
+          Vous pouvez répondre directement à ce message : votre réponse parviendra à son destinataire.
         </div>
         <div style="font-size:10px;color:#64748b;margin-top:10px;border-top:1px solid #1e3a6e;padding-top:10px;">
           © ${new Date().getFullYear()} YEHI OR Tech — Academia Helm · Parakou, Bénin · Tous droits réservés

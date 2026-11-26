@@ -23,6 +23,7 @@ import { PrismaService } from '../database/prisma.service';
 import { prismaUpdateDefaults, uuid } from '../common/utils/prisma-helpers';
 import { SchoolEmailSettingsService } from './school-email-settings.service';
 import { GoogleOauthService } from './google-oauth.service';
+import { EmailBrandingService } from './email-branding.service';
 import {
   GmailApiError,
   GoogleAuthExpiredError,
@@ -30,12 +31,13 @@ import {
   safeGmailErrorMessage,
 } from './google-oauth.helpers';
 import {
-  appendHtmlFooter,
-  appendTextFooter,
+  appendTextFooterWithBranding,
   classifySmtpError,
   createSmtpTransport,
   queueAttachmentsToNodemailer,
+  resolveReplyToHeader,
   safeSmtpErrorMessage,
+  wrapHtmlWithBranding,
 } from './smtp-helpers';
 import { EmailQueuePayload } from './dto/school-email.dto';
 
@@ -74,6 +76,7 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
     private readonly prisma: PrismaService,
     private readonly settings: SchoolEmailSettingsService,
     private readonly googleOauth: GoogleOauthService,
+    private readonly branding: EmailBrandingService,
   ) {}
 
   /** Rattrapage au démarrage : traite les items dus (1 requête/déploiement). */
@@ -290,24 +293,40 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
         const sendNow = allRecipients.slice(0, sendable);
         const remaining = allRecipients.slice(sendable);
 
+        // ⭐ Branding école (retour promoteur 2026-11-26) : logo en-tête/pied
+        // + coordonnées — résolu une fois par lot puis mis en cache 10 min.
+        const resolvedBranding = await this.branding.resolve(tenantId, settingsRow.fromName);
         const html = payload.html
-          ? appendHtmlFooter(payload.html, settingsRow.fromName)
+          ? wrapHtmlWithBranding(payload.html, resolvedBranding.branding)
           : undefined;
         const text = payload.text
-          ? appendTextFooter(payload.text, settingsRow.fromName)
+          ? appendTextFooterWithBranding(payload.text, resolvedBranding.branding)
           : undefined;
+
+        // Pièces jointes : celles de la file + le logo inline (CID) de l'école.
+        const queueAttachments = queueAttachmentsToNodemailer(payload.attachments) || [];
+        const attachments = resolvedBranding.logoAttachment
+          ? [...queueAttachments, resolvedBranding.logoAttachment]
+          : queueAttachments;
 
         // ⚠️ From BLOQUÉ côté serveur : Gmail impose l'adresse du compte
         // authentifié (CDC section 3, règles d'en-têtes).
         const from = `"${settingsRow.fromName.replace(/"/g, '')}" <${settingsRow.fromEmail}>`;
         const mailOptions = {
           from,
-          replyTo: payload.replyTo || settingsRow.replyTo || undefined,
+          // ⭐ Reply-To (retour promoteur 2026-11-26) : l'adresse RÉELLE de
+          // l'école prime sur l'adresse jeton du module Communication —
+          // les réponses des destinataires arrivent dans la boîte de l'école.
+          replyTo: resolveReplyToHeader(
+            payload.replyTo,
+            settingsRow.replyTo,
+            settingsRow.fromEmail,
+          ),
           to: sendNow,
           subject: payload.subject,
           html,
           text,
-          attachments: queueAttachmentsToNodemailer(payload.attachments),
+          attachments: attachments.length > 0 ? attachments : undefined,
         };
 
         let messageId: string | undefined;

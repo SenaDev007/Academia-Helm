@@ -385,8 +385,12 @@ export class CentralEmailService {
       subject: params.subject,
       html: params.html,
       text: params.text,
-      // ⚠️ Reply-to : la valeur calculée par Communication (token inbound)
-      // prévaut ; sinon l'onglet E-mail fournit celle de l'école.
+      // ⚠️ Reply-to (retour promoteur 2026-11-26) : la valeur du module
+      // Communication (token inbound ou override RH) est conservée dans le
+      // payload, mais le DISPATCHER fait désormais primer l'adresse RÉELLE de
+      // l'école (onglet E-mail) sur l'adresse jeton — les réponses des
+      // destinataires arrivent dans la boîte de l'école. Les overrides
+      // explicites (ex. recruteur RH) restent priorititaires.
       replyTo: params.replyTo,
       attachments,
       triggeredByUserId: params.triggeredByUserId,

@@ -2454,7 +2454,27 @@ async function handleAppShellNavigation(request) {
   //    timeout, cache write, puis fallback shell SANS page « hors ligne ».
   try {
     const networkResponse = await fetchWithTimeout(request, HTML_TIMEOUT);
-    if (networkResponse && networkResponse.ok && !networkResponse.redirected) {
+    // ⭐ v4.24.0 — REDIRECTS INTERMÉDIAIRES (retour OAuth Google notamment) :
+    //    une réponse réseau OK mais REDIRIGÉE (middleware session/tenant,
+    //    canonicalisation) ne doit PLUS être jetée. Avant, on tombait dans le
+    //    fallback shell → HTML d'un build PRÉCÉDENT → chunks supprimés du
+    //    serveur → ChunkLoadError « Connexion instable » en boucle
+    //    déterministe (retour /app/settings?tab=email&google=ok, production
+    //    25/11/2026 : rechargements auto épuisés, page d'erreur permanente).
+    //    Désormais on rend la redirection VISIBLE au navigateur : il
+    //    renavigue vers l'URL finale, servie proprement (200 non redirigé,
+    //    mise en cache au passage). Les boucles restent bornées par le garde
+    //    x-redirect-depth du middleware (max 5) et la limite navigateur.
+    if (networkResponse && networkResponse.ok && networkResponse.redirected) {
+      try {
+        return Response.redirect(networkResponse.url, 302);
+      } catch (e) {
+        // URL finale inexploitable (opaque/relative) → servir le contenu tel
+        // quel plutôt que de retomber sur un shell potentiellement périmé.
+        return networkResponse;
+      }
+    }
+    if (networkResponse && networkResponse.ok) {
       // ⭐ v3.4.0 — copie SANS Vary (fire-and-forget : la réponse est rendue
       //    à la page immédiatement, la copie se fait en arrière-plan).
       //    ⚠️ PAS de cache des réponses REDIRIGÉES (session expirée → le
@@ -2554,7 +2574,17 @@ async function handlePublicPageNavigation(request) {
   //    mais lentement (Neon cold start, 3G, Wifi faible).
   try {
     let networkResponse = await fetchWithTimeout(request, 10000);
-    if (networkResponse && networkResponse.ok && !networkResponse.redirected) {
+    // ⭐ v4.24.0 — réponse OK mais REDIRIGÉE : on rend la redirection visible
+    //    au navigateur (cf. handleAppShellNavigation) au lieu de retomber sur
+    //    une page cachée potentiellement périmée.
+    if (networkResponse && networkResponse.ok && networkResponse.redirected) {
+      try {
+        return Response.redirect(networkResponse.url, 302);
+      } catch (e) {
+        return networkResponse;
+      }
+    }
+    if (networkResponse && networkResponse.ok) {
       // ⭐ v3.4.0 — copie SANS Vary (fire-and-forget)
       toCacheableCopy(networkResponse)
         .then((copy) => cache.put(request, copy))
@@ -2571,7 +2601,16 @@ async function handlePublicPageNavigation(request) {
     //    peut timeout, le second réussit).
     try {
       const retryResponse = await fetchWithTimeout(request, 15000);
-      if (retryResponse && retryResponse.ok && !retryResponse.redirected) {
+      // ⭐ v4.24.0 — idem première tentative : redirection visible, pas de
+      //    contenu caché périmé.
+      if (retryResponse && retryResponse.ok && retryResponse.redirected) {
+        try {
+          return Response.redirect(retryResponse.url, 302);
+        } catch (e) {
+          return retryResponse;
+        }
+      }
+      if (retryResponse && retryResponse.ok) {
         toCacheableCopy(retryResponse)
           .then((copy) => cache.put(request, copy))
           .catch(() => {});

@@ -306,8 +306,8 @@ export class RecoveryReminderEmailService {
               ` : ''}
 
               <p style="margin:24px 0 0;font-size:12px;color:#94a3b8;line-height:1.5;text-align:center;border-top:1px solid #e2e8f0;padding-top:16px;">
-                Cet email a été envoyé automatiquement par Academia Helm au nom de ${schoolName}.<br/>
-                Merci de ne pas répondre directement — utilisez les coordonnées ci-dessus.
+                Cet e-mail a été envoyé par ${schoolName} via Academia Helm.<br/>
+                Vous pouvez répondre directement à cet e-mail : votre réponse parviendra à l'école.
               </p>
 
             </td>

@@ -644,7 +644,7 @@ export class TestQuestionnaireService {
         <tr><td style="background:${N};padding:24px 28px;text-align:center;border-top:3px solid ${G};">
           <div style="font-size:15px;font-weight:bold;color:#fff;">Academia Helm</div>
           <div style="font-size:11px;color:${G};margin-top:2px;">Plateforme de pilotage éducatif</div>
-          <div style="font-size:11px;color:#94a3b8;line-height:1.6;margin-top:12px;">Cet email a été envoyé automatiquement. Merci de ne pas répondre directement.</div>
+          <div style="font-size:11px;color:#94a3b8;line-height:1.6;margin-top:12px;">Cet e-mail a été envoyé via Academia Helm. Vous pouvez répondre directement : votre réponse parviendra à l'école.</div>
         </td></tr>
       </table>
     </td></tr>

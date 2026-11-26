@@ -81,7 +81,19 @@ export interface GmailSendMailInput {
   html?: string;
   text?: string;
   replyTo?: string;
-  attachments?: Array<{ filename: string; content?: Buffer; path?: string; contentType?: string }>;
+  /**
+   * Pièces jointes (files + logo inline de l'école). `cid` + `contentDisposition:
+   * 'inline'` permettent l'embarquement d'images référencées par <img src="cid:…">
+   * — géré nativement par MailComposer (même moteur que Nodemailer).
+   */
+  attachments?: Array<{
+    filename: string;
+    content?: Buffer;
+    path?: string;
+    contentType?: string;
+    cid?: string;
+    contentDisposition?: 'attachment' | 'inline';
+  }>;
 }
 
 export interface GoogleSendResult {

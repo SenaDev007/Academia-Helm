@@ -125,6 +125,143 @@ export function appendTextFooter(text: string, schoolName: string): string {
   return `${text || ''}\n\n— ${schoolName}\nEnvoyé via Academia Helm`;
 }
 
+// ─── Branding e-mail (retour promoteur 2026-11-26 — logo école en-tête/pied) ─
+
+/** Identité visuelle de l'école appliquée à TOUS ses e-mails. */
+export interface SchoolEmailBranding {
+  /** Nom affiché (fromName de l'onglet E-mail, sinon fiche école). */
+  schoolName: string;
+  /**
+   * Content-ID du logo embarqué en pièce jointe inline — méthode la plus
+   * compatible (Gmail webmail, Outlook, Apple Mail) : le logo s'affiche même
+   * si son URL d'origine est protégée ou expirée.
+   */
+  logoCid?: string;
+  /**
+   * URL publique du logo — utilisée quand l'embarquement en pièce jointe a
+   * échoué (repli <img src="https://…">).
+   */
+  logoUrl?: string;
+  /** Lignes de contact affichées dans le pied de page (adresse, tél, e-mail…). */
+  contactLines: string[];
+}
+
+/** CID fixe du logo (une seule pièce jointe inline réutilisée header+footer). */
+export const SCHOOL_LOGO_CID = 'school-logo@academiahelm';
+
+/** Balise <img> du logo (CID si embarqué, sinon URL publique) — ou null. */
+export function schoolLogoImgTag(
+  branding: SchoolEmailBranding,
+  heightPx: number,
+  extraStyle = '',
+): string | null {
+  const src = branding.logoCid ? `cid:${branding.logoCid}` : branding.logoUrl;
+  if (!src) return null;
+  return (
+    `<img src="${escapeHtml(src)}" alt="Logo" height="${heightPx}" ` +
+    `style="vertical-align:middle;height:${heightPx}px;max-height:${heightPx}px;${extraStyle}" />`
+  );
+}
+
+/**
+ * ⭐ Retour promoteur 2026-11-26 — le logo de l'école doit s'afficher dans
+ * l'EN-TÊTE et le PIED de chaque e-mail envoyé par l'école (à la place de la
+ * seule mention texte). Appliqué au point d'entrée unique (dispatcher) pour
+ * couvrir tous les modules (Communication, RH, Finance, Élèves, Pédagogie…).
+ *
+ * Insertion compatible clients mail : tableaux + styles inline uniquement
+ * (pas de flexbox — Outlook), logo en CID quand il a pu être embarqué.
+ */
+export function wrapHtmlWithBranding(html: string, branding: SchoolEmailBranding): string {
+  const name = escapeHtml(branding.schoolName || 'École');
+  const contacts = (branding.contactLines || []).filter(Boolean).map(escapeHtml).join(' · ');
+
+  const headerLogo = schoolLogoImgTag(branding, 56, 'margin-right:12px;');
+  const header = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 0;border-bottom:3px solid #1a2ba6">
+  <tr>
+    <td style="padding:16px 8px 12px 8px;font-family:Arial,Helvetica,sans-serif">
+      ${headerLogo ? `${headerLogo} ` : ''}<span style="font-size:18px;font-weight:bold;color:#111827;vertical-align:middle">${name}</span>
+    </td>
+  </tr>
+</table>`;
+
+  const footerLogo = schoolLogoImgTag(branding, 40);
+  const footer = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px">
+  <tr>
+    <td align="center" style="padding:18px 8px;border-top:1px solid #e5e7eb;font-family:Arial,Helvetica,sans-serif">
+      ${footerLogo ? `${footerLogo}<br/>` : ''}<span style="font-size:13px;font-weight:bold;color:#374151">${name}</span><br/>
+      ${contacts ? `<span style="font-size:11px;color:#6b7280;line-height:1.6">${contacts}</span><br/>` : ''}
+      <span style="font-size:10px;color:#9ca3af">Envoyé via Academia Helm</span>
+    </td>
+  </tr>
+</table>`;
+
+  if (!html) return `${header}${footer}`;
+  const lower = html.toLowerCase();
+  const bodyOpen = lower.lastIndexOf('<body');
+  if (bodyOpen !== -1) {
+    // Document complet : en-tête juste après <body …>, pied avant </body>.
+    const bodyTagEnd = html.indexOf('>', bodyOpen);
+    if (bodyTagEnd !== -1) {
+      const afterBody = html.slice(bodyTagEnd + 1);
+      const closeIdx = afterBody.toLowerCase().lastIndexOf('</body>');
+      const withFooter =
+        closeIdx === -1
+          ? `${afterBody}${footer}`
+          : `${afterBody.slice(0, closeIdx)}${footer}${afterBody.slice(closeIdx)}`;
+      return `${html.slice(0, bodyTagEnd + 1)}${header}${withFooter}`;
+    }
+  }
+  return `${header}${html}${footer}`;
+}
+
+/** Pied de page texte enrichi (coordonnées de l'école — pas de logo en texte brut). */
+export function appendTextFooterWithBranding(
+  text: string,
+  branding: SchoolEmailBranding,
+): string {
+  const lines = [branding.schoolName, ...(branding.contactLines || []).filter(Boolean)];
+  return `${text || ''}\n\n— ${lines.join('\n')}${lines.length ? '\n' : ''}Envoyé via Academia Helm`;
+}
+
+// ─── Reply-To : l'école reçoit les réponses (retour promoteur 2026-11-26) ───
+
+/** Adresse jeton du module Communication (log_xxx@replies.… — webhook inbound) ? */
+export function isTokenReplyAddress(value?: string | null): boolean {
+  return !!value && /^log_[a-f0-9]+@/i.test(value.trim());
+}
+
+/**
+ * Priorité du champ Reply-To :
+ *   1. adresse explicite fournie par le module appelant (ex. replyToOverride
+ *      RH : les réponses du candidat vont DIRECTEMENT au recruteur) ;
+ *   2. Reply-To configuré dans l'onglet E-mail de l'école ;
+ *   3. adresse Gmail de l'école (fromEmail) — les réponses arrivent dans la
+ *      boîte de l'école, qui lit ses e-mails directement ;
+ *   4. repli : l'adresse jeton (suivi plateforme — nécessite le webhook
+ *      inbound ; jamais atteinte quand l'école est configurée).
+ *
+ * Avant : l'adresse jeton prévalait systématiquement → les réponses des
+ * destinataires partaient sur replies.academiahelm.com et l'école ne recevait
+ * RIEN. Désormais l'adresse RÉELLE de l'école prime.
+ */
+export function resolveReplyToHeader(
+  payloadReplyTo?: string | null,
+  settingsReplyTo?: string | null,
+  settingsFromEmail?: string | null,
+): string | undefined {
+  const clean = (v?: string | null): string => (v ? v.trim() : '');
+  const explicit = clean(payloadReplyTo);
+  if (explicit && !isTokenReplyAddress(explicit)) return explicit;
+  const configured = clean(settingsReplyTo);
+  if (configured) return configured;
+  const schoolInbox = clean(settingsFromEmail);
+  if (schoolInbox) return schoolInbox;
+  return explicit || undefined;
+}
+
 export function escapeHtml(s: string): string {
   return String(s)
     .replace(/&/g, '&amp;')

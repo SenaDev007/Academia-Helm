@@ -151,9 +151,108 @@ async function testDtos(): Promise<void> {
   console.log('✓ 6. DTOs class-validator (3/3)');
 }
 
+// ─── 7. Branding (retour promoteur 2026-11-26) + priorité Reply-To ─────────
+import {
+  appendTextFooterWithBranding,
+  isTokenReplyAddress,
+  resolveReplyToHeader,
+  wrapHtmlWithBranding,
+} from '../src/school-email/smtp-helpers';
+
+// 7a-7e : Reply-To — l'école reçoit les réponses
+assert.strictEqual(
+  resolveReplyToHeader('log_abc123@replies.academiahelm.com', null, 'ecole@gmail.com'),
+  'ecole@gmail.com',
+  "7a. adresse jeton cède la place à la boîte de l'école",
+);
+assert.strictEqual(
+  resolveReplyToHeader('log_abc123@replies.academiahelm.com', 'direction@ecole.bj', 'x@gmail.com'),
+  'direction@ecole.bj',
+  "7b. replyTo configuré dans l'onglet prime sur le jeton",
+);
+assert.strictEqual(
+  resolveReplyToHeader('recruteur@ecole.bj', 'direction@ecole.bj', 'x@gmail.com'),
+  'recruteur@ecole.bj',
+  '7c. override explicite (RH recruteur) conservé',
+);
+assert.strictEqual(
+  resolveReplyToHeader('log_abc123@replies.academiahelm.com', null, null),
+  'log_abc123@replies.academiahelm.com',
+  "7d. repli jeton si l'école n'a aucune adresse",
+);
+assert.strictEqual(resolveReplyToHeader(null, null, null), undefined, '7e. vide → undefined');
+
+// 7f-7l : branding HTML — logo en-tête ET pied
+const branding = {
+  schoolName: "CSP Mon Avenir Plus N'Dali",
+  logoCid: 'school-logo@academiahelm',
+  contactLines: ["N'Dali, Bénin", '+229 97 00 00 00', 'cspmonavenirplusndali@gmail.com'],
+};
+const wrapped = wrapHtmlWithBranding('<html><body><div>Contenu</div></body></html>', branding);
+const bOpen = wrapped.toLowerCase().indexOf('<body>');
+const hIdx = wrapped.indexOf('border-bottom:3px solid #1a2ba6');
+const cIdx = wrapped.indexOf('Contenu');
+const fIdx = wrapped.indexOf('Envoyé via Academia Helm');
+const closeIdx = wrapped.toLowerCase().lastIndexOf('</body>');
+assert.strictEqual(
+  hIdx > bOpen && cIdx > hIdx && fIdx > cIdx && closeIdx > fIdx,
+  true,
+  '7f. ordre header → contenu → footer → </body>',
+);
+const cidCount = (wrapped.match(/cid:school-logo@academiahelm/g) || []).length;
+assert.strictEqual(cidCount, 2, '7g. logo CID présent 2 fois (en-tête + pied)');
+assert.strictEqual(
+  wrapped.includes('CSP Mon Avenir Plus N&#39;Dali'),
+  true,
+  "7h. nom d'école échappé (anti-XSS)",
+);
+assert.strictEqual(
+  wrapped.includes('cspmonavenirplusndali@gmail.com') && wrapped.includes('+229 97 00 00 00'),
+  true,
+  '7i. coordonnées affichées dans le pied',
+);
+const frag = wrapHtmlWithBranding('<p>Bonjour</p>', branding);
+assert.strictEqual(
+  frag.indexOf('border-bottom:3px solid') < frag.indexOf('<p>Bonjour</p>') &&
+    frag.indexOf('Envoyé via') > frag.indexOf('<p>Bonjour</p>'),
+  true,
+  '7j. fragment sans <body> enveloppé header+footer',
+);
+const noLogo = wrapHtmlWithBranding('<p>x</p>', { schoolName: 'École', contactLines: [] });
+assert.strictEqual(noLogo.includes('<img'), false, '7k. sans logo → aucune balise img');
+const urlLogo = wrapHtmlWithBranding('<p>x</p>', {
+  schoolName: 'École',
+  logoUrl: 'https://api.academiahelm.com/l.png',
+  contactLines: [],
+});
+assert.strictEqual(
+  urlLogo.includes('src="https://api.academiahelm.com/l.png"'),
+  true,
+  '7l. repli URL https quand CID indisponible',
+);
+
+// 7m : pied de page texte enrichi
+const txtBrand = appendTextFooterWithBranding('Bonjour.', branding);
+assert.strictEqual(
+  txtBrand.includes("CSP Mon Avenir Plus N'Dali") &&
+    txtBrand.includes('cspmonavenirplusndali@gmail.com') &&
+    txtBrand.includes('Envoyé via Academia Helm'),
+  true,
+  '7m. footer texte : nom + coordonnées + mention',
+);
+
+// 7n-7o : détection adresse jeton
+assert.strictEqual(
+  isTokenReplyAddress('log_deadbeef@replies.academiahelm.com'),
+  true,
+  '7n. détection adresse jeton',
+);
+assert.strictEqual(isTokenReplyAddress('direction@ecole.bj'), false, '7o. adresse réelle ≠ jeton');
+console.log('✓ 7. Branding + Reply-To école (15/15)');
+
 (async () => {
   await testDtos();
   console.log('\n══════════════════════════════════════════════════');
-  console.log('✅ TÂCHE 181 — TESTS LOGIQUE PURE : 41/41 OK');
+  console.log('✅ TÂCHE 181 — TESTS LOGIQUE PURE : 56/56 OK');
   console.log('══════════════════════════════════════════════════');
 })();

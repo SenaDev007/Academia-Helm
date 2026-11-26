@@ -161,7 +161,19 @@ export function SchoolEmailTab() {
         setSettings(data.settings);
         setUsage(data.usage);
         setGoogleAvailable(Boolean(data.googleOauthAvailable));
-        setModeChoice(data.settings?.mode === "google_oauth" ? "google" : "smtp");
+        // ⭐ 2026-11-26 — non configuré OU connexion SMTP en erreur : proposer
+        // Google d'abord. Les ports SMTP sortants (587/465) sont bloqués par
+        // l'hébergeur (Railway) : le mode mot de passe d'application échoue
+        // systématiquement en timeout — la reconnexion Google est la voie.
+        setModeChoice(
+          data.settings?.mode === "google_oauth"
+            ? "google"
+            : data.settings?.configured && data.settings?.status !== "erreur"
+              ? "smtp"
+              : data.googleOauthAvailable
+                ? "google"
+                : "smtp",
+        );
         if (data.settings?.configured) {
           setForm((f) => ({
             ...f,
@@ -532,7 +544,7 @@ export function SchoolEmailTab() {
             <p className="text-xs text-gray-600 mt-1">
               {settings?.mode === "google_oauth"
                 ? "Revenir au SMTP — le mot de passe d'application devra être ressaisi (il est remplacé par le jeton Google)."
-                : "Fonctionne avec tout compte Gmail muni de la validation en deux étapes."}
+                : "Fonctionne avec tout compte Gmail muni de la validation en deux étapes. ⚠️ Les ports SMTP sortants (587/465) sont bloqués par l'hébergeur de l'application : ce mode échoue en timeout — privilégiez la connexion Google."}
             </p>
           </button>
         </div>

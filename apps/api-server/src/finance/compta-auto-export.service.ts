@@ -229,7 +229,7 @@ export class ComptaAutoExportService {
 
           <p style="margin: 24px 0 0; color: #64748b; font-size: 12px; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 16px;">
             Academia Helm — ERP scolaire institutionnel<br/>
-            Email automatique — ne pas répondre
+            Vous pouvez répondre directement à cet e-mail
           </p>
         </div>
       </div>

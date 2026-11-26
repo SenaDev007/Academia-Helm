@@ -105,38 +105,48 @@ module.exports = {
           5: 'var(--chart-5)',
         },
         /* Design system Academia Helm (palette institutionnelle)
-         * Couleurs HARDCODED — ne pas utiliser hsl(var(--xxx)) ici car les
-         * variables CSS ne sont pas disponibles au premier rendu (avant que
-         * TenantThemeProvider ne s'exécute côté client). Cela causait un
-         * flash noir (texte blanc → noir, sidebar navy → noir).
-         * 
-         * Le thème dynamique est appliqué SEULEMENT sur le site institutionnel
-         * public via ThemeApplier/injection CSS vars sur <html>.
-         * L'application admin garde TOUJOURS la palette Helm par défaut. */
+         *
+         * ⭐ 2026-11-26 — THÈME AUTOMATIQUE PAR ÉCOLE (palette du logo) :
+         * Les palettes blue / gold / helm sont désormais pilotées par des
+         * VARIABLES CSS (--ah-*) avec les valeurs Helm historiques en
+         * FALLBACK. Sans injection de thème, le rendu est strictement
+         * identique à avant (aucun flash : le fallback vit dans la définition
+         * même de la couleur, et le thème est injecté côté SERVEUR dans le
+         * HTML du layout /app — présent dès le premier paint, contrairement
+         * à l'ancien TenantThemeProvider client qui causait un flash noir).
+         *
+         * Quand une école a une palette (customColors CMS > logoPalette auto
+         * > thème officiel — même chaîne que le site institutionnel), le
+         * composant <AppBrandTheme/> (src/app/app/brand-theme.tsx) définit
+         * ces variables sur :root → sidebar, boutons, modales, graphiques,
+         * hover/focus, gradients… prennent la couleur de l'école.
+         *
+         * L'ancien commentaire (couleurs hardcodées pour éviter le flash)
+         * reste documenté : c'est le fallback var(--x, #hex) qui le résout. */
         helm: {
-          navy: '#0D1F6E',
-          navyl: '#1A3490',
-          gold: '#F5A623',
-          goldd: '#C07800',
+          navy: 'var(--ah-helm-navy, #0D1F6E)',
+          navyl: 'var(--ah-helm-navyl, #1A3490)',
+          gold: 'var(--ah-helm-gold, #F5A623)',
+          goldd: 'var(--ah-helm-goldd, #C07800)',
         },
-        // BLEU PRINCIPAL — Royal Institutional Blue (60% de l'UI)
+        // BLEU PRINCIPAL — devient la couleur PRIMAIRE de l'école (60% de l'UI)
         blue: {
-          900: '#0A2A5E', // Base — Autorité, structure principale
-          800: '#0D3B85', // Header, sidebar, fonds structurants
-          700: '#114FC4', // Hover, focus, highlights contrôlés
-          600: '#1C6FE8', // Éléments actifs, liens importants
-          500: '#3b82f6', // Liens, texte secondaire
-          400: '#60a5fa', // Texte atténué sur fond foncé
-          300: '#93c5fd', // Texte muted sur sidebar
-          200: '#bfdbfe', // Texte très muted
-          100: '#dbeafe', // Texte hover clair
+          900: 'var(--ah-blue-900, #0A2A5E)', // Base — Autorité, structure principale (sidebar)
+          800: 'var(--ah-blue-800, #0D3B85)', // Header, sidebar, fonds structurants
+          700: 'var(--ah-blue-700, #114FC4)', // Hover, focus, highlights contrôlés
+          600: 'var(--ah-blue-600, #1C6FE8)', // Éléments actifs, liens importants
+          500: 'var(--ah-blue-500, #3b82f6)', // Liens, texte secondaire
+          400: 'var(--ah-blue-400, #60a5fa)', // Texte atténué sur fond foncé
+          300: 'var(--ah-blue-300, #93c5fd)', // Texte muted sur sidebar
+          200: 'var(--ah-blue-200, #bfdbfe)', // Texte très muted
+          100: 'var(--ah-blue-100, #dbeafe)', // Texte hover clair
         },
-        
-        // GOLD PREMIUM — Living Gold (usage ≤ 5%)
+
+        // GOLD PREMIUM — devient la couleur d'ACCENT de l'école (usage ≤ 5%)
         gold: {
-          600: '#CFA63A', // Accent principal (ORION, badges premium)
-          500: '#F2C94C', // Badges premium, focus, points d'accent
-          400: '#FFE08A', // Hover très subtil (rare)
+          600: 'var(--ah-gold-600, #CFA63A)', // Accent principal (ORION, badges premium)
+          500: 'var(--ah-gold-500, #F2C94C)', // Badges premium, focus, points d'accent
+          400: 'var(--ah-gold-400, #FFE08A)', // Hover très subtil (rare)
         },
         
         // NEUTRES — Structure & respiration (25% de l'UI)

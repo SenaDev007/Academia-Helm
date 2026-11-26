@@ -86,6 +86,74 @@ export class TenantWebsiteController {
   }
 
   /**
+   * ⭐ GET /api/tenant-website/public/:tenantSlug/brand-theme (2026-11-26)
+   *
+   * Thème de marque LÉGER — palette de couleurs de l'école pour
+   * l'APPLICATION (/app/*) : sidebar, boutons, modales, graphiques…
+   *
+   * Retourne UNIQUEMENT les 3 sources de la chaîne de priorité du site
+   * institutionnel (aucune donnée lourde : pas d'actualités/galerie…) :
+   *   1. themeId + themeMode (thème officiel — table tenant_theme_settings)
+   *   2. customColors (choix manuel du CMS)
+   *   3. logoPalette (palette AUTO dérivée du logo — LogoPaletteService)
+   *
+   * ⚠️ Léger par design : 1 lecture tenant + 1 lecture tenant_websites +
+   *    1 SELECT sur tenant_theme_settings — appelé à chaque chargement de
+   *    page /app/* côté web-app (avec cache 5 min côté Next). C'est
+   *    volontairement un endpoint SÉPARÉ de GET /public/:tenantSlug qui,
+   *    lui, charge les actualités/événements/galerie/témoignages/FAQ et ne
+   *    doit PAS être appelé depuis le layout de l'application.
+   */
+  @Public()
+  @SkipThrottle()
+  @Get('public/:tenantSlug/brand-theme')
+  async getPublicBrandTheme(@Param('tenantSlug') tenantSlug: string) {
+    const tenant = await this.prisma.tenant.findFirst({
+      where: {
+        OR: [{ slug: tenantSlug }, { subdomain: tenantSlug }],
+        status: { in: ['active', 'trial'] },
+      },
+      select: { id: true },
+    });
+
+    if (!tenant) {
+      return { found: false, themeId: null, themeMode: 'auto', customColors: null, logoPalette: null };
+    }
+
+    const website = await this.prisma.tenantWebsite.findUnique({
+      where: { tenantId: tenant.id },
+      select: { customColors: true, logoPalette: true },
+    });
+
+    // Thème officiel : table dédiée (module tenant-theme). SELECT direct —
+    // si la table n'existe pas encore (module non initialisé), aucun thème.
+    let themeId: string | null = null;
+    let themeMode = 'auto';
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<
+        Array<{ theme_id: string | null; mode: string | null }>
+      >(
+        `SELECT theme_id, mode FROM tenant_theme_settings WHERE tenant_id = $1 LIMIT 1`,
+        tenant.id,
+      );
+      if (rows && rows.length > 0) {
+        themeId = rows[0].theme_id ?? null;
+        themeMode = rows[0].mode ?? 'auto';
+      }
+    } catch {
+      /* table absente → aucun thème officiel configuré */
+    }
+
+    return {
+      found: true,
+      themeId,
+      themeMode,
+      customColors: (website?.customColors as unknown) ?? null,
+      logoPalette: (website?.logoPalette as unknown) ?? null,
+    };
+  }
+
+  /**
    * GET /api/tenant-website/public/:tenantSlug/identity-info
    * Coordonnées publiques de l'établissement — source : module Paramètres →
    * Identité (profil actif versionné). Contacts (téléphone, WhatsApp, email,

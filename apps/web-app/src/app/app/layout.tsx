@@ -34,6 +34,11 @@ import { getAdminShellForRole } from '@/lib/auth/admin-portal-map';
 import { ModalProvider } from '@/components/modules/blueprint/modals/ModalProvider';
 import AppLayoutClient from './layout-client';
 import AdminPortalShell from '@/components/portals/admin/AdminPortalShell';
+// ⭐ 2026-11-26 — Thème automatique de l'application : palette de l'école
+// (customColors CMS > logoPalette auto > thème officiel — même chaîne que
+// le site institutionnel). Injecté côté SERVEUR (aucun flash) dans les 3
+// branches de rendu ci-dessous.
+import AppBrandTheme from './brand-theme';
 import type { User, Tenant } from '@/types';
 
 // ✅ Lazy load du layout lourd pour améliorer le temps de chargement initial
@@ -145,6 +150,7 @@ export default async function AppLayout({
   if (isOnDedicatedPortal) {
     return (
       <ModalProvider>
+        <AppBrandTheme tenantSlug={tenant.slug || tenant.subdomain} />
         <AppLayoutClient user={user} tenant={tenant}>
           {children}
         </AppLayoutClient>
@@ -165,6 +171,7 @@ export default async function AppLayout({
   if (adminShell) {
     return (
       <ModalProvider>
+        <AppBrandTheme tenantSlug={tenant.slug || tenant.subdomain} />
         <AppLayoutClient user={user} tenant={tenant}>
           <AdminPortalShell portalKey={adminShell.key}>
             {children}
@@ -181,6 +188,7 @@ export default async function AppLayout({
   // ont chacun leur shell dédié (voir getAdminShellForRole).
   return (
     <ModalProvider>
+      <AppBrandTheme tenantSlug={tenant.slug || tenant.subdomain} />
       <AppLayoutClient user={user} tenant={tenant}>
         <PilotageLayout user={user} tenant={tenant}>
           {children}

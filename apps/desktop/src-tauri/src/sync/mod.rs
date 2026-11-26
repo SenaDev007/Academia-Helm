@@ -8,7 +8,14 @@ use log::{info, warn, error};
 // SYNC ENGINE — Implémentation complète avec appels HTTP
 // ============================================================================
 
-const SYNC_INTERVAL_MS: u64 = 5 * 60 * 1000; // ⭐ 5 minutes (avant : 1h — trop long)
+// ⭐ 2026-11-26 — AUDIT COÛT : 5 min → 10 min. L'app desktop restée ouverte
+//    (session enregistrée, fenêtre minimisée) interrogeait /api/sync/pull —
+//    une des routes les PLUS lourdes (toutes les tables) — toutes les 5 min,
+//    24h/24 : chaque requête compte comme activité côté Railway et réveille
+//    le compute Neon → facturation continue sans aucun utilisateur.
+//    10 min laisse le scale-to-zero fonctionner entre deux syncs. La sync
+//    manuelle (bouton Synchroniser) reste disponible pour l'urgence.
+const SYNC_INTERVAL_MS: u64 = 10 * 60 * 1000; // 10 minutes (avant : 5 min)
 const BATCH_SIZE: usize = 5000;
 const MAX_RETRIES: u32 = 3;
 const API_BASE_URL: &str = "https://api.academiahelm.com/api";

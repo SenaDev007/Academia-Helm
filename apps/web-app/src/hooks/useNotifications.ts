@@ -53,8 +53,23 @@ export function useNotifications() {
 
   useEffect(() => {
     refreshUnreadCount();
-    const interval = setInterval(refreshUnreadCount, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => {
+      // ⭐ 2026-11-26 — AUDIT COÛT (Railway/Neon jamais endormis) : un onglet
+      //    laissé ouvert en arrière-plan pollait l'API toutes les 30 s 24h/24,
+      //    ce qui compte comme de l'activité et neutralise le scale-to-zero.
+      //    On suspend le polling quand l'onglet est caché et on rattrape
+      //    immédiatement au retour au premier plan.
+      if (typeof document !== 'undefined' && document.hidden) return;
+      refreshUnreadCount();
+    }, POLL_INTERVAL_MS);
+    const handleVisibility = () => {
+      if (!document.hidden) refreshUnreadCount();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [refreshUnreadCount]);
 
   // ── Chargement de la liste ──

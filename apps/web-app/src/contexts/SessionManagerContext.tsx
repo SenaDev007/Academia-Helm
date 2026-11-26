@@ -155,6 +155,12 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
   const refreshTokenProactively = useCallback(async () => {
     // Ne pas rafraîchir si la session n'est pas active
     if (sessionState !== 'active') return;
+    // ⭐ 2026-11-26 — AUDIT COÛT : ne pas rafraîchir pour un onglet caché
+    //    (chaque refresh compte comme activité et empêche le scale-to-zero
+    //    de Railway/Neon). Le rattrapage se fait au retour au premier plan
+    //    (listener visibilitychange ci-dessous) — le garde-fou d'expiry
+    //    reste assuré par tryRefreshAccessToken sur erreur 401.
+    if (typeof document !== 'undefined' && document.hidden) return;
     try {
       const token = localStorage.getItem('accessToken')?.trim();
       if (!token) return;
@@ -459,10 +465,19 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
     lockExpiryRef.current = setInterval(checkLockExpiry, IDLE_CHECK_INTERVAL_MS);
     tokenRefreshRef.current = setInterval(refreshTokenProactively, TOKEN_REFRESH_INTERVAL_MS);
 
+    // ⭐ 2026-11-26 — AUDIT COÛT : au retour au premier plan, rattraper le
+    //    refresh de token immédiatement (le polling était suspendu pendant
+    //    que l'onglet était caché).
+    const handleVisibilityRefresh = () => {
+      if (!document.hidden) refreshTokenProactively();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityRefresh);
+
     // Rafraîchir le token immédiatement si nécessaire (au montage)
     refreshTokenProactively();
 
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityRefresh);
       for (const event of ACTIVITY_EVENTS) {
         window.removeEventListener(event, handleActivity);
       }

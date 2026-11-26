@@ -24,6 +24,17 @@ import { extractBrandingFromTenant } from '@/lib/tenant/branding';
 export const dynamic = 'force-dynamic';
 
 /**
+ * ⭐ 2026-11-26 — AUDIT COÛT (Railway/Neon jamais endormis) : cache mémoire
+ *    court du branding par slug. Cette route est appelée à CHAQUE visite du
+ *    site institutionnel d'une école (parents + robots Google/apérçus
+ *    sociaux — les robots n'ont pas de cache navigateur) → chaque visite
+ *    frappait l'API Railway (qui réveille Neon). 60 s de cache par instance
+ *    absorbent les rafles de robots ; le branding change rarement.
+ */
+const BRANDING_CACHE_TTL_MS = 60 * 1000;
+const brandingCache = new Map<string, { expires: number; body: any; ok: boolean }>();
+
+/**
  * Extraction du branding depuis la réponse de /public/schools/with-jobs
  * Les données sont déjà pré-résolues par le backend (objet plat)
  * ⭐ 2026-11-23 — tenantId AJOUTÉ : sans lui, le bandeau recrutement du site
@@ -65,6 +76,15 @@ export async function GET(
       );
     }
 
+    // ⭐ Cache mémoire court (robots) — voir commentaire d'entête.
+    const cached = brandingCache.get(slug);
+    if (cached && cached.expires > Date.now()) {
+      return NextResponse.json(cached.body, {
+        status: cached.ok ? 200 : 404,
+        headers: buildCacheHeaders(cached.body),
+      });
+    }
+
     // ── STRATÉGIE 1 : /tenants/by-subdomain/:slug (données les plus complètes) ──
     try {
       const response = await bffFetch(`/tenants/by-subdomain/${encodeURIComponent(slug)}`, {
@@ -74,6 +94,7 @@ export async function GET(
       if (response.ok) {
         const data = await response.json();
         const branding = extractBrandingFromTenant(data, slug);
+        brandingCache.set(slug, { expires: Date.now() + BRANDING_CACHE_TTL_MS, body: branding, ok: true });
         return NextResponse.json(branding, {
           headers: buildCacheHeaders(branding),
         });
@@ -91,6 +112,7 @@ export async function GET(
         const school = schools.find((s: any) => s.slug === slug);
         if (school) {
           const branding = extractBrandingFromSchoolList(school);
+          brandingCache.set(slug, { expires: Date.now() + BRANDING_CACHE_TTL_MS, body: branding, ok: true });
           return NextResponse.json(branding, {
             headers: buildCacheHeaders(branding),
           });
@@ -101,10 +123,11 @@ export async function GET(
     }
 
     // ── Aucune source n'a fonctionné ──
-    return NextResponse.json(
-      { error: 'Tenant introuvable', message: `Aucun établissement trouvé pour le slug "${slug}"` },
-      { status: 404 },
-    );
+    // ⭐ Mis en cache aussi (60 s) : les robots qui scandent des sous-domaines
+    //    inexistants ne doivent pas réveiller l'API à chaque tentative.
+    const notFound = { error: 'Tenant introuvable', message: `Aucun établissement trouvé pour le slug "${slug}"` };
+    brandingCache.set(slug, { expires: Date.now() + BRANDING_CACHE_TTL_MS, body: notFound, ok: false });
+    return NextResponse.json(notFound, { status: 404 });
   } catch (error: any) {
     console.error('[School By Subdomain API] Error:', error);
     return NextResponse.json(

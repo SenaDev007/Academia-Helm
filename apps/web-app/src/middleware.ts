@@ -184,7 +184,27 @@ function extractSubdomainFromRequest(request: NextRequest): string | null {
   return null;
 }
 
+/**
+ * ⭐ 2026-11-26 — AUDIT COÛT : cache mémoire court de la résolution de tenant.
+ *    Les robots (Googlebot, aperçus sociaux…) n'acceptent PAS les cookies →
+ *    chaque requête sur un sous-domaine d'école déclenchait un appel
+ *    /tenants/by-subdomain vers l'API Railway (cache: 'no-store') → trafic
+ *    entrant continu qui neutralise le scale-to-zero de Railway ET réveille
+ *    le compute Neon à chaque fois. 60 s de cache par instance absorbent les
+ *    rafles de robots sans impact utilisateur (l'inscription d'une école est
+ *    immédiatement visible sur une NOUVELLE instance, et au pire 60 s après
+ *    sur une instance chaude — négligeable pour une résolution de domaine).
+ */
+const TENANT_RESOLUTION_CACHE_TTL_MS = 60 * 1000;
+const tenantResolutionCache = new Map<string, { expires: number; tenant: { id: string; slug: string; status: string; subscriptionStatus?: any } | null }>();
+
 async function resolveTenant(subdomain: string): Promise<{ id: string; slug: string; status: string; subscriptionStatus?: SubscriptionStatus } | null> {
+  // Cache mémoire court (robots sans cookies) — voir commentaire ci-dessus.
+  const cached = tenantResolutionCache.get(subdomain);
+  if (cached && cached.expires > Date.now()) {
+    return cached.tenant;
+  }
+  let resolved: { id: string; slug: string; status: string; subscriptionStatus?: SubscriptionStatus } | null = null;
   try {
     const apiUrl = getApiBaseUrl();
     const controller = new AbortController();
@@ -214,35 +234,46 @@ async function resolveTenant(subdomain: string): Promise<{ id: string; slug: str
           signal: fallbackController.signal,
         });
         clearTimeout(fallbackTimeout);
-        if (!fallbackResponse.ok) return null;
-        const fallbackTenant = await fallbackResponse.json();
-        if (!fallbackTenant || (fallbackTenant.subscriptionStatus === 'PENDING' || fallbackTenant.subscriptionStatus === 'TERMINATED')) {
-          return null;
+        if (fallbackResponse.ok) {
+          const fallbackTenant = await fallbackResponse.json();
+          if (fallbackTenant && fallbackTenant.subscriptionStatus !== 'PENDING' && fallbackTenant.subscriptionStatus !== 'TERMINATED') {
+            resolved = fallbackTenant;
+          }
         }
-        return fallbackTenant;
       }
-      return null;
-    }
+    } else {
+      const tenant = await response.json();
 
-    const tenant = await response.json();
-
-    // ⭐ Accepter ACTIVE_SUBSCRIBED comme statut valide
-    // (avant, on rejetait si subscriptionStatus n'était pas défini ET status !== 'active')
-    // Maintenant on accepte : subscriptionStatus = ACTIVE_SUBSCRIBED OU status = 'active'
-    if (tenant.subscriptionStatus === 'PENDING' || tenant.subscriptionStatus === 'TERMINATED') {
-      return null;
+      // ⭐ Accepter ACTIVE_SUBSCRIBED comme statut valide
+      // (avant, on rejetait si subscriptionStatus n'était pas défini ET status !== 'active')
+      // Maintenant on accepte : subscriptionStatus = ACTIVE_SUBSCRIBED OU status = 'active'
+      if (
+        tenant.subscriptionStatus !== 'PENDING'
+        && tenant.subscriptionStatus !== 'TERMINATED'
+        && (tenant.subscriptionStatus || tenant.status === 'active' || tenant.status === 'trial')
+      ) {
+        resolved = tenant;
+      }
     }
-    // Accepter si subscriptionStatus est défini et actif, OU si status est active/trial
-    if (!tenant.subscriptionStatus && tenant.status !== 'active' && tenant.status !== 'trial') {
-      return null;
-    }
-
-    return tenant;
   } catch (error) {
     // Timeout ou erreur réseau — ne pas bloquer le rendu
     console.warn('resolveTenant error (non-blocking):', error instanceof Error ? error.message : String(error));
-    return null;
   }
+
+  // Mise en cache courte (60 s) — mêmes les échecs/null pour absorber les
+  // rafles de robots sur des sous-domaines inexistants.
+  tenantResolutionCache.set(subdomain, {
+    expires: Date.now() + TENANT_RESOLUTION_CACHE_TTL_MS,
+    tenant: resolved,
+  });
+  // Hygiène : vider les entrées expirées si le cache grossit (garde-fou).
+  if (tenantResolutionCache.size > 500) {
+    const now = Date.now();
+    for (const [key, entry] of tenantResolutionCache) {
+      if (entry.expires <= now) tenantResolutionCache.delete(key);
+    }
+  }
+  return resolved;
 }
 
 const publicRoutes = [

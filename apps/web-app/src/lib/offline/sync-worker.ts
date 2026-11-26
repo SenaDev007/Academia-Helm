@@ -22,7 +22,13 @@
 import { isDesktopApp, isOnlineNow, syncPendingQueue } from './offline-sync';
 
 // ── Configuration ──
-const SYNC_INTERVAL_MS = 60 * 1000; // 60 secondes
+// ⭐ 2026-11-26 — AUDIT COÛT : 60 s → 5 min. L'app desktop ouverte (même
+//    minimisée / session inactive) interrogeait l'API Railway + Neon chaque
+//    minute 24h/24 — chaque requête compte comme activité et neutralise le
+//    scale-to-zero. 5 min reste fluide pour un usage desktop (sync manuelle
+//    disponible via le bouton Synchroniser, et sync immédiate au retour de
+//    connexion / au premier plan).
+const SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes (avant : 60 s)
 const SYNC_API_ENDPOINT = '/api/sync/delta';
 
 // ── État global ──
@@ -240,7 +246,7 @@ export async function performSync(): Promise<{
 export function startSyncWorker(): void {
   if (syncInterval) return; // déjà démarré
 
-  console.log('[sync] Starting sync worker (interval: 60s)');
+  console.log('[sync] Starting sync worker (interval: 5min)');
 
   // ⭐ Sur desktop : sync via Tauri SQLite bridge
   //    Sur web : la sync est gérée par offlineSyncService (offline-sync.service.ts)
@@ -250,9 +256,11 @@ export function startSyncWorker(): void {
     // Première sync immédiate (au prochain tick pour éviter de bloquer le démarrage)
     setTimeout(() => performSync(), 2000);
 
-    // Sync périodique toutes les 60s
+    // Sync périodique toutes les 5 min — suspendue si la fenêtre est cachée
+    // (AUDIT COÛT 2026-11-26 : une app desktop en arrière-plan ne doit pas
+    // maintenir Railway/Neon éveillés) + rattrapage au retour au premier plan.
     syncInterval = setInterval(() => {
-      if (isOnlineNow()) {
+      if (isOnlineNow() && document.visibilityState === 'visible') {
         performSync();
       }
     }, SYNC_INTERVAL_MS);
@@ -261,6 +269,13 @@ export function startSyncWorker(): void {
     window.addEventListener('online', () => {
       console.log('[sync] Connection restored — triggering sync');
       performSync();
+    });
+
+    // Sync au retour au premier plan (rattrapage)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && isOnlineNow()) {
+        performSync();
+      }
     });
   } else {
     // ⭐ Sur web : démarrer le offlineSyncService (IndexedDB + outbox + sync-engine)

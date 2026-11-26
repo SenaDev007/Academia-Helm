@@ -5185,8 +5185,27 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     // ⭐ FIX PERFORMANCE CONCURRENCE — 15 s quand le socket est connecté (les
     //    appels arrivent alors via l'event temps réel call:offer — le poll
     //    n'est qu'un filet de sécurité), 3 s seulement si le socket est mort.
-    const interval = setInterval(poll, socket.isConnected ? 15000 : 3000);
-    return () => { cancelled = true; clearInterval(interval); };
+    // ⭐ AUDIT COÛT 2026-11-26 — onglet CACHÉ : le filet de sécurité continue
+    //    (un appel entrant doit pouvoir sonner en arrière-plan) mais au ralenti
+    //    (≥ 30 s entre deux sondes) pour ne pas maintenir Railway/Neon éveillés
+    //    par un onglet oublié. Au retour au premier plan, rattrapage immédiat.
+    let lastPollAt = 0;
+    const visibilityCatchUp = () => {
+      if (document.visibilityState === 'visible') poll();
+    };
+    document.addEventListener('visibilitychange', visibilityCatchUp);
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const hidden = document.visibilityState !== 'visible';
+      if (hidden && now - lastPollAt < 30000) return;
+      lastPollAt = now;
+      poll();
+    }, socket.isConnected ? 15000 : 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', visibilityCatchUp);
+    };
   }, [readOnly, groupCallActive, incomingSignal, socket.isConnected]);
 
   // Statut de l'appel V4 (2 s) — ⭐ V5 : pour les DEUX parties et pendant

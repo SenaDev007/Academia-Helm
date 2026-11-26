@@ -383,8 +383,22 @@ class OfflineSyncService {
    */
   private startAutoSync(): void {
     if (typeof window === 'undefined') return;
+    // ⭐ 2026-11-26 — AUDIT COÛT (Railway/Neon jamais endormis) : un onglet
+    //    ouvert en arrière-plan synchronisait en continu (30 s + 5 min) et
+    //    comptait comme de l'activité → scale-to-zero neutralisé. Les cycles
+    //    sont suspendus quand l'onglet est caché ; un rattrapage a lieu au
+    //    retour au premier plan (listener ci-dessous).
+    const isTabVisible = () => document.visibilityState === 'visible';
+    const catchUpOnVisible = () => {
+      if (isTabVisible() && networkDetectionService.isConnected() && !this.isSyncing) {
+        this.sync().catch(() => { /* best-effort */ });
+      }
+    };
+    document.addEventListener('visibilitychange', catchUpOnVisible);
+
     const interval30s = 30 * 1000;
     this.syncInterval30s = window.setInterval(async () => {
+      if (!isTabVisible()) return; // onglet caché → pas de requête
       if (networkDetectionService.isConnected() && !this.isSyncing) {
         const tenantId = await this.getTenantId();
         if (!tenantId) return;
@@ -394,6 +408,7 @@ class OfflineSyncService {
       }
     }, interval30s);
     this.syncInterval = window.setInterval(async () => {
+      if (!isTabVisible()) return; // onglet caché → pas de requête
       if (!networkDetectionService.isConnected() || this.isSyncing) return;
       if (!(await this.getTenantId())) return;
       await this.sync(); // push + pull (throttle 5 min interne)

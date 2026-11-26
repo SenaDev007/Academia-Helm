@@ -1675,11 +1675,11 @@ export class OnboardingService {
       );
     }
 
-    // ⭐ V6 (spec §4/§6) — HELM CONNECT : provisionnement automatique des
-    //    canaux officiels (Direction, Vie scolaire, Transport, Finance,
-    //    Infos pédagogiques, Calendrier scolaire) + abonnement du promoteur,
-    //    puis communautés automatiques dès qu'une année scolaire sera active.
-    //    Fire-and-forget : ne bloque JAMAIS l'activation.
+    // ⭐ V6 (spec §4/§6) — HELM CONNECT : ⭐ 2026-11-26 — plus AUCUN canal
+    //    officiel n'est créé automatiquement (Direction, Vie scolaire, Finance
+    //    supprimés définitivement — l'école crée ses propres canaux). La sync
+    //    provisionne les communautés automatiques dès qu'une année scolaire
+    //    sera active. Fire-and-forget : ne bloque JAMAIS l'activation.
     this.provisionHelmConnectAsync(activationResult.tenants);
 
     // ⭐ Invalider le cache de la liste publique des écoles pour que le nouveau

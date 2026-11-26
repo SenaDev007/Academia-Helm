@@ -1600,7 +1600,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ V6 (spec — Communautés) : métadonnées des auto-groups (groupType/roleType
   //    par conversation) pour les sous-catégories Classes | Matières |
   //    Enseignants | Parents | Administration | Autres
-  const [autoGroupMeta, setAutoGroupMeta] = useState<Record<string, { groupType: string; roleType?: string }>>({});
+  //    ⭐ 2026-11-26 (retour promoteur) — + levelCategory/levelName pour les
+  //    groupes de CLASSE : les classes sont regroupées par NIVEAU SCOLAIRE
+  //    (maternelle / primaire / secondaire) dans Konnect.
+  const [autoGroupMeta, setAutoGroupMeta] = useState<
+    Record<string, { groupType: string; roleType?: string; levelCategory?: string; levelName?: string }>
+  >({});
   const [communauteFilter, setCommunauteFilter] = useState<string>('all');
 
   // ⭐ V6 — charge les métadonnées auto-groups (avec les nouveaux types
@@ -1613,9 +1618,17 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       .then(res => res.ok ? res.json() : [])
       .then((rows: any[]) => {
         if (cancelled) return;
-        const map: Record<string, { groupType: string; roleType?: string }> = {};
+        const map: Record<string, { groupType: string; roleType?: string; levelCategory?: string; levelName?: string }> = {};
         for (const r of (Array.isArray(rows) ? rows : [])) {
-          if (r.conversationId) map[r.conversationId] = { groupType: r.groupType, roleType: r.roleType };
+          if (r.conversationId) {
+            map[r.conversationId] = {
+              groupType: r.groupType,
+              roleType: r.roleType,
+              // ⭐ 2026-11-26 — niveau scolaire de la classe (maternelle/primaire/secondaire)
+              levelCategory: r.levelCategory || undefined,
+              levelName: r.levelName || undefined,
+            };
+          }
         }
         setAutoGroupMeta(map);
       })
@@ -6409,6 +6422,30 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   const filteredGroupConvs = communauteFilter === 'all'
                     ? groupConvs
                     : groupConvs.filter(c => getCommunauteCategory(c) === communauteFilter);
+                  // ⭐ 2026-11-26 (retour promoteur) — CLASSES PAR NIVEAU SCOLAIRE :
+                  //    « lorsqu'on rentre dans le niveau maternel, on retrouve les
+                  //    classes de la maternelle » — les classes affichées sont
+                  //    EXACTEMENT celles créées dans les paramètres (source de
+                  //    vérité : table classes, synchronisées à chaque sync).
+                  const LEVEL_BUCKETS = [
+                    { id: 'MATERNELLE', label: 'Niveau Maternelle', cls: 'bg-amber-50 text-amber-800 border-amber-300' },
+                    { id: 'PRIMAIRE', label: 'Niveau Primaire', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300' },
+                    { id: 'SECONDAIRE', label: 'Niveau Secondaire', cls: 'bg-blue-50 text-[#1A2BA6] border-blue-300' },
+                    { id: 'AUTRE', label: 'Autres classes', cls: 'bg-slate-100 text-slate-600 border-slate-300' },
+                  ];
+                  const convLevelCategory = (conv: any): string => autoGroupMeta[conv.id]?.levelCategory || 'AUTRE';
+                  const renderClassListByLevel = (convs: any[]) =>
+                    LEVEL_BUCKETS
+                      .map(b => ({ ...b, items: convs.filter(c => convLevelCategory(c) === b.id) }))
+                      .filter(b => b.items.length > 0)
+                      .map(b => (
+                        <div key={b.id}>
+                          <div className={cn('px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider border-l-4 sticky top-0 z-10', b.cls)}>
+                            {b.label} · {b.items.length}
+                          </div>
+                          {b.items.map(conv => renderConversationItem(conv))}
+                        </div>
+                      ));
                   if (groupConvs.length === 0) {
                     return (
                       <div className="flex flex-col items-center justify-center py-12 text-center px-4">
@@ -6496,9 +6533,15 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                                 : <Users className="w-3 h-3" />}
                               {cat.label} ({catCount(cat.id)})
                             </div>
-                            {groupConvs.filter(c => getCommunauteCategory(c) === cat.id).map(conv => renderConversationItem(conv))}
+                            {/* ⭐ 2026-11-26 — classes regroupées par niveau scolaire */}
+                            {cat.id === 'classes'
+                              ? renderClassListByLevel(groupConvs.filter(c => getCommunauteCategory(c) === 'classes'))
+                              : groupConvs.filter(c => getCommunauteCategory(c) === cat.id).map(conv => renderConversationItem(conv))}
                           </div>
                         ))
+                      ) : communauteFilter === 'classes' ? (
+                        /* ⭐ 2026-11-26 — filtre « Classes » : aussi par niveau scolaire */
+                        renderClassListByLevel(filteredGroupConvs)
                       ) : filteredGroupConvs.length > 0 ? (
                         filteredGroupConvs.map(conv => renderConversationItem(conv))
                       ) : (

@@ -49,6 +49,11 @@ export interface ReceiptEmailData {
   amountAppliedToArrears?: number;
   /** Liste des arriérés antérieurs encore ouverts */
   openArrears?: Array<{ academicYearName: string; balanceDue: number; totalDue: number; totalPaid: number; notes?: string }>;
+  /**
+   * ⭐ 2026-11-26 (retour promoteur) — signature par RÔLE de l'encaisseur
+   * (« Le Comptable », « Le Secrétaire Comptable »…). Repli : Service Comptable.
+   */
+  signatureLabel?: string;
 }
 
 const METHOD_LABELS: Record<string, string> = {
@@ -206,7 +211,7 @@ export function renderReceiptEmail(data: ReceiptEmailData): { subject: string; h
 
     <p style="margin:16px 0 0;font-size:13px;color:#475569;line-height:1.6;">
       Cordialement,<br />
-      <strong>Service Comptable</strong><br />
+      <strong>${escHtml(data.signatureLabel || 'Service Comptable')}</strong><br />
       <em>${escHtml(data.branding.schoolName)}</em>
     </p>
   `;

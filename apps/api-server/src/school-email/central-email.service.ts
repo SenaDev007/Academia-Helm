@@ -35,6 +35,7 @@ import {
   CentralEmailSendResult,
   EmailAttachment181,
   EmailCategory181,
+  EmailLevelCategory181,
   EmailModule181,
   EmailQueuePayload,
 } from './dto/school-email.dto';
@@ -86,7 +87,12 @@ export class CentralEmailService {
     }
 
     // ─── 2. E-mails école → SMTP de l'école UNIQUEMENT ─────────────────────
-    const settingsRow = await this.settings.findRaw(input.schoolId);
+    // ⭐ 2026-11-26 — DOUBLE IDENTITÉ : la connexion du NIVEAU visé est
+    //    utilisée (secondaire pour les classes/personnel du secondaire des
+    //    écoles combinées) ; sans connexion secondaire configurée, findRaw
+    //    retombe sur la connexion principale (repli transparent).
+    const levelCategory = input.levelCategory || 'MATERNAL_PRIMARY';
+    const settingsRow = await this.settings.findRaw(input.schoolId, levelCategory);
     if (!settingsRow || settingsRow.mode === 'aucun') {
       // PRÉCISION PROMOTEUR : aucun repli Resend pour les écoles tenantes.
       this.logger.warn(
@@ -262,6 +268,8 @@ export class CentralEmailService {
       replyTo: input.replyTo,
       attachments: input.attachments,
       triggeredByUserId: input.triggeredByUserId,
+      // ⭐ 2026-11-26 — connexion Google du NIVEAU (double identité).
+      levelCategory: input.levelCategory,
     };
     const row = await this.prisma.emailQueue.create({
       data: {
@@ -344,6 +352,8 @@ export class CentralEmailService {
     }>;
     emailLogId?: string;
     triggeredByUserId?: string;
+    /** ⭐ 2026-11-26 — connexion Google du NIVEAU (double identité par niveau scolaire). */
+    levelCategory?: EmailLevelCategory181;
   }): Promise<'sent' | 'queued' | 'deferred' | 'failed'> {
     const isSystem = params.category === 'SYSTEM';
 
@@ -394,6 +404,8 @@ export class CentralEmailService {
       replyTo: params.replyTo,
       attachments,
       triggeredByUserId: params.triggeredByUserId,
+      // ⭐ 2026-11-26 — connexion Google du NIVEAU (double identité).
+      levelCategory: params.levelCategory,
     });
 
     // Relie l'EmailLog pour que le dispatcher le marque à l'envoi réel.

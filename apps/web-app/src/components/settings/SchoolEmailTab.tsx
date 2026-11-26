@@ -2,41 +2,53 @@
 
 /**
  * ============================================================================
- * SchoolEmailTab — Onglet Paramètres → E-mail (tâche 181)
+ * SchoolEmailTab — Onglet Paramètres → E-mail
  * ============================================================================
  *
- * Cahier des charges « Academia Helm : envoi d'e-mails via le Gmail de chaque
- * école » — Phase 1 (SMTP avec mot de passe d'application).
+ * ⭐ 2026-11-26 (retour promoteur) — DEUX évolutions majeures :
  *
- * Contenu (CDC section 2) :
- *   1. Bandeau de statut : Non configuré / Actif / Expiré / Erreur + dernière
- *      vérification.
- *   2. Choix du mode : Google OAuth2 (grisé « Bientôt disponible » — phase 2)
- *      ou SMTP.
- *   3. Formulaire commun : nom affiché, adresse d'envoi, Reply-To.
- *   4. Formulaire SMTP : serveur, port (587 STARTTLS / 465 SSL), identifiant,
- *      mot de passe d'application (champ masqué — JAMAIS renvoyé après
- *      enregistrement, affiché « •••• »).
- *   5. Bouton « Envoyer un e-mail test » → adresse de l'utilisateur connecté.
- *   6. Compteur du jour : X envoyés sur 490 + prochaine remise à zéro.
- *   7. Journal des 50 derniers envois : date, module, destinataire, statut.
- *   8. Bouton Déconnecter : supprime tous les secrets.
- *   9. Guide pas à pas intégré pour le directeur (+ avertissement Workspace).
+ * 1. SMTP DÉSACTIVÉ — les ports SMTP sortants n'étant pas joignables depuis
+ *    notre hébergement actuel, la voie SMTP est GRISÉE avec un badge
+ *    « Non disponible pour le moment ». Seule la connexion Google (API Gmail
+ *    via HTTPS) est active. Aucun texte technique d'infrastructure n'est
+ *    exposé à l'école.
+ *
+ * 2. DOUBLE IDENTITÉ PAR NIVEAU SCOLAIRE — les écoles combinées
+ *    (maternelle/primaire + secondaire, cf. onglet Identité) configurent
+ *    UNE connexion Google PAR niveau :
+ *      • « Maternel & Primaire » — adresse d'envoi de ce côté de l'école ;
+ *      • « Secondaire » — sa propre adresse (dynamique : n'apparaît que si
+ *        le niveau secondaire est activé dans Paramètres > Structure).
+ *    Le routage des envois est AUTOMATIQUE : la classe de l'élève (reçus,
+ *    relances, bulletins) ou le niveau du personnel (RH) détermine l'adresse
+ *    utilisée. Sans connexion secondaire configurée, tout part de la
+ *    connexion principale (repli transparent).
+ *
+ * Contenu :
+ *   1. Bandeau(x) de statut par niveau : Non configuré / Actif / Expiré /
+ *      Erreur + dernière vérification + Déconnecter (modal personnalisé).
+ *   2. Choix du mode : Google (actif) / SMTP (grisé — non disponible).
+ *   3. Formulaire par niveau : nom affiché, adresse d'envoi, Reply-To.
+ *   4. « Connecter Google » (OAuth2 PKCE) + « Envoyer un e-mail test ».
+ *   5. Compteur global du jour : X envoyés sur 490 + remise à zéro.
+ *   6. Journal des 50 derniers envois : date, module, destinataire, statut.
+ *   7. Guide pas à pas intégré pour le directeur.
  *
  * Endpoints (BFF → api-server /school-email/*) :
- *   GET  /api/school-email          → { settings, usage }
- *   PUT  /api/school-email          → enregistre la configuration SMTP
- *   POST /api/school-email/test     → e-mail de test (wait)
+ *   GET  /api/school-email          → { settings, secondarySettings,
+ *                                       secondaryEnabled, usage }
+ *   POST /api/school-email/google/start → consentement (levelCategory)
+ *   POST /api/school-email/test     → e-mail de test (levelCategory)
  *   GET  /api/school-email/log      → { entries }
- *   POST /api/school-email/disconnect → supprime les secrets
+ *   POST /api/school-email/disconnect → supprime les secrets (levelCategory)
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type SVGProps } from "react";
 import {
-  Mail, Loader2, Save, Send, PlugZap, CheckCircle2, AlertTriangle,
-  XCircle, Clock, HelpCircle, ShieldCheck, KeyRound, ExternalLink,
-  RefreshCw, Inbox, LogOut, Chrome,
+  Mail, Loader2, Send, PlugZap, CheckCircle2, AlertTriangle,
+  XCircle, Clock, HelpCircle, ShieldCheck,
+  RefreshCw, Inbox, LogOut, Chrome, Baby, GraduationCap, Ban,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAppSession } from "@/contexts/AppSessionContext";
@@ -81,6 +93,29 @@ interface EmailSendLogEntry {
   createdAt: string;
 }
 
+/** Niveau d'identité — clé de toute la configuration par niveau. */
+type LevelKey = "primary" | "secondary";
+
+const LEVEL_META: Record<
+  LevelKey,
+  { label: string; levelCategory: "MATERNAL_PRIMARY" | "SECONDARY"; icon: typeof Mail; accent: string; hint: string }
+> = {
+  primary: {
+    label: "Maternel & Primaire",
+    levelCategory: "MATERNAL_PRIMARY",
+    icon: Baby,
+    accent: "emerald",
+    hint: "Messages des classes de maternelle et de primaire, et du personnel rattaché à ce niveau.",
+  },
+  secondary: {
+    label: "Secondaire",
+    levelCategory: "SECONDARY",
+    icon: GraduationCap,
+    accent: "blue",
+    hint: "Messages des classes du secondaire et du personnel du secondaire (adresse propre au niveau).",
+  },
+};
+
 // ─── Aides visuelles ────────────────────────────────────────────────────────
 
 const STATUS_META: Record<string, { label: string; color: string; icon: typeof Mail }> = {
@@ -117,40 +152,48 @@ function fmtDate(iso: string | null): string {
   }
 }
 
+interface LevelForm {
+  fromName: string;
+  fromEmail: string;
+  replyTo: string;
+}
+
+const EMPTY_FORM: LevelForm = { fromName: "", fromEmail: "", replyTo: "" };
+
 // ─── Composant principal ────────────────────────────────────────────────────
 
 export function SchoolEmailTab() {
   const { user, tenant } = useAppSession();
 
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
-  // ⭐ Modal de déconnexion personnalisé (fin du window.confirm générique).
-  const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
-  const [showGuide, setShowGuide] = useState(false);
-
-  // Tâche 183 (Phase 2) — Google OAuth2
-  const [modeChoice, setModeChoice] = useState<"smtp" | "google">("smtp");
-  const [googleConnecting, setGoogleConnecting] = useState(false);
   const [googleAvailable, setGoogleAvailable] = useState(false);
 
-  const [settings, setSettings] = useState<SchoolEmailSettingsView | null>(null);
+  // ⭐ Double identité : vues par niveau + drapeau école mixte.
+  const [secondaryEnabled, setSecondaryEnabled] = useState(false);
+  const [views, setViews] = useState<Record<LevelKey, SchoolEmailSettingsView | null>>({
+    primary: null,
+    secondary: null,
+  });
+
   const [usage, setUsage] = useState<SchoolEmailUsageView | null>(null);
   const [logEntries, setLogEntries] = useState<EmailSendLogEntry[]>([]);
 
-  // Formulaire (les secrets ne sont JAMAIS chargés — secretSet: boolean)
-  const [form, setForm] = useState({
-    fromName: "",
-    fromEmail: "",
-    replyTo: "",
-    smtpHost: "smtp.gmail.com",
-    smtpPort: 587,
-    smtpUser: "",
-    smtpPassword: "",
+  // Formulaire PAR niveau (les secrets ne sont JAMAIS chargés).
+  const [forms, setForms] = useState<Record<LevelKey, LevelForm>>({
+    primary: { ...EMPTY_FORM },
+    secondary: { ...EMPTY_FORM },
   });
 
-  // ─── Chargement initial ────────────────────────────────────────────────
+  // Actions en cours PAR niveau.
+  const [googleConnecting, setGoogleConnecting] = useState<LevelKey | null>(null);
+  const [testing, setTesting] = useState<LevelKey | null>(null);
+  const [disconnecting, setDisconnecting] = useState<LevelKey | null>(null);
+  // ⭐ Modal de déconnexion personnalisé (niveau ciblé).
+  const [confirmDisconnect, setConfirmDisconnect] = useState<LevelKey | null>(null);
+
+  const [showGuide, setShowGuide] = useState(false);
+
+  // ─── Chargement initial ────────────────────────────────────────
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
@@ -160,39 +203,33 @@ export function SchoolEmailTab() {
       ]);
       if (statusRes.ok) {
         const data = await statusRes.json();
-        setSettings(data.settings);
-        setUsage(data.usage);
         setGoogleAvailable(Boolean(data.googleOauthAvailable));
-        // ⭐ 2026-11-26 — non configuré OU connexion SMTP en erreur : proposer
-        // Google d'abord. La connexion Google (API Gmail via HTTPS) est la voie
-        // la plus fiable ; le SMTP direct reste disponible (587/465, ou 2525
-        // pour les relais professionnels compatibles avec tout hébergement).
-        setModeChoice(
-          data.settings?.mode === "google_oauth"
-            ? "google"
-            : data.settings?.configured && data.settings?.status !== "erreur"
-              ? "smtp"
-              : data.googleOauthAvailable
-                ? "google"
-                : "smtp",
-        );
-        if (data.settings?.configured) {
-          setForm((f) => ({
-            ...f,
-            fromName: data.settings.fromName || "",
-            fromEmail: data.settings.fromEmail || "",
-            replyTo: data.settings.replyTo || data.settings.fromEmail || "",
-            smtpHost: data.settings.smtpHost || "smtp.gmail.com",
-            smtpPort: data.settings.smtpPort || 587,
-            smtpUser: data.settings.smtpUser || data.settings.fromEmail || "",
-            smtpPassword: "", // jamais pré-rempli (secret chiffré côté serveur)
-          }));
-          if (data.settings.status !== "actif") setShowGuide(true);
-        } else {
-          // Pré-remplissage intelligent : nom de l'école par défaut
-          setForm((f) => ({ ...f, fromName: tenant?.name || "" }));
-          setShowGuide(true);
-        }
+        setSecondaryEnabled(Boolean(data.secondaryEnabled));
+        setViews({
+          primary: data.settings || null,
+          secondary: data.secondarySettings || null,
+        });
+        setUsage(data.usage);
+
+        // Pré-remplissage par niveau : réglages existants > nom de l'école
+        // (le secondaire retombe côté API sur l'identité du niveau de l'onglet
+        // Identité — on laisse le champ vide pour ne pas deviner).
+        const primary = data.settings;
+        const secondary = data.secondarySettings;
+        setForms({
+          primary: {
+            fromName: primary?.fromName || tenant?.name || "",
+            fromEmail: primary?.fromEmail || "",
+            replyTo: primary?.replyTo || primary?.fromEmail || "",
+          },
+          secondary: {
+            fromName: secondary?.fromName || "",
+            fromEmail: secondary?.fromEmail || "",
+            replyTo: secondary?.replyTo || secondary?.fromEmail || "",
+          },
+        });
+        if (data.secondaryEnabled && !secondary?.configured) setShowGuide(true);
+        else if (!primary?.configured) setShowGuide(true);
       }
       if (logRes.ok) {
         const logData = await logRes.json();
@@ -216,7 +253,7 @@ export function SchoolEmailTab() {
     const params = new URLSearchParams(window.location.search);
     const google = params.get("google");
     if (google === "ok") {
-      toast.success("Compte Google connecté — l'école envoie désormais ses e-mails via Google OAuth2.", { duration: 8000 });
+      toast.success("Compte Google connecté — les e-mails de ce niveau partent désormais via Google OAuth2.", { duration: 8000 });
     } else if (google === "erreur") {
       const motif = params.get("motif");
       let msg = "La connexion Google a échoué.";
@@ -226,6 +263,7 @@ export function SchoolEmailTab() {
     if (google) {
       params.delete("google");
       params.delete("motif");
+      params.delete("tenant");
       const qs = params.toString();
       window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
     }
@@ -247,65 +285,15 @@ export function SchoolEmailTab() {
     return () => clearInterval(t);
   }, []);
 
-  // ─── Enregistrement de la configuration ────────────────────────────────
-  const saveConfig = async (): Promise<void> => {
+  // ─── Connexion Google OAuth2 (par niveau) ────────────────────────────
+  const connectGoogle = async (level: LevelKey): Promise<void> => {
+    const meta = LEVEL_META[level];
+    const form = forms[level];
     if (!form.fromName.trim()) {
-      toast.error("Le nom affiché de l'expéditeur est requis.");
+      toast.error(`Le nom affiché de l'expéditeur est requis (${meta.label}).`);
       return;
     }
-    if (!form.fromEmail.trim()) {
-      toast.error("L'adresse Gmail de l'école est requise.");
-      return;
-    }
-    if (!settings?.secretSet && !form.smtpPassword.trim()) {
-      toast.error("Le mot de passe d'application est requis pour une première configuration.");
-      return;
-    }
-    setSaving(true);
-    try {
-      const res = await fetch("/api/school-email", {
-        method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "smtp",
-          fromName: form.fromName.trim(),
-          fromEmail: form.fromEmail.trim(),
-          replyTo: form.replyTo.trim() || form.fromEmail.trim(),
-          smtpHost: form.smtpHost.trim() || "smtp.gmail.com",
-          smtpPort: Number(form.smtpPort) || 587,
-          smtpUser: form.smtpUser.trim() || form.fromEmail.trim(),
-          // Champ absent (vide) = conserver le secret existant
-          ...(form.smtpPassword.trim() ? { smtpPassword: form.smtpPassword.trim() } : {}),
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setSettings(data.settings);
-        setForm((f) => ({ ...f, smtpPassword: "" }));
-        if (data.verified) {
-          toast.success("Connexion e-mail enregistrée et vérifiée — statut Actif.");
-        } else {
-          toast.error(data.verifyError || "Enregistré, mais la vérification de connexion a échoué.", { duration: 8000 });
-        }
-      } else {
-        toast.error(data?.message || data?.error || "Échec de l'enregistrement.");
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error("Erreur réseau pendant l'enregistrement.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // ─── Connexion Google OAuth2 (tâche 183 — phase 2) ──────────────────
-  const connectGoogle = async (): Promise<void> => {
-    if (!form.fromName.trim()) {
-      toast.error("Le nom affiché de l'expéditeur est requis.");
-      return;
-    }
-    setGoogleConnecting(true);
+    setGoogleConnecting(level);
     try {
       const res = await fetch("/api/school-email/google/start", {
         method: "POST",
@@ -315,6 +303,8 @@ export function SchoolEmailTab() {
           fromName: form.fromName.trim(),
           ...(form.fromEmail.trim() ? { fromEmail: form.fromEmail.trim() } : {}),
           ...(form.replyTo.trim() ? { replyTo: form.replyTo.trim() } : {}),
+          // ⭐ Double identité — le state OAuth transporte le niveau visé.
+          levelCategory: meta.levelCategory,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -327,24 +317,24 @@ export function SchoolEmailTab() {
       console.error(err);
       toast.error("Erreur réseau pendant le démarrage de la connexion Google.");
     } finally {
-      setGoogleConnecting(false);
+      setGoogleConnecting(null);
     }
   };
 
-  // ─── E-mail de test ────────────────────────────────────────────────────
-  const sendTest = async (): Promise<void> => {
+  // ─── E-mail de test (par niveau) ─────────────────────────────────────
+  const sendTest = async (level: LevelKey): Promise<void> => {
     const email = (user as any)?.email;
     if (!email) {
       toast.error("Aucune adresse e-mail sur votre compte utilisateur.");
       return;
     }
-    setTesting(true);
+    setTesting(level);
     try {
       const res = await fetch("/api/school-email/test", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ levelCategory: LEVEL_META[level].levelCategory }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
@@ -354,30 +344,30 @@ export function SchoolEmailTab() {
       } else {
         toast.error(data?.message || data?.error || "Échec de l'envoi du test.", { duration: 8000 });
       }
-      // Rafraîchit le compteur d'essais
+      // Rafraîchit le compteur + les statuts
       const sres = await fetch("/api/school-email", { credentials: "include", cache: "no-store" });
       if (sres.ok) {
         const d = await sres.json();
         setUsage(d.usage);
-        setSettings(d.settings);
+        setViews({ primary: d.settings || null, secondary: d.secondarySettings || null });
       }
     } catch (err) {
       console.error(err);
       toast.error("Erreur réseau pendant l'envoi du test.");
     } finally {
-      setTesting(false);
+      setTesting(null);
     }
   };
 
-  // ─── Déconnexion ───────────────────────────────────────────────────────
-  // ⭐ La confirmation passe par un MODAL personnalisé (confirmDisconnectOpen)
-  //    — fin du window.confirm générique du navigateur.
-  const disconnect = async () => {
-    setDisconnecting(true);
+  // ─── Déconnexion (par niveau, modal personnalisé) ──────────────────────
+  const disconnect = async (level: LevelKey) => {
+    setDisconnecting(level);
     try {
       const res = await fetch("/api/school-email/disconnect", {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ levelCategory: LEVEL_META[level].levelCategory }),
       });
       if (res.ok) {
         toast.success("Déconnecté — secrets supprimés.");
@@ -390,8 +380,8 @@ export function SchoolEmailTab() {
       console.error(err);
       toast.error("Erreur réseau pendant la déconnexion.");
     } finally {
-      setDisconnecting(false);
-      setConfirmDisconnectOpen(false);
+      setDisconnecting(null);
+      setConfirmDisconnect(null);
     }
   };
 
@@ -404,103 +394,309 @@ export function SchoolEmailTab() {
     );
   }
 
-  const st = STATUS_META[settings?.status || "non_configure"];
-  const StatusIcon = st.icon;
-  const testDisabled = testing || !settings?.configured || (usage?.testCountLastHour ?? 0) >= 5;
+  const levels: LevelKey[] = secondaryEnabled ? ["primary", "secondary"] : ["primary"];
 
   return (
     <div className="space-y-6">
 
-      {/* ═══ 1. Bandeau de statut ═════════════════════════════════════════ */}
-      <div className={cn("rounded-lg border p-4 flex flex-wrap items-center gap-3", st.color)}>
-        <StatusIcon className="h-5 w-5 shrink-0" />
-        <div className="flex-1 min-w-[200px]">
-          <div className="font-semibold">Connexion e-mail : {st.label}</div>
-          <div className="text-xs opacity-80">
-            {settings?.configured
-              ? `${settings.fromName} — ${settings.fromEmail} · ${settings.mode === "google_oauth" ? "Google OAuth2" : "SMTP"}`
-              : "Aucune adresse d'envoi configurée pour cette école."}
-            {settings?.lastVerifiedAt && ` · Dernière vérification : ${fmtDate(settings.lastVerifiedAt)}`}
+      {/* ═══ Bandeau double identité (écoles combinées) ═════════════════ */}
+      {secondaryEnabled && (
+        <div className="rounded-lg border border-violet-200 bg-violet-50 p-4 flex items-start gap-3 text-violet-900">
+          <div className="rounded-lg bg-violet-100 p-2 shrink-0 mt-0.5">
+            <GraduationCap className="h-5 w-5 text-violet-700" />
           </div>
-          {settings?.lastError && (
-            <div className="text-xs mt-1 bg-white/60 rounded px-2 py-1 border border-red-200 text-red-700">
-              {settings.lastError}
-            </div>
-          )}
-        </div>
-        {settings?.configured && (
-          <button
-            onClick={() => setConfirmDisconnectOpen(true)}
-            disabled={disconnecting}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 disabled:opacity-50"
-          >
-            {disconnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
-            Déconnecter
-          </button>
-        )}
-      </div>
-
-      {/* ═══ Modal personnalisé de confirmation de déconnexion ═══════════ */}
-      {confirmDisconnectOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-          onClick={() => !disconnecting && setConfirmDisconnectOpen(false)}
-        >
-          <div
-            className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 px-6 py-5 text-white" style={{ background: "#dc2626" }}>
-              <div className="rounded-lg bg-white/15 p-2"><LogOut className="h-5 w-5" /></div>
-              <div>
-                <h3 className="text-base font-bold">Déconnecter l&apos;e-mail de l&apos;école</h3>
-                <p className="text-xs text-white/70">Cette action interrompt l&apos;envoi des e-mails</p>
-              </div>
-            </div>
-            <div className="p-6 space-y-3 text-sm text-slate-700">
-              <p>
-                Le compte <strong>{settings?.fromEmail || "de l'école"}</strong>{" "}
-                ({settings?.mode === "google_oauth" ? "connexion Google" : "connexion SMTP"}) sera déconnecté
-                et la configuration enregistrée sera supprimée.
-              </p>
-              <ul className="space-y-2 rounded-xl bg-slate-50 border border-slate-100 p-3 text-xs text-slate-600">
-                <li className="flex items-start gap-2">
-                  <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-                  Les e-mails des modules (bulletins, reçus, relances, convocations) ne partiront plus.
-                </li>
-                <li className="flex items-start gap-2">
-                  <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-                  {settings?.mode === "google_oauth"
-                    ? "L'autorisation Google pourra être rétablie à tout moment via « Connecter Google »."
-                    : "Le mot de passe d'application devra être ressaisi pour réactiver l'envoi."}
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                  Aucune donnée de l&apos;école (élèves, finances, RH…) n&apos;est affectée.
-                </li>
-              </ul>
-            </div>
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
-              <button
-                onClick={() => setConfirmDisconnectOpen(false)}
-                disabled={disconnecting}
-                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 transition"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={disconnect}
-                disabled={disconnecting}
-                className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition"
-                style={{ backgroundColor: "#dc2626" }}
-              >
-                {disconnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
-                Déconnecter
-              </button>
-            </div>
+          <div className="text-sm">
+            <strong>Double identité détectée — une adresse d&apos;envoi par niveau.</strong>
+            <p className="mt-1 text-violet-800/90 leading-relaxed">
+              Votre établissement combine maternelle/primaire et secondaire : configurez une connexion Google
+              pour chaque niveau ci-dessous. Les e-mails partent ensuite automatiquement de la bonne adresse —
+              les messages liés aux classes du secondaire (reçus, relances, convocations) utilisent l&apos;adresse
+              du secondaire, ceux des classes de maternelle/primaire utilisent la première adresse. Le personnel
+              suit la même règle (niveau de sa fiche). Tant que la connexion du secondaire n&apos;est pas
+              configurée, tout part de la connexion « Maternel &amp; Primaire ».
+            </p>
           </div>
         </div>
       )}
+
+      {/* ═══ 1. Bandeaux de statut par niveau ═══════════════════════════ */}
+      {levels.map((level) => {
+        const meta = LEVEL_META[level];
+        const view = views[level];
+        const st = STATUS_META[view?.status || "non_configure"];
+        const StatusIcon = st.icon;
+        const LevelIcon = meta.icon;
+        const testDisabled =
+          testing !== null || !view?.configured || (usage?.testCountLastHour ?? 0) >= 5;
+        const form = forms[level];
+        const isSecondary = level === "secondary";
+
+        return (
+          <div key={level} className="space-y-4">
+            <div className={cn("rounded-lg border p-4 flex flex-wrap items-center gap-3", st.color)}>
+              <LevelIcon className="h-5 w-5 shrink-0" />
+              <div className="flex-1 min-w-[220px]">
+                <div className="font-semibold">
+                  <span className={isSecondary ? "text-[#1A2BA6]" : "text-emerald-700"}>{meta.label}</span>
+                  {" — "}
+                  {st.label}
+                </div>
+                <div className="text-xs opacity-80">
+                  {view?.configured
+                    ? `${view.fromName} — ${view.fromEmail} · Google OAuth2`
+                    : `Aucune adresse d'envoi configurée pour le niveau ${meta.label.toLowerCase()}.`}
+                  {view?.lastVerifiedAt && ` · Dernière vérification : ${fmtDate(view.lastVerifiedAt)}`}
+                </div>
+                {view?.lastError && (
+                  <div className="text-xs mt-1 bg-white/60 rounded px-2 py-1 border border-red-200 text-red-700">
+                    {view.lastError}
+                  </div>
+                )}
+              </div>
+              {view?.configured && (
+                <button
+                  onClick={() => setConfirmDisconnect(level)}
+                  disabled={disconnecting !== null}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 disabled:opacity-50"
+                >
+                  {disconnecting === level ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                  Déconnecter
+                </button>
+              )}
+            </div>
+
+            {/* ── Formulaire du niveau (Google actif / SMTP grisé) ── */}
+            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-4">
+              <div className="font-medium text-gray-800 flex items-center gap-2">
+                <Chrome className="h-4 w-4 text-blue-600" />
+                Connexion Google — {meta.label}
+                {view?.mode === "google_oauth" && view?.configured && (
+                  <span className="ml-auto text-[10px] uppercase tracking-wide bg-green-100 text-green-700 rounded-full px-2 py-0.5">
+                    Connecté
+                  </span>
+                )}
+              </div>
+
+              <p className="text-xs text-gray-500 -mt-2">{meta.hint}</p>
+
+              {view?.mode === "google_oauth" && view?.configured && (
+                <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800 flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+                  <div>
+                    Compte actuellement connecté : <strong>{view.fromEmail}</strong>. Cliquer à nouveau sur
+                    « Connecter Google » remplace le jeton (utile après un changement de compte ou une révocation).
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 flex items-start gap-2">
+                <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5" />
+                <div>
+                  Vous serez redirigé vers Google pour autoriser l&apos;envoi des e-mails de ce niveau
+                  depuis son compte Gmail. L&apos;autorisation peut être révoquée à tout moment, depuis
+                  votre compte Google ou avec le bouton « Déconnecter ».
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Nom affiché de l&apos;expéditeur <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={form.fromName}
+                    onChange={(e) => setForms({ ...forms, [level]: { ...form, fromName: e.target.value } })}
+                    placeholder={isSecondary ? "Ex : Lycée Mon Avenir Plus" : "Ex : Complexe Scolaire Mon Avenir Plus"}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Tel qu&apos;il apparaîtra chez les destinaires : « Nom &lt;adresse&gt; ».</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Adresse d&apos;envoi (Gmail du niveau) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={form.fromEmail}
+                    onChange={(e) => setForms({ ...forms, [level]: { ...form, fromEmail: e.target.value } })}
+                    placeholder={isSecondary ? "secondaire.ecole@gmail.com" : "ecole@gmail.com"}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Facultatif — pré-sélectionne le compte Google au moment de l&apos;autorisation. L&apos;adresse
+                    réellement autorisée devient l&apos;adresse d&apos;envoi.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Adresse de réponse (Reply-To)</label>
+                  <input
+                    type="email"
+                    value={form.replyTo}
+                    onChange={(e) => setForms({ ...forms, [level]: { ...form, replyTo: e.target.value } })}
+                    placeholder={form.fromEmail || "ecole@gmail.com"}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Par défaut la même adresse — modifiable.</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 pt-2">
+                <button
+                  onClick={() => connectGoogle(level)}
+                  disabled={googleConnecting !== null || !googleAvailable}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {googleConnecting === level ? <Loader2 className="h-4 w-4 animate-spin" /> : <Chrome className="h-4 w-4" />}
+                  {view?.mode === "google_oauth" ? "Reconnecter Google" : "Connecter Google"}
+                </button>
+
+                <button
+                  onClick={() => sendTest(level)}
+                  disabled={testDisabled}
+                  title={
+                    !view?.configured
+                      ? "Connectez d'abord le compte Google du niveau"
+                      : (usage?.testCountLastHour ?? 0) >= 5
+                        ? "Limite de 5 essais par heure"
+                        : `Enverra un test à ${(user as any)?.email || "votre adresse"}`
+                  }
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-blue-200 text-blue-700 text-sm font-medium hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {testing === level ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Envoyer un e-mail test
+                </button>
+              </div>
+
+              <p className="mt-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                Si Google affiche « Google n&apos;a pas validé cette application » : cliquez sur{" "}
+                <strong>Paramètres avancés</strong> (lien discret en bas de la page Google), puis sur{" "}
+                <strong>Continuer vers Academia Helm (non sécurisé)</strong>. C&apos;est un écran normal
+                en attendant la vérification de l&apos;application par Google — vos e-mails restent protégés.
+              </p>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* ═══ Modal personnalisé de confirmation de déconnexion ═══════════ */}
+      {confirmDisconnect && (() => {
+        const level = confirmDisconnect;
+        const meta = LEVEL_META[level];
+        const view = views[level];
+        return (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={() => !disconnecting && setConfirmDisconnect(null)}
+          >
+            <div
+              className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 px-6 py-5 text-white" style={{ background: "#dc2626" }}>
+                <div className="rounded-lg bg-white/15 p-2"><LogOut className="h-5 w-5" /></div>
+                <div>
+                  <h3 className="text-base font-bold">
+                    Déconnecter l&apos;e-mail {meta.label === "Maternel & Primaire" ? "Maternel & Primaire" : "du Secondaire"}
+                  </h3>
+                  <p className="text-xs text-white/70">Cette action interrompt l&apos;envoi des e-mails de ce niveau</p>
+                </div>
+              </div>
+              <div className="p-6 space-y-3 text-sm text-slate-700">
+                <p>
+                  Le compte <strong>{view?.fromEmail || "de ce niveau"}</strong> (connexion Google) sera déconnecté
+                  et la configuration enregistrée pour le niveau <strong>{meta.label}</strong> sera supprimée.
+                  {level === "secondary" && " La connexion « Maternel & Primaire » reste intacte."}
+                </p>
+                <ul className="space-y-2 rounded-xl bg-slate-50 border border-slate-100 p-3 text-xs text-slate-600">
+                  <li className="flex items-start gap-2">
+                    <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                    Les e-mails de ce niveau (reçus, relances, convocations, communications au personnel) ne partiront plus.
+                    {level === "secondary" && " En attendant une reconnexion, ils repartiront de la connexion « Maternel & Primaire »."}
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                    L&apos;autorisation Google pourra être rétablie à tout moment via « Connecter Google ».
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                    Aucune donnée de l&apos;école (élèves, finances, RH…) n&apos;est affectée.
+                  </li>
+                </ul>
+              </div>
+              <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
+                <button
+                  onClick={() => setConfirmDisconnect(null)}
+                  disabled={disconnecting !== null}
+                  className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 transition"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={() => disconnect(level)}
+                  disabled={disconnecting !== null}
+                  className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition"
+                  style={{ backgroundColor: "#dc2626" }}
+                >
+                  {disconnecting === level ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                  Déconnecter
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ═══ 2. Choix du mode de connexion — Google actif / SMTP grisé ══ */}
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <div className="font-medium text-gray-800 mb-3">Mode de connexion</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Google OAuth2 — seule voie active */}
+          <div className="rounded-lg border-2 border-blue-500 bg-blue-50/50 p-4">
+            <div className="flex items-center gap-2 font-semibold text-gray-900">
+              <Chrome className="h-4 w-4 text-blue-600" /> Google (OAuth2)
+              <span className="ml-auto text-[10px] uppercase tracking-wide bg-green-100 text-green-700 rounded-full px-2 py-0.5">
+                Actif
+              </span>
+            </div>
+            <p className="text-xs text-gray-600 mt-1">
+              Connexion en un clic, sans mot de passe — l&apos;école autorise son compte Gmail et Academia Helm
+              envoie en son nom (portée « envoyer des e-mails » uniquement).
+            </p>
+          </div>
+
+          {/* SMTP — grisé, non disponible pour le moment */}
+          <div className="rounded-lg border-2 border-gray-200 bg-gray-50 p-4 opacity-70 select-none cursor-not-allowed">
+            <div className="flex items-center gap-2 font-semibold text-gray-500">
+              <KeyRoundIcon className="h-4 w-4 text-gray-400" /> SMTP avec mot de passe d&apos;application
+              <span className="ml-auto inline-flex items-center gap-1 text-[10px] uppercase tracking-wide bg-amber-100 text-amber-800 rounded-full px-2 py-0.5">
+                <Ban className="h-3 w-3" /> Non disponible pour le moment
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              La connexion SMTP est momentanément indisponible sur la plateforme. Utilisez la connexion
+              Google ci-dessus — sécurisée et fiable dans tous les environnements.
+            </p>
+            {/* Champs associés grisés (aperçu non éditable) */}
+            <div className="mt-3 grid grid-cols-2 gap-2 opacity-60 pointer-events-none">
+              <div className="rounded-md bg-gray-100 border border-gray-200 px-2 py-1.5 text-[11px] text-gray-400">
+                Serveur SMTP
+              </div>
+              <div className="rounded-md bg-gray-100 border border-gray-200 px-2 py-1.5 text-[11px] text-gray-400">
+                Port (587 / 465 / 2525)
+              </div>
+              <div className="rounded-md bg-gray-100 border border-gray-200 px-2 py-1.5 text-[11px] text-gray-400 col-span-2">
+                Identifiant SMTP
+              </div>
+              <div className="rounded-md bg-gray-100 border border-gray-200 px-2 py-1.5 text-[11px] text-gray-400 col-span-2">
+                Mot de passe d&apos;application
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* ═══ Alerte plafond : messages reportés ══════════════════════════ */}
       {(usage?.deferredCount ?? 0) > 0 && usage && (
@@ -514,11 +710,11 @@ export function SchoolEmailTab() {
         </div>
       )}
 
-      {/* ═══ 6. Compteur du jour ═════════════════════════════════════════ */}
+      {/* ═══ 5. Compteur du jour (GLOBAL à l'école) ═════════════════════ */}
       <div className="rounded-lg border border-gray-200 bg-white p-4">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2 font-medium text-gray-800">
-            <Inbox className="h-4 w-4 text-blue-600" /> Envois du jour (fenêtre glissante 24 h)
+            <Inbox className="h-4 w-4 text-blue-600" /> Envois du jour — tous niveaux (fenêtre glissante 24 h)
           </div>
           <button onClick={loadAll} className="text-gray-400 hover:text-gray-600" title="Rafraîchir">
             <RefreshCw className="h-4 w-4" />
@@ -545,256 +741,7 @@ export function SchoolEmailTab() {
         </div>
       </div>
 
-      {/* ═══ 2. Choix du mode de connexion ══════════════════════════════ */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <div className="font-medium text-gray-800 mb-3">Mode de connexion</div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Google OAuth2 (tâche 183 — recommandé) */}
-          <button
-            type="button"
-            disabled={!googleAvailable}
-            onClick={() => setModeChoice("google")}
-            className={cn(
-              "rounded-lg border-2 p-4 text-left transition-all",
-              googleAvailable
-                ? modeChoice === "google"
-                  ? "border-blue-500 bg-blue-50/50 cursor-pointer"
-                  : "border-gray-200 hover:border-blue-300 cursor-pointer"
-                : "border-gray-200 opacity-60 cursor-not-allowed select-none",
-            )}
-          >
-            <div className="flex items-center gap-2 font-semibold text-gray-900">
-              <Chrome className="h-4 w-4 text-blue-600" /> Google (OAuth2)
-              {settings?.mode === "google_oauth" ? (
-                <span className="ml-auto text-[10px] uppercase tracking-wide bg-green-100 text-green-700 rounded-full px-2 py-0.5">
-                  Connecté
-                </span>
-              ) : googleAvailable ? (
-                <span className="ml-auto text-[10px] uppercase tracking-wide bg-blue-100 text-blue-700 rounded-full px-2 py-0.5">
-                  Recommandé
-                </span>
-              ) : (
-                <span className="ml-auto text-[10px] uppercase tracking-wide bg-gray-200 text-gray-600 rounded-full px-2 py-0.5">
-                  Non disponible
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-gray-600 mt-1">
-              {googleAvailable
-                ? "Connexion en un clic, sans mot de passe — l'école autorise son compte Gmail et Academia Helm envoie en son nom (portée « envoyer des e-mails » uniquement)."
-                : "Non activé sur la plateforme pour le moment — YEHI OR Tech doit configurer le client Google."}
-            </p>
-          </button>
-
-          {/* SMTP (Phase 1 — mot de passe d'application) */}
-          <button
-            type="button"
-            onClick={() => setModeChoice("smtp")}
-            className={cn(
-              "rounded-lg border-2 p-4 text-left transition-all",
-              modeChoice === "smtp"
-                ? "border-blue-500 bg-blue-50/50 cursor-pointer"
-                : "border-gray-200 hover:border-blue-300 cursor-pointer",
-            )}
-          >
-            <div className="flex items-center gap-2 font-semibold text-gray-900">
-              <KeyRound className="h-4 w-4 text-blue-600" /> SMTP avec mot de passe d'application
-              {settings?.mode === "google_oauth" && modeChoice === "smtp" && (
-                <span className="ml-auto text-[10px] uppercase tracking-wide bg-amber-100 text-amber-700 rounded-full px-2 py-0.5">
-                  Retour arrière
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-gray-600 mt-1">
-              {settings?.mode === "google_oauth"
-                ? "Revenir au SMTP — le mot de passe d'application devra être ressaisi (il est remplacé par le jeton Google)."
-                : "Fonctionne avec tout compte Gmail muni de la validation en deux étapes, ou avec un serveur SMTP professionnel (ports 587, 465 ou 2525). La connexion Google reste la voie la plus simple et la plus fiable."}
-            </p>
-          </button>
-        </div>
-      </div>
-
-      {/* ═══ 3 + 4. Formulaire commun + mode choisi ═════════════════════════════ */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-4">
-        <div className="font-medium text-gray-800">
-          {modeChoice === "google" ? "Connexion Google de l'école" : "Configuration SMTP de l'école"}
-        </div>
-
-        {modeChoice === "google" && settings?.mode === "google_oauth" && settings?.configured && (
-          <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800 flex items-start gap-2">
-            <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
-            <div>
-              Compte actuellement connecté : <strong>{settings.fromEmail}</strong>. Cliquer à nouveau sur
-              « Connecter Google » remplace le jeton (utile après un changement de compte ou une révocation).
-            </div>
-          </div>
-        )}
-
-        {modeChoice === "google" && (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 flex items-start gap-2">
-            <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5" />
-            <div>
-              Vous serez redirigé vers Google pour autoriser l&apos;envoi des e-mails de l&apos;école
-              depuis son compte Gmail. L&apos;autorisation peut être révoquée à tout moment, depuis
-              votre compte Google ou avec le bouton « Déconnecter ».
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Nom affiché de l&apos;expéditeur <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={form.fromName}
-              onChange={(e) => setForm({ ...form, fromName: e.target.value })}
-              placeholder="Ex : Complexe Scolaire Mon Avenir Plus"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-            <p className="text-xs text-gray-500 mt-1">Tel qu&apos;il apparaîtra chez les destinaires : « Nom &lt;adresse&gt; ».</p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Adresse d&apos;envoi (Gmail de l&apos;école) <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="email"
-              value={form.fromEmail}
-              onChange={(e) => setForm({ ...form, fromEmail: e.target.value })}
-              placeholder="ecole@gmail.com"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              {modeChoice === "google"
-                ? "Facultatif — pré-sélectionne le compte Google au moment de l'autorisation. L'adresse réellement autorisée devient l'adresse d'envoi."
-                : "Gmail impose que l'adresse d'envoi soit celle du compte authentifié."}
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Adresse de réponse (Reply-To)</label>
-            <input
-              type="email"
-              value={form.replyTo}
-              onChange={(e) => setForm({ ...form, replyTo: e.target.value })}
-              placeholder={form.fromEmail || "ecole@gmail.com"}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-            <p className="text-xs text-gray-500 mt-1">Par défaut la même adresse — modifiable.</p>
-          </div>
-
-          {modeChoice === "smtp" && (
-            <>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Serveur SMTP</label>
-                  <input
-                    type="text"
-                    value={form.smtpHost}
-                    onChange={(e) => setForm({ ...form, smtpHost: e.target.value })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Port</label>
-                  <select
-                    value={form.smtpPort}
-                    onChange={(e) => setForm({ ...form, smtpPort: Number(e.target.value) })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value={587}>587 (STARTTLS — défaut)</option>
-                    <option value={465}>465 (SSL)</option>
-                    <option value={2525}>2525 (relais SMTP professionnel)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Identifiant SMTP</label>
-                <input
-                  type="text"
-                  value={form.smtpUser}
-                  onChange={(e) => setForm({ ...form, smtpUser: e.target.value })}
-                  placeholder={form.fromEmail || "ecole@gmail.com"}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-                <p className="text-xs text-gray-500 mt-1">En général l&apos;adresse Gmail elle-même.</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Mot de passe d&apos;application{" "}
-                  {settings?.secretSet && <span className="text-green-600 font-normal">(enregistré : ••••)</span>}
-                </label>
-                <input
-                  type="password"
-                  value={form.smtpPassword}
-                  onChange={(e) => setForm({ ...form, smtpPassword: e.target.value })}
-                  placeholder={settings?.secretSet ? "•••• (laisser vide pour conserver)" : "16 caractères générés par Google"}
-                  autoComplete="new-password"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Protégé côté serveur — jamais réaffiché après l&apos;enregistrement.
-                </p>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 pt-2">
-          {modeChoice === "google" ? (
-            <button
-              onClick={connectGoogle}
-              disabled={googleConnecting || !googleAvailable}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {googleConnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Chrome className="h-4 w-4" />}
-              {settings?.mode === "google_oauth" ? "Reconnecter Google" : "Connecter Google"}
-            </button>
-          ) : (
-            <button
-              onClick={saveConfig}
-              disabled={saving}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-            >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Enregistrer et vérifier
-            </button>
-          )}
-
-          {/* 5. Bouton test — vers l'adresse de l'utilisateur connecté */}
-          <button
-            onClick={sendTest}
-            disabled={testDisabled}
-            title={
-              !settings?.configured
-                ? "Enregistrez d'abord la configuration"
-                : (usage?.testCountLastHour ?? 0) >= 5
-                  ? "Limite de 5 essais par heure"
-                  : `Enverra un test à ${(user as any)?.email || "votre adresse"}`
-            }
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-blue-200 text-blue-700 text-sm font-medium hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            Envoyer un e-mail test
-          </button>
-        </div>
-
-        {modeChoice === "google" && (
-          <p className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-            Si Google affiche « Google n&apos;a pas validé cette application » : cliquez sur{" "}
-            <strong>Paramètres avancés</strong> (lien discret en bas de la page Google), puis sur{" "}
-            <strong>Continuer vers Academia Helm (non sécurisé)</strong>. C&apos;est un écran normal
-            en attendant la vérification de l&apos;application par Google — vos e-mails restent protégés.
-          </p>
-        )}
-      </div>
-
-      {/* ═══ 9. Guide pas à pas pour le directeur ════════════════════════ */}
+      {/* ═══ 7. Guide pas à pas pour le directeur ════════════════════════ */}
       <div className="rounded-lg border border-gray-200 bg-white">
         <button
           onClick={() => setShowGuide(!showGuide)}
@@ -808,70 +755,41 @@ export function SchoolEmailTab() {
           <div className="px-4 pb-4 space-y-4 text-sm text-gray-700">
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-2">
               <div className="font-semibold text-blue-900 flex items-center gap-2">
-                <Chrome className="h-4 w-4" /> Méthode recommandée — Google OAuth2 (sans mot de passe)
+                <Chrome className="h-4 w-4" /> Connexion Google (recommandée — sans mot de passe)
               </div>
               <ol className="space-y-2 list-decimal list-inside text-blue-900/90">
-                <li>Sélectionnez le mode <strong>Google (OAuth2)</strong> ci-dessus, vérifiez le nom affiché de l&apos;école, puis cliquez <strong>Connecter Google</strong>.</li>
-                <li>Sur la page Google qui s&apos;ouvre, sélectionnez le compte Gmail de l&apos;école.</li>
+                <li>Vérifiez le <strong>nom affiché</strong> du niveau concerné ci-dessus, puis cliquez <strong>Connecter Google</strong>.</li>
+                <li>Sur la page Google qui s&apos;ouvre, sélectionnez le compte Gmail du niveau (l&apos;adresse du secondaire pour la connexion « Secondaire »).</li>
                 <li>Si Google affiche l&apos;avertissement « Google n&apos;a pas validé cette application » : cliquez sur <strong>Paramètres avancés</strong> (lien discret en bas de la page), puis sur <strong>Continuer vers Academia Helm (non sécurisé)</strong> — écran normal en attendant la vérification de l&apos;application par Google.</li>
-                <li>Validez « Envoyer des e-mails en votre nom ». Vous revenez automatiquement ici — le statut passe à <strong>Actif</strong>.</li>
+                <li>Validez « Envoyer des e-mails en votre nom ». Vous revenez automatiquement ici — le statut du niveau passe à <strong>Actif</strong>.</li>
+                {secondaryEnabled && (
+                  <li>
+                    École à double identité : <strong>répétez l&apos;opération pour chaque niveau</strong> (une adresse
+                    Gmail par niveau) — les envois sont ensuite routés automatiquement selon la classe de l&apos;élève
+                    ou le niveau du personnel.
+                  </li>
+                )}
               </ol>
               <p className="text-xs text-blue-900/70">
-                Fonctionne même si le compte n&apos;a pas de validation en deux étapes ni de mot de passe d&apos;application
-                (y compris Google Workspace). L&apos;autorisation se révoque depuis le compte Google → Sécurité → Applications tierces.
+                Fonctionne même si le compte n&apos;a pas de validation en deux étapes ni de mot de passe
+                d&apos;application (y compris Google Workspace). L&apos;autorisation se révoque depuis le compte
+                Google → Sécurité → Applications tierces.
               </p>
             </div>
 
-            <div className="font-medium text-gray-800">Variante — SMTP avec mot de passe d&apos;application</div>
-            <ol className="space-y-3 list-decimal list-inside">
-              <li>
-                <strong>Activez la validation en deux étapes</strong> sur le compte Google de l&apos;école
-                (obligatoire pour créer un mot de passe d&apos;application) :{" "}
-                <a
-                  href="https://myaccount.google.com/security"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 underline inline-flex items-center gap-1"
-                >
-                  myaccount.google.com/security <ExternalLink className="h-3 w-3" />
-                </a>
-              </li>
-              <li>
-                Ouvrez la page des <strong>mots de passe d&apos;application</strong> :{" "}
-                <a
-                  href="https://myaccount.google.com/apppasswords"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 underline inline-flex items-center gap-1"
-                >
-                  myaccount.google.com/apppasswords <ExternalLink className="h-3 w-3" />
-                </a>
-              </li>
-              <li>
-                Créez un mot de passe nommé <strong>« Academia Helm »</strong> — Google affiche un code
-                de 16 caractères (ex : <code className="bg-gray-100 rounded px-1">abcd efgh ijkl mnop</code>).
-              </li>
-              <li>
-                Copiez ce code dans le champ <strong>Mot de passe d&apos;application</strong> ci-dessus,
-                puis cliquez <strong>Enregistrer et vérifier</strong>. Utilisez enfin
-                <strong> Envoyer un e-mail test</strong> pour confirmer.
-              </li>
-            </ol>
-            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-amber-800 text-xs flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 text-xs text-gray-500 flex items-start gap-2">
+              <Ban className="h-4 w-4 shrink-0 mt-0.5 text-gray-400" />
               <div>
-                <strong>Attention — Google Workspace :</strong> certains comptes Google Workspace
-                (domaine professionnel de l&apos;école) interdisent les mots de passe d&apos;application.
-                Demandez alors à l&apos;administrateur Workspace de votre école de les autoriser
-                (Console d&apos;administration → Sécurité → Contrôle des accès → Mots de passe des applications).
-                La connexion Google (OAuth2) ci-dessus supprime cette contrainte.
+                <strong className="text-gray-600">SMTP avec mot de passe d&apos;application :</strong> cette voie est
+                momentanément indisponible sur la plateforme. Elle reviendra dans un prochain mise à jour —
+                la connexion Google ci-dessus offre le même résultat sans aucune manipulation supplémentaire.
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* ═══ 7. Journal des 50 derniers envois ═══════════════════════════ */}
+      {/* ═══ 6. Journal des 50 derniers envois ═══════════════════════════ */}
       <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
         <div className="flex items-center gap-2 p-4 border-b border-gray-100 font-medium text-gray-800">
           <PlugZap className="h-4 w-4 text-blue-600" /> Journal des 50 derniers envois
@@ -921,10 +839,31 @@ export function SchoolEmailTab() {
       <div className="text-xs text-gray-500 leading-relaxed">
         Une fois la connexion active, tous les e-mails de votre école (messagerie pédagogique, dossiers élèves,
         reçus et relances de scolarité, convocations et bulletins d&apos;examens, communications au personnel)
-        partent depuis cette adresse Gmail — avec un plafond de {usage?.dailyCap ?? 490} destinataires par 24 h
-        et un débit de 20 envois/minute, conformément aux limites Gmail. Les e-mails système d&apos;Academia Helm
-        (réinitialisation de mot de passe, invitations) continuent de passer par la plateforme.
+        partent depuis {secondaryEnabled ? "l'adresse du niveau concerné" : "cette adresse Gmail"} — avec un plafond
+        de {usage?.dailyCap ?? 490} destinataires par 24 h et un débit de 20 envois/minute, conformément aux limites
+        Gmail. Les e-mails système d&apos;Academia Helm (réinitialisation de mot de passe, invitations) continuent de
+        passer par la plateforme.
       </div>
     </div>
+  );
+}
+
+/** Icône clé SMTP (locale — évite un import conditionnel dans le JSX). */
+function KeyRoundIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4" />
+      <path d="m21 2-9.6 9.6" />
+      <circle cx="7.5" cy="15.5" r="5.5" />
+    </svg>
   );
 }

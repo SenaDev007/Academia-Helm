@@ -952,20 +952,14 @@ export class ChatController {
   }
 
   // ═════════════════════════════════════════════════════════════════
-  //  ⭐ CANAUX OFFICIELS AUTOMATIQUES (Task 77 — alignés aux modules actifs)
-  //    POST /chat/auto-channels/sync  → garantit les canaux officiels liés
-  //                                    aux modules ACTIVÉS (Direction, Vie
-  //                                    scolaire, Finance si FINANCE actif,
-  //                                    Transport si module livré + actif) ;
-  //                                    RETIRE les canaux système obsolètes
-  //                                    vides (Calendrier scolaire, Infos
-  //                                    pédagogiques, Transport différé…) ;
-  //                                    abonne les utilisateurs actifs ;
-  //                                    purge les groupes Matière×Classe
-  //                                    vides ; re-sync les communautés de
-  //                                    l'année active. Idempotent — sûr à
-  //                                    appeler souvent.
-  //    GET  /chat/auto-channels       → liste les canaux officiels
+  //  ⭐ CANAUX — 2026-11-26 : FIN DES CANAUX OFFICIELS AUTO-CRÉÉS
+  //    (retour promoteur) : Direction, Vie scolaire, Finance et tous les
+  //    canaux système sont SUPPRIMÉS DÉFINITIVEMENT. L'école crée elle-même
+  //    ses propres canaux (bouton « + Nouveau canal ») et y intègre qui elle
+  //    veut. POST /chat/auto-channels/sync → purge les canaux système +
+  //    re-sync les communautés de l'année active. Idempotent — sûr à
+  //    appeler souvent.
+  //    GET  /chat/auto-channels       → liste les canaux de l'école
   // ═════════════════════════════════════════════════════════════════
   @Post('auto-channels/sync')
   @Throttle({ medium: { limit: 6, ttl: 60000 } }) // ⭐ FIX PERF — 'default' n'existe pas (throttlers nommés short/medium/long) → le throttle était silencieusement inactif
@@ -973,10 +967,10 @@ export class ChatController {
     const result = await this.helmBootstrap.syncTenant(tenantId);
     const { channels, groups } = result;
     const groupsMsg = (groups as any)?.total !== undefined
-      ? `${(groups as any).created} communauté(s) créée(s), ${(groups as any).updated} mise(s) à jour${(groups as any).purged ? `, ${(groups as any).purged} groupe(s) Matière×Classe vide(s) purgé(s)` : ''}`
+      ? `${(groups as any).created} communauté(s) créée(s), ${(groups as any).updated} mise(s) à jour${(groups as any).purged ? `, ${(groups as any).purged} groupe(s) obsolète(s) purgé(s)` : ''}`
       : (groups as any).message;
     return {
-      message: `Canaux: ${channels.created} créé(s), ${channels.existing} déjà en place, ${channels.retired} retiré(s), ${channels.subscribed} nouvel(s) abonnement(s). ${groupsMsg}`,
+      message: `Canaux système: ${channels.retired} supprimé(s) (l'école crée désormais ses propres canaux). ${groupsMsg}`,
       ...result,
     };
   }

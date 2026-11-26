@@ -1,6 +1,8 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
+// ⭐ 2026-11-26 — double identité : e-mail du NIVEAU du personnel.
+import { resolveStaffEmailLevelCategory } from '../../common/utils/level-category.helper';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
 import { StorageService } from '../../common/services/storage.service';
 import { EmailService } from '../../communication/services/email.service';
@@ -671,6 +673,8 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;padding:20px;dis
           triggeredBy: 'SYSTEM',
           relatedEntityId: card.id,
           relatedEntityType: 'StaffCard',
+          // ⭐ 2026-11-26 — adresse d'envoi du NIVEAU du personnel (double identité).
+          levelCategory: await resolveStaffEmailLevelCategory(this.prisma, card.staff_id),
         });
 
         sent++;

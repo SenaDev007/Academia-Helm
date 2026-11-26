@@ -65,6 +65,17 @@ export type SchoolEmailStatus181 = 'non_configure' | 'actif' | 'expire' | 'erreu
 /** Modes de connexion (phase 1 : SMTP uniquement). */
 export type SchoolEmailMode181 = 'smtp' | 'google_oauth' | 'aucun';
 
+/**
+ * ⭐ 2026-11-26 (retour promoteur) — DOUBLE IDENTITÉ E-MAIL PAR NIVEAU :
+ * les écoles combinées (maternelle/primaire + secondaire) configurent UNE
+ * connexion Google par identité — les messages du côté maternelle/primaire
+ * partent de l'adresse de ce niveau, ceux du secondaire de l'adresse du
+ * secondaire. Le routage est automatique (classe de l'élève / niveau du
+ * personnel) et sans configuration secondaire, tout part de la connexion
+ * principale (repli transparent).
+ */
+export type EmailLevelCategory181 = 'MATERNAL_PRIMARY' | 'SECONDARY';
+
 /** Pièce jointe sérialisable (le contenu Buffer est encodé en base64 dans la file). */
 export interface EmailAttachment181 {
   filename: string;
@@ -107,6 +118,12 @@ export interface CentralEmailSendInput {
    * file) au lieu du message générique. Jamais utilisé par les envois métier.
    */
   allowUnhealthyConnection?: boolean;
+  /**
+   * ⭐ 2026-11-26 — identité d'envoi PAR NIVEAU (double identité) : connexion
+   * Google du secondaire si SECONDARY, sinon connexion principale. Défaut :
+   * connexion principale (maternelle/primaire).
+   */
+  levelCategory?: EmailLevelCategory181;
 }
 
 export interface CentralEmailSendResult {
@@ -172,10 +189,16 @@ export interface EmailSendLogEntry {
 // ─── DTOs du controller (validation class-validator) ─────────────────────
 
 const MODES = ['smtp'] as const; // Phase 1 : SMTP uniquement
+const LEVEL_CATEGORIES = ['MATERNAL_PRIMARY', 'SECONDARY'] as const;
 
 export class SaveSchoolEmailConfigDto {
   @IsIn(MODES)
   mode!: 'smtp';
+
+  /** ⭐ 2026-11-26 — ligne de réglages visée (défaut : maternelle/primaire). */
+  @IsOptional()
+  @IsIn(LEVEL_CATEGORIES)
+  levelCategory?: EmailLevelCategory181;
 
   @IsString()
   @IsNotEmpty()
@@ -218,6 +241,11 @@ export class SendTestEmailDto {
   @IsOptional()
   @IsEmail()
   to?: string;
+
+  /** ⭐ 2026-11-26 — connexion testée : principale ou secondaire. */
+  @IsOptional()
+  @IsIn(LEVEL_CATEGORIES)
+  levelCategory?: EmailLevelCategory181;
 }
 
 /**
@@ -240,6 +268,15 @@ export class StartGoogleOauthDto {
   @IsOptional()
   @IsEmail()
   replyTo?: string;
+
+  /**
+   * ⭐ 2026-11-26 (double identité) — connexion Google du NIVEAU visé :
+   * MATERNAL_PRIMARY (défaut) ou SECONDARY (écoles combinées). Le state OAuth
+   * le transporte jusqu'au callback pour persister dans la bonne ligne.
+   */
+  @IsOptional()
+  @IsIn(LEVEL_CATEGORIES)
+  levelCategory?: EmailLevelCategory181;
 }
 
 export class UpdateDailyCapDto {
@@ -264,4 +301,6 @@ export interface EmailQueuePayload {
   emailLogId?: string;
   /** Utilisateur à l'origine (audit). */
   triggeredByUserId?: string;
+  /** ⭐ 2026-11-26 — connexion Google par NIVEAU (double identité). */
+  levelCategory?: EmailLevelCategory181;
 }

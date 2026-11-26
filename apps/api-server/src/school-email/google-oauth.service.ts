@@ -68,6 +68,8 @@ interface GoogleOauthStatePayload {
   fromEmail?: string;
   replyTo?: string;
   redirectUri: string;
+  /** ⭐ 2026-11-26 — ligne de réglages visée (double identité par niveau). */
+  levelCategory?: 'MATERNAL_PRIMARY' | 'SECONDARY';
 }
 
 /** Marge de rafraîchissement des access tokens (avant expiration réelle). */
@@ -105,7 +107,11 @@ export interface GoogleSendResult {
 export class GoogleOauthService {
   private readonly logger = new Logger(GoogleOauthService.name);
 
-  /** Cache mémoire des access tokens par école { token, expire le }. */
+  /**
+   * Cache mémoire des access tokens { token, expire le } — clé composite
+   * `tenantId:levelCategory` (⭐ 2026-11-26 : une connexion Google PAR niveau
+   * pour les écoles à double identité maternelle/primaire + secondaire).
+   */
   private accessTokens = new Map<string, { token: string; expiresAt: number }>();
 
   constructor(
@@ -161,6 +167,8 @@ export class GoogleOauthService {
       fromName?: string;
       fromEmail?: string;
       replyTo?: string;
+      /** ⭐ 2026-11-26 — connexion du NIVEAU visé (double identité). */
+      levelCategory?: 'MATERNAL_PRIMARY' | 'SECONDARY';
     },
     origin?: string,
   ): Promise<{ authUrl: string; redirectUri: string }> {
@@ -184,6 +192,7 @@ export class GoogleOauthService {
       fromEmail: params.fromEmail?.trim().toLowerCase() || undefined,
       replyTo: params.replyTo?.trim().toLowerCase() || undefined,
       redirectUri: uri,
+      levelCategory: params.levelCategory || 'MATERNAL_PRIMARY',
     };
     await this.cache.set(`school-email:google-state:${state}`, payload, OAUTH_STATE_TTL_MS);
 
@@ -255,15 +264,17 @@ export class GoogleOauthService {
     await this.assertGmailApiEnabled(tokens.access_token);
 
     // Persistance chiffrée : mode google_oauth, statut Actif, From imposé.
+    // ⭐ 2026-11-26 — persiste dans la ligne du NIVEAU visé (double identité).
     await this.settings.saveGoogleConnection(payload.tenantId, payload.userId, {
       refreshToken: tokens.refresh_token,
       googleEmail,
       fromName: payload.fromName,
       replyTo: payload.replyTo,
+      levelCategory: payload.levelCategory || 'MATERNAL_PRIMARY',
     });
 
-    // Invalide l'éventuel access token mémorisé pour cette école.
-    this.accessTokens.delete(payload.tenantId);
+    // Invalide l'éventuel access token mémorisé pour cette école/niveau.
+    this.accessTokens.delete(`${payload.tenantId}:${payload.levelCategory || 'MATERNAL_PRIMARY'}`);
 
     this.logger.log(
       `Connexion Google OAuth2 établie (tenant ${payload.tenantId}, compte ${googleEmail}, user ${payload.userId})`,
@@ -347,14 +358,20 @@ export class GoogleOauthService {
    * Retourne un access token valide pour l'école. Rafraîchit si nécessaire
    * (marge de 120 s). invalid_grant → connexion « Expirée » + erreur typée.
    */
-  async getAccessToken(tenantId: string, forceRefresh = false): Promise<string> {
-    const cached = this.accessTokens.get(tenantId);
+  async getAccessToken(
+    tenantId: string,
+    levelCategory: 'MATERNAL_PRIMARY' | 'SECONDARY' = 'MATERNAL_PRIMARY',
+    forceRefresh = false,
+  ): Promise<string> {
+    const cacheKey = `${tenantId}:${levelCategory}`;
+    const cached = this.accessTokens.get(cacheKey);
     if (!forceRefresh && cached && cached.expiresAt > Date.now() + ACCESS_TOKEN_MARGIN_MS) {
       return cached.token;
     }
 
-    // Le refresh token EST le secret chiffré de l'école (mode google_oauth).
-    const refreshToken = await this.settings.decryptSecret(tenantId);
+    // Le refresh token EST le secret chiffré de l'école (mode google_oauth)
+    // — ligne du NIVEAU demandé (repli principal si secondaire non configuré).
+    const refreshToken = await this.settings.decryptSecret(tenantId, levelCategory);
 
     const body = new URLSearchParams({
       refresh_token: refreshToken,
@@ -384,8 +401,9 @@ export class GoogleOauthService {
         await this.settings.markExpired(
           tenantId,
           "Google a révoqué l'autorisation (invalid_grant) — reconnectez le compte de l'école depuis l'onglet E-mail.",
+          levelCategory,
         );
-        this.accessTokens.delete(tenantId);
+        this.accessTokens.delete(cacheKey);
         throw new GoogleAuthExpiredError(
           "L'autorisation Google de l'école a expiré — reconnectez le compte depuis Paramètres, onglet E-mail.",
         );
@@ -401,7 +419,7 @@ export class GoogleOauthService {
     if (!json.access_token) {
       throw new GmailApiError('Réponse Google sans access_token.', 0);
     }
-    this.accessTokens.set(tenantId, {
+    this.accessTokens.set(cacheKey, {
       token: json.access_token,
       expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000,
     });
@@ -418,14 +436,18 @@ export class GoogleOauthService {
    * @returns soit le messageId Gmail, soit lève une erreur classifiable par
    *          classifyGmailApiError (retryable / fatal_auth / fatal / expired).
    */
-  async sendMail(tenantId: string, mail: GmailSendMailInput): Promise<GoogleSendResult> {
+  async sendMail(
+    tenantId: string,
+    mail: GmailSendMailInput,
+    levelCategory: 'MATERNAL_PRIMARY' | 'SECONDARY' = 'MATERNAL_PRIMARY',
+  ): Promise<GoogleSendResult> {
     // MIME brut (en-têtes + corps + pièces jointes) encodé base64url.
     const raw = await this.buildRawMime(mail);
 
     // 1ʳᵉ tentative (jeton en cache ou rafraîchi).
     let accessToken: string;
     try {
-      accessToken = await this.getAccessToken(tenantId);
+      accessToken = await this.getAccessToken(tenantId, levelCategory);
     } catch (err) {
       if (err instanceof GoogleAuthExpiredError) throw err;
       // Impossible d'obtenir un jeton maintenant (réseau…) → erreur neutre
@@ -451,7 +473,7 @@ export class GoogleOauthService {
     if (res.status === 401) {
       const text = await res.text();
       try {
-        accessToken = await this.getAccessToken(tenantId, true);
+        accessToken = await this.getAccessToken(tenantId, levelCategory, true);
       } catch (err) {
         if (err instanceof GoogleAuthExpiredError) throw err;
         throw new GmailApiError(safeGmailErrorMessage(err), 401, text);

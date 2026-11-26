@@ -843,12 +843,30 @@ export class AutoGroupService {
 
   /**
    * List all auto groups for a tenant + academic year.
+   * ⭐ 2026-11-26 (retour promoteur) — les groupes de CLASSE portent le
+   *    NIVEAU SCOLAIRE de la classe (levelName/levelCode/levelCategory) :
+   *    le front Konnect regroupe les classes par niveau (maternelle,
+   *    primaire, secondaire) — « lorsqu'on rentre dans le niveau scolaire
+   *    maternel, on retrouve les classes de la maternelle ».
+   *    Les classes restent EXACTEMENT celles des paramètres (source de
+   *    vérité : table classes de l'année active, miroirs EN exclus).
    */
   async listAutoGroups(tenantId: string, academicYearId: string) {
     return this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "chat_auto_groups"
-       WHERE "tenantId" = $1 AND "academicYearId" = $2
-       ORDER BY "groupType", "name"`,
+      `SELECT g.*,
+              sl."name" AS "levelName",
+              sl."code"  AS "levelCode",
+              CASE
+                WHEN sl."code" ~* 'SEC|SECONDAIRE|COLLEGE|LYCEE' THEN 'SECONDAIRE'
+                WHEN sl."code" ~* 'PRIMAIRE|PRI' THEN 'PRIMAIRE'
+                WHEN sl."code" ~* 'MATERNEL|MAT' THEN 'MATERNELLE'
+                ELSE 'AUTRE'
+              END AS "levelCategory"
+         FROM "chat_auto_groups" g
+         LEFT JOIN "classes" c ON c."id" = g."classId"
+         LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
+        WHERE g."tenantId" = $1 AND g."academicYearId" = $2
+        ORDER BY g."groupType", g."name"`,
       tenantId, academicYearId,
     );
   }

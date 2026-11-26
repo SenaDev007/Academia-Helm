@@ -198,18 +198,21 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
   }
 
   private async dispatchForTenant(tenantId: string, items: QueueRow[]): Promise<void> {
-    const settingsRow = await this.settings.findRaw(tenantId);
-    if (!settingsRow || settingsRow.mode === 'aucun') {
-      // École déconnectée entre-temps → échec définitif (sans perte de log).
-      for (const item of items) {
-        await this.finalizeFailure(
-          item,
-          'EMAIL_SCHOOL_NOT_CONFIGURED',
-          "Connexion e-mail de l'école déconnectée.",
+    // ⭐ 2026-11-26 — DOUBLE IDENTITÉ PAR NIVEAU : chaque item de file porte
+    //    son niveau (levelCategory du payload). Les réglages sont résolus PAR
+    //    NIVEAU (connexion Google du secondaire pour les envois du secondaire)
+    //    avec repli transparent sur la connexion principale. Le débit et le
+    //    plafond restent GLOBALS à l'école (une seule école aux yeux de Gmail).
+    const settingsByLevel = new Map<string, any>();
+    const settingsFor = async (levelCategory: string): Promise<any> => {
+      if (!settingsByLevel.has(levelCategory)) {
+        settingsByLevel.set(
+          levelCategory,
+          await this.settings.findRaw(tenantId, levelCategory as any),
         );
       }
-      return;
-    }
+      return settingsByLevel.get(levelCategory);
+    };
 
     // Débit : envois des 60 dernières secondes via le Gmail de l'école.
     const sentLastMinute = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
@@ -238,6 +241,19 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
       const recipients = [...(payload.to || []), ...(payload.cc || []), ...(payload.bcc || [])];
       if (recipients.length === 0) {
         await this.finalizeFailure(item, 'NO_VALID_RECIPIENT', 'Aucun destinataire valide.');
+        continue;
+      }
+
+      // ⭐ 2026-11-26 — réglages de la connexion du NIVEAU de cet envoi.
+      const levelCategory: string = payload.levelCategory || 'MATERNAL_PRIMARY';
+      const settingsRow = await settingsFor(levelCategory);
+      if (!settingsRow || settingsRow.mode === 'aucun') {
+        // École (ou niveau) déconnectée entre-temps → échec définitif.
+        await this.finalizeFailure(
+          item,
+          'EMAIL_SCHOOL_NOT_CONFIGURED',
+          "Connexion e-mail de l'école déconnectée.",
+        );
         continue;
       }
 
@@ -295,7 +311,11 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
 
         // ⭐ Branding école (retour promoteur 2026-11-26) : logo en-tête/pied
         // + coordonnées — résolu une fois par lot puis mis en cache 10 min.
-        const resolvedBranding = await this.branding.resolve(tenantId, settingsRow.fromName);
+        const resolvedBranding = await this.branding.resolve(
+          tenantId,
+          settingsRow.fromName,
+          levelCategory as any,
+        );
         const html = payload.html
           ? wrapHtmlWithBranding(payload.html, resolvedBranding.branding)
           : undefined;
@@ -333,11 +353,12 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
         if (isGoogle) {
           // Phase 2 — API Gmail REST (portée gmail.send, PKCE) : jeton rafraîchi
           // en interne, une reprise sur 401, invalid_grant → Expiré.
-          const result = await this.googleOauth.sendMail(tenantId, mailOptions);
+          // ⭐ 2026-11-26 — jeton de la connexion du NIVEAU (double identité).
+          const result = await this.googleOauth.sendMail(tenantId, mailOptions, levelCategory as any);
           messageId = result.messageId;
         } else {
           // Phase 1 — SMTP mot de passe d'application.
-          const password = await this.settings.decryptSecret(tenantId);
+          const password = await this.settings.decryptSecret(tenantId, levelCategory as any);
           const transport = createSmtpTransport({
             host: settingsRow.smtpHost || 'smtp.gmail.com',
             port: settingsRow.smtpPort || 587,
@@ -355,7 +376,7 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
         } else {
           await this.finalizeSuccess(item, messageId, provider);
         }
-        await this.settings.markVerified(tenantId);
+        await this.settings.markVerified(tenantId, levelCategory as any);
         budget -= sendNow.length;
       } catch (err: any) {
         // Clé de chiffrement changée → connexion Expirée (CDC section 7.6)
@@ -383,7 +404,7 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
           const kind = classifyGmailApiError(err);
           const safeMsg = safeGmailErrorMessage(err);
           if (kind === 'fatal_auth' || kind === 'fatal') {
-            await this.settings.markError(tenantId, safeMsg);
+            await this.settings.markError(tenantId, safeMsg, levelCategory as any);
             await this.finalizeFailure(
               item,
               kind === 'fatal_auth' ? 'GMAIL_AUTH_FAILED' : 'GMAIL_PERMANENT_ERROR',
@@ -417,7 +438,7 @@ export class EmailQueueDispatcherService implements OnModuleInit, OnModuleDestro
         const safeMsg = safeSmtpErrorMessage(err);
         if (kind === 'fatal_auth' || kind === 'fatal') {
           // 5xx / auth → arrêt immédiat + connexion en statut Erreur (CDC 5.3)
-          await this.settings.markError(tenantId, safeMsg);
+          await this.settings.markError(tenantId, safeMsg, levelCategory as any);
           await this.finalizeFailure(
             item,
             kind === 'fatal_auth' ? 'SMTP_AUTH_FAILED' : 'SMTP_PERMANENT_ERROR',

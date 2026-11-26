@@ -13,10 +13,10 @@
  *   3. À l'activation d'un nouvel établissement (onboarding — fire & forget) ;
  *
  * … il garantit, pour chaque tenant actif :
- *   - l'existence des 6 CANAUX OFFICIELS (Direction, Vie scolaire, Transport,
- *     Finance, Informations pédagogiques, Calendrier scolaire) ;
- *   - l'abonnement automatique de tous les utilisateurs actifs à ces canaux
- *     (les nouveaux comptes sont rattrapés à chaque cycle) ;
+ *   - ⭐ 2026-11-26 (retour promoteur) — la PURGE DÉFINITIVE des canaux
+ *     officiels auto-créés (Direction, Vie scolaire, Finance, Transport…) :
+ *     l'école crée désormais elle-même ses propres canaux et y intègre qui
+ *     elle veut. Plus AUCUN canal n'est créé automatiquement ;
  *   - la création/synchronisation des COMMUNAUTÉS AUTOMATIQUES de l'année
  *     scolaire active : classes, matières, « Parents – {niveau} »,
  *     « Enseignants de {matière} », Enseignants, Parents, Administration,
@@ -84,7 +84,8 @@ export class HelmConnectBootstrapService implements OnModuleInit {
     channels: { created: number; existing: number; subscribed: number; retired: number };
     groups: { created: number; updated: number; skipped: number; purged: number; total: number } | { message: string };
   }> {
-    // 1. Canaux officiels + abonnement automatique des utilisateurs actifs
+    // 1. ⭐ 2026-11-26 — Purge définitive des canaux officiels auto-créés
+    //    (Direction, Vie scolaire, Finance…) : l'école crée ses propres canaux.
     const channels = await this.autoChannelService.ensureDefaultChannels(tenantId);
 
     // 2. Communautés automatiques de l'année scolaire active (peut être

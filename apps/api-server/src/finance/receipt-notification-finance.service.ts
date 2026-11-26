@@ -25,6 +25,15 @@ import { SmsService } from '../communication/services/sms.service';
 import { ReceiptFinanceService } from './receipt-finance.service';
 import { renderReceiptEmail } from './receipt-email-templates';
 import { HelmConnectFinanceNotificationService } from './helm-connect-finance-notification.service';
+// ⭐ 2026-11-26 (retour promoteur) — signature par rôle : les reçus sont signés
+//    par la COMPTABILITÉ (comptable / secrétaire comptable selon l'émetteur),
+//    jamais par « La Direction ».
+import {
+  resolveUserSignatureLabel,
+  ACCOUNTING_FALLBACK_LABEL,
+} from '../common/utils/signature-label.helper';
+// ⭐ 2026-11-26 — double identité : e-mail du NIVEAU de la classe de l'élève.
+import { resolveEmailLevelCategory } from '../common/utils/level-category.helper';
 
 @Injectable()
 export class ReceiptNotificationFinanceService {
@@ -93,14 +102,18 @@ export class ReceiptNotificationFinanceService {
     const contacts = await this.receiptFinanceService.getParentContacts(tx.studentAccount.studentId);
     const branding = await this.getTenantBranding(tenantId);
 
-    // Récupérer la classe de l'élève pour cette année
+    // Récupérer la classe de l'élève pour cette année (+ niveau scolaire —
+    // ⭐ 2026-11-26 : l'e-mail du reçu part de la connexion du NIVEAU).
     let className = '—';
+    let emailLevelCategory: 'MATERNAL_PRIMARY' | 'SECONDARY' = 'MATERNAL_PRIMARY';
     if (tx.studentAccount?.studentId && tx.academicYearId) {
       const enrollment = await this.prisma.studentEnrollment.findFirst({
         where: { studentId: tx.studentAccount.studentId, academicYearId: tx.academicYearId },
-        include: { class: { select: { name: true } } },
+        include: { class: { select: { name: true, schoolLevel: { select: { code: true, name: true } } } } },
       });
       className = enrollment?.class?.name || '—';
+      const clsLevel: any = (enrollment as any)?.class?.schoolLevel;
+      emailLevelCategory = resolveEmailLevelCategory(clsLevel?.code, clsLevel?.name);
     }
 
     // Solde restant à payer (après ce paiement) — depuis studentAccount
@@ -170,6 +183,15 @@ export class ReceiptNotificationFinanceService {
       notes: a.notes || undefined,
     }));
 
+    // ⭐ 2026-11-26 — signature du message fondée sur le RÔLE de l'encaisseur
+    //    (tx.cashierId) : « Le Comptable », « Le Secrétaire Comptable »…
+    //    Repli neutre « Le Service Comptable » (l'école encaisse, pas la direction).
+    const cashierSignature = await resolveUserSignatureLabel(
+      this.prisma,
+      tx.cashierId,
+      ACCOUNTING_FALLBACK_LABEL,
+    );
+
     // 3. Envoyer sur chaque canal demandé
     for (const channel of channels) {
       try {
@@ -193,6 +215,8 @@ export class ReceiptNotificationFinanceService {
             className,
             amountAppliedToArrears,
             openArrears: openArrearsForEmail,
+            signatureLabel: cashierSignature,
+            levelCategory: emailLevelCategory,
           });
         } else if (channel === 'whatsapp') {
           results.whatsapp = await this.sendByWhatsApp({
@@ -267,6 +291,7 @@ export class ReceiptNotificationFinanceService {
             parentName: contacts.name,
             schoolName: branding.schoolName,
             balanceLine: fullBalanceLine,
+            signatureLabel: cashierSignature,
           });
           results.helm_connect = {
             status: helmResult.success ? 'sent' : 'failed',
@@ -306,6 +331,9 @@ export class ReceiptNotificationFinanceService {
     className?: string;
     amountAppliedToArrears?: number;
     openArrears?: Array<{ academicYearName: string; balanceDue: number; totalDue: number; totalPaid: number; notes?: string }>;
+    signatureLabel?: string;
+    /** ⭐ 2026-11-26 — connexion e-mail du NIVEAU de la classe (double identité). */
+    levelCategory?: 'MATERNAL_PRIMARY' | 'SECONDARY';
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun email parent disponible' };
@@ -335,6 +363,7 @@ export class ReceiptNotificationFinanceService {
       className: params.className,
       amountAppliedToArrears: params.amountAppliedToArrears,
       openArrears: params.openArrears,
+      signatureLabel: params.signatureLabel,
     });
 
     const result = await this.emailService.sendCategorized({
@@ -352,6 +381,9 @@ export class ReceiptNotificationFinanceService {
       triggeredBy: 'SYSTEM',
       relatedEntityId: params.transactionId,
       relatedEntityType: 'FinanceTransaction',
+      // ⭐ 2026-11-26 — adresse d'envoi du NIVEAU de la classe (maternel/
+      //    primaire OU secondaire — écoles à double identité).
+      levelCategory: params.levelCategory,
       attachments: params.pdfBuffer
         ? [{ filename: `recu-${params.receiptNumber}.pdf`, content: params.pdfBuffer, contentType: 'application/pdf' }]
         : undefined,

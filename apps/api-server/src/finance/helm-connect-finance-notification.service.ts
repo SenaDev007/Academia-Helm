@@ -59,6 +59,9 @@ export interface ReceiptNotificationPayload {
   //   - balanceLine (solde restant à payer)
   //   - personalizationNote (note personnalisée)
   balanceLine?: string;
+  // ⭐ 2026-11-26 (retour promoteur) — signature par rôle de l'encaisseur
+  //    (« Le Comptable », « Le Secrétaire Comptable »…). Repli : Service Comptable.
+  signatureLabel?: string;
 }
 
 export interface RecoveryNotificationPayload {
@@ -131,7 +134,8 @@ export class HelmConnectFinanceNotificationService {
       //      Le recu PDF detaille est disponible aupres de l'etablissement.
       //
       //      Cordialement,
-      //      La Direction
+      //      Le Service Comptable  ⭐ 2026-11-26 — ce n'est PAS la direction qui
+      //      encaisse : signature comptabilité (rôle de l'encaisseur).
       //    Header: "Recu de paiement"
       //    Footer: FOOTER (= "Academia Helm — Helm Connect")
       const dateStr = payload.paymentDate.toLocaleDateString('fr-FR', {
@@ -157,7 +161,7 @@ export class HelmConnectFinanceNotificationService {
         `Le recu PDF detaille est disponible aupres de l'etablissement.`,
         ``,
         `Cordialement,`,
-        `La Direction`,
+        escapeHtml(payload.signatureLabel || 'Le Service Comptable'),
         ``,
         `<i>— Academia Helm — Helm Connect</i>`,
       ].filter(Boolean).join('\n');
@@ -269,7 +273,7 @@ export class HelmConnectFinanceNotificationService {
       //   Merci de régulariser cette situation dans les meilleurs délais. Pour toute question, contactez l'administration de {{schoolName}}.\n
       //   \n
       //   Cordialement,\n
-      //   La Direction — {{schoolName}}
+      //   Le Service Comptable — {{schoolName}}  ⭐ 2026-11-26 — relance = comptabilité
       const messageText = [
         `${levelConfig.emoji} <b>${levelConfig.waTitle}</b>`,
         ``,
@@ -285,7 +289,7 @@ export class HelmConnectFinanceNotificationService {
           `\nMerci de régulariser cette situation dans les meilleurs délais. Pour toute question, contactez l'administration de ${escapeHtml(schoolName)}.`,
         ``,
         `Cordialement,`,
-        `La Direction — ${escapeHtml(schoolName)}`,
+        `Le Service Comptable — ${escapeHtml(schoolName)}`,
       ].join('\n');
 
       // 4. Send as a TEXT message

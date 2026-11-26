@@ -38,6 +38,7 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PrismaService } from '../database/prisma.service';
 import { Public } from '../auth/decorators/public.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -49,6 +50,7 @@ import { EmailQueueDispatcherService } from './email-queue-dispatcher.service';
 import { GoogleOauthService } from './google-oauth.service';
 import { createSmtpTransport } from './smtp-helpers';
 import {
+  EmailLevelCategory181,
   SaveSchoolEmailConfigDto,
   SchoolEmailSettingsView,
   SchoolEmailUsageView,
@@ -67,25 +69,58 @@ export class SchoolEmailController {
   private readonly logger = new Logger(SchoolEmailController.name);
 
   constructor(
+    private readonly prisma: PrismaService,
     private readonly settings: SchoolEmailSettingsService,
     private readonly central: CentralEmailService,
     private readonly dispatcher: EmailQueueDispatcherService,
     private readonly googleOauth: GoogleOauthService,
   ) {}
 
-  /** Statut + réglages (SANS secret) + compteur du jour + alertes. */
+  /**
+   * Statut + réglages (SANS secret) + compteur du jour + alertes.
+   * ⭐ 2026-11-26 (double identité) — renvoie AUSSI la vue de la connexion du
+   *    SECONDaire (strict : « Non configuré » si absente) et le drapeau
+   *    secondaryEnabled (école mixte maternelle/primaire + secondaire,
+   *    détecté sur les niveaux ACTIVÉS — même logique que l'onglet Identité).
+   */
   @Get('status')
   async getStatus(@TenantId() tenantId: string): Promise<{
     settings: SchoolEmailSettingsView;
+    secondarySettings: SchoolEmailSettingsView | null;
+    secondaryEnabled: boolean;
     usage: SchoolEmailUsageView;
     /** TÂCHE 183 — Google OAuth2 activé côté plateforme (client configuré) ? */
     googleOauthAvailable: boolean;
   }> {
-    const [settings, usage] = await Promise.all([
-      this.settings.getView(tenantId),
+    const secondaryEnabled = await this.isSecondaryLevelEnabled(tenantId);
+    const [settings, usage, secondarySettings] = await Promise.all([
+      this.settings.getView(tenantId, 'MATERNAL_PRIMARY'),
       this.settings.getUsage(tenantId),
+      secondaryEnabled
+        ? this.settings.getView(tenantId, 'SECONDARY')
+        : Promise.resolve(null),
     ]);
-    return { settings, usage, googleOauthAvailable: this.googleOauth.isConfigured() };
+    return { settings, secondarySettings, secondaryEnabled, usage, googleOauthAvailable: this.googleOauth.isConfigured() };
+  }
+
+  /**
+   * ⭐ 2026-11-26 — École MIXTE (maternelle/primaire ET secondaire activés
+   * dans Paramètres > Structure) ? Même détection que le front
+   * (useSecondaryLevelEnabled) : codes des school_levels actives.
+   */
+  private async isSecondaryLevelEnabled(tenantId: string): Promise<boolean> {
+    try {
+      const levels = await this.prisma.schoolLevel.findMany({
+        where: { tenantId, isActive: true },
+        select: { code: true, name: true },
+      });
+      const codes = levels.map((l) => `${l.code || ''} ${l.name || ''}`);
+      const hasSecondary = codes.some((c) => /SECOND|COLLEGE|LYCÉE|LYCEE/i.test(c));
+      const hasMatPri = codes.some((c) => /MATERN|PRIMA/i.test(c));
+      return hasSecondary && hasMatPri;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -101,14 +136,15 @@ export class SchoolEmailController {
     @CurrentUser() user: any,
     @Body() dto: SaveSchoolEmailConfigDto,
   ): Promise<{ settings: SchoolEmailSettingsView; verified: boolean; verifyError?: string }> {
+    const levelCategory: EmailLevelCategory181 = dto.levelCategory || 'MATERNAL_PRIMARY';
     await this.settings.saveConfig(tenantId, user?.id ?? 'unknown', dto);
 
-    // Vérification réelle de la connexion SMTP (transport.verify).
+    // Vérification réelle de la connexion SMTP (transport.verify) — ligne du niveau.
     let verified = false;
     let verifyError: string | undefined;
     try {
-      const password = await this.settings.decryptSecret(tenantId);
-      const raw = await this.settings.findRaw(tenantId);
+      const password = await this.settings.decryptSecret(tenantId, levelCategory);
+      const raw = await this.settings.findRaw(tenantId, levelCategory);
       const transport = createSmtpTransport({
         host: raw?.smtpHost || 'smtp.gmail.com',
         port: raw?.smtpPort || 587,
@@ -118,7 +154,7 @@ export class SchoolEmailController {
       await transport.verify();
       transport.close();
       verified = true;
-      await this.settings.markVerified(tenantId);
+      await this.settings.markVerified(tenantId, levelCategory);
     } catch (err: any) {
       // ⭐ Diagnostic différencié : un timeout de connexion n'est PAS un
       //    mauvais mot de passe. Certains hébergements n'exposent pas les
@@ -139,11 +175,11 @@ export class SchoolEmailController {
           : isNetworkBlock
             ? "La connexion SMTP n'a pas pu être établie. Vérifiez le serveur et le port (587, 465 ou 2525) — ou utilisez la connexion Google (bouton « Connecter Google »), sécurisée et fiable dans tous les environnements."
             : `Connexion SMTP échouée : ${msg.slice(0, 200)}`;
-      await this.settings.markError(tenantId, verifyError);
-      this.logger.warn(`Vérification SMTP échouée (tenant ${tenantId}) : ${verifyError}`);
+      await this.settings.markError(tenantId, verifyError, levelCategory);
+      this.logger.warn(`Vérification SMTP échouée (tenant ${tenantId}, niveau ${levelCategory}) : ${verifyError}`);
     }
 
-    const fresh = await this.settings.getView(tenantId);
+    const fresh = await this.settings.getView(tenantId, levelCategory);
     return { settings: fresh, verified, verifyError };
   }
 
@@ -173,10 +209,11 @@ export class SchoolEmailController {
       );
     }
 
-    const raw = await this.settings.findRaw(tenantId);
+    const levelCategory: EmailLevelCategory181 = dto?.levelCategory || 'MATERNAL_PRIMARY';
+    const raw = await this.settings.findRaw(tenantId, levelCategory);
     if (!raw || raw.mode === 'aucun') {
       throw new BadRequestException(
-        "Configurez d'abord la connexion SMTP de votre école avant d'envoyer un test.",
+        "Configurez d'abord la connexion e-mail de votre école avant d'envoyer un test.",
       );
     }
 
@@ -195,6 +232,8 @@ export class SchoolEmailController {
       text: `E-mail de test réussi.\n\nBonjour ${String(user?.firstName || user?.fullName || '')},\n\nCet e-mail confirme que ${raw.fromName} envoie désormais ses e-mails depuis sa propre adresse Gmail ${raw.fromEmail} via Academia Helm.\n\nSi vous recevez ce message, la configuration est opérationnelle.`,
       triggeredByUserId: user?.id,
       wait: true,
+      // ⭐ 2026-11-26 — teste la connexion du NIVEAU (double identité).
+      levelCategory,
       // TÂCHE 185 — le test agit comme diagnostic : même si la connexion est
       // Erreur/Expirée, on tente l'envoi (un succès rétablit Actif via
       // markVerified ; un échec remonte la vraie cause au directeur).
@@ -236,14 +275,20 @@ export class SchoolEmailController {
     return { entries };
   }
 
-  /** Déconnexion : supprime tous les secrets et repasse à Non configuré. */
+  /**
+   * Déconnexion : supprime tous les secrets et repasse à Non configuré.
+   * ⭐ 2026-11-26 — niveau ciblé (body.levelCategory) : les écoles à double
+   *    identité déconnectent chaque niveau indépendamment.
+   */
   @Post('disconnect')
   @HttpCode(200)
   async disconnect(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
+    @Body() body: { levelCategory?: EmailLevelCategory181 } | undefined,
   ): Promise<{ settings: SchoolEmailSettingsView }> {
-    const settings = await this.settings.disconnect(tenantId, user?.id ?? 'unknown');
+    const levelCategory: EmailLevelCategory181 = body?.levelCategory || 'MATERNAL_PRIMARY';
+    const settings = await this.settings.disconnect(tenantId, user?.id ?? 'unknown', levelCategory);
     return { settings };
   }
 
@@ -279,6 +324,8 @@ export class SchoolEmailController {
         fromName: dto?.fromName,
         fromEmail: dto?.fromEmail,
         replyTo: dto?.replyTo,
+        // ⭐ 2026-11-26 — connexion Google du NIVEAU visé (double identité).
+        levelCategory: dto?.levelCategory,
       },
       apiOriginFromRequest(req),
     );

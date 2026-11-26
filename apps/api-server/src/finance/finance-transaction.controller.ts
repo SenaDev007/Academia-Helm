@@ -12,6 +12,12 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateTransactionDto, UpdateTransactionDto, DeleteTransactionDto } from './dto';
+// ⭐ 2026-11-26 (retour promoteur) — les reçus/encaissements sont signés par la
+//    COMPTABILITÉ (rôle de l'émetteur), pas par « La Direction ».
+import {
+  roleSignatureLabel,
+  ACCOUNTING_FALLBACK_LABEL,
+} from '../common/utils/signature-label.helper';
 
 const PARENT_ROLES = ['PARENT', 'PARENT_PRIMARY', 'LEGAL_GUARDIAN', 'FINANCIAL_RESPONSIBLE', 'GUARDIAN'];
 // ⭐ FIX : ajouter 'PROMOTEUR' (FR) en plus de 'PROMOTER' (EN) — le RBAC bootstrap
@@ -355,6 +361,10 @@ export class FinanceTransactionController {
 
     const studentName = `${tx.studentAccount?.student?.lastName || ''} ${tx.studentAccount?.student?.firstName || ''}`.trim();
     const schoolName = branding.schoolName || 'l\'établissement';
+    // ⭐ 2026-11-26 — signature par RÔLE de l'émetteur (comptable, secrétaire
+    //    comptable…) ; repli « Le Service Comptable » (jamais « La Direction »
+    //    pour un reçu — ce n'est pas la direction qui encaisse).
+    const signatureLabel = roleSignatureLabel(user?.role, ACCOUNTING_FALLBACK_LABEL);
     const amountStr = Number(tx.amount).toLocaleString('fr-FR');
     const dateStr = new Date(tx.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
@@ -389,7 +399,7 @@ export class FinanceTransactionController {
       `Date : ${dateStr}\n` +
       `${balanceLine}\n\n` +
       `📄 Téléchargez le reçu PDF détaillé ici :\n${receiptLink}\n\n` +
-      `Cordialement,\nLa Direction`;
+      `Cordialement,\n${signatureLabel} — ${schoolName}`;
 
     // Normaliser le numéro pour wa.me (format international sans +)
     let phoneForWaMe = '';

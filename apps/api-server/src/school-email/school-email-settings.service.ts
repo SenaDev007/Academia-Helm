@@ -9,6 +9,15 @@
  *
  * Isolation multi-tenant : TOUTES les requêtes filtrent par tenantId
  * (= schoolId). Aucune lecture croisée entre écoles.
+ *
+ * ⭐ 2026-11-26 (retour promoteur) — DOUBLE IDENTITÉ PAR NIVEAU SCOLAIRE :
+ * une ligne de réglages PAR niveau (levelCategory) pour les écoles combinées
+ * (maternelle/primaire + secondaire, cf. onglet Identité) :
+ *   • affichage (getView) : STRICT — « Non configuré » si la ligne du niveau
+ *     n'existe pas ;
+ *   • envoi (findRaw) : REPLI TRANSPARENT — un envoi du secondaire sans
+ *     connexion secondaire configurée part de la connexion principale
+ *     (aucun envoi bloqué).
  * ============================================================================
  */
 
@@ -17,6 +26,7 @@ import { PrismaService } from '../database/prisma.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 import { EmailCryptoService, EmailSecretDecryptError } from './email-crypto.service';
 import {
+  EmailLevelCategory181,
   EmailSendLogEntry,
   SaveSchoolEmailConfigDto,
   SchoolEmailSettingsView,
@@ -27,6 +37,7 @@ import {
 const PUBLIC_SELECT = {
   id: true,
   tenantId: true,
+  levelCategory: true,
   mode: true,
   fromName: true,
   fromEmail: true,
@@ -50,15 +61,34 @@ export class SchoolEmailSettingsService {
     private readonly crypto: EmailCryptoService,
   ) {}
 
-  /** Ligne de réglages brute (avec colonnes secrètes) — usage interne uniquement. */
-  async findRaw(tenantId: string) {
-    return this.prisma.schoolEmailSetting.findUnique({ where: { tenantId } });
+  /**
+   * Ligne de réglages brute (avec colonnes secrètes) — usage interne uniquement.
+   * ⭐ 2026-11-26 : cible la ligne du NIVEAU demandé ; un envoi SECONDARY sans
+   * ligne secondaire retombe sur la connexion principale (repli transparent).
+   */
+  async findRaw(
+    tenantId: string,
+    levelCategory: EmailLevelCategory181 = 'MATERNAL_PRIMARY',
+  ) {
+    const row = await this.prisma.schoolEmailSetting.findFirst({
+      where: { tenantId, levelCategory },
+    });
+    if (row) return row;
+    if (levelCategory === 'SECONDARY') {
+      return this.prisma.schoolEmailSetting.findFirst({
+        where: { tenantId, levelCategory: 'MATERNAL_PRIMARY' },
+      });
+    }
+    return null;
   }
 
-  /** Vue sûre pour l'API (aucun secret, aucun ciphertext). */
-  async getView(tenantId: string): Promise<SchoolEmailSettingsView> {
-    const row = await this.prisma.schoolEmailSetting.findUnique({
-      where: { tenantId },
+  /** Vue SÛRE pour l'API (aucun secret, aucun ciphertext). STRICTE par niveau. */
+  async getView(
+    tenantId: string,
+    levelCategory: EmailLevelCategory181 = 'MATERNAL_PRIMARY',
+  ): Promise<SchoolEmailSettingsView> {
+    const row = await this.prisma.schoolEmailSetting.findFirst({
+      where: { tenantId, levelCategory },
       select: PUBLIC_SELECT,
     });
     if (!row) {
@@ -78,7 +108,9 @@ export class SchoolEmailSettingsService {
         dailyCap: 490,
       };
     }
-    const raw = await this.findRaw(tenantId);
+    const raw = await this.prisma.schoolEmailSetting.findFirst({
+      where: { tenantId, levelCategory },
+    });
     return {
       configured: row.mode !== 'aucun',
       mode: row.mode as SchoolEmailSettingsView['mode'],
@@ -97,6 +129,36 @@ export class SchoolEmailSettingsService {
   }
 
   /**
+   * ⭐ 2026-11-26 — nom affiché par défaut de la ligne du NIVEAU : dynamique
+   * selon l'onglet Identité. Pour le SECONDARY, l'identité du secondaire
+   * (tenant_level_identity_profiles) prime sur le nom du tenant.
+   */
+  private async defaultFromNameForLevel(
+    tenantId: string,
+    levelCategory: EmailLevelCategory181,
+  ): Promise<string> {
+    if (levelCategory === 'SECONDARY') {
+      try {
+        const overlay = await this.prisma.tenantLevelIdentityProfile.findFirst({
+          where: {
+            tenantId,
+            educationLevel: { name: { in: ['SECONDAIRE', 'SECONDARY'] } },
+          },
+          select: { schoolName: true },
+        });
+        if (overlay?.schoolName?.trim()) return overlay.schoolName.trim();
+      } catch {
+        /* pas d'identité secondaire configurée — repli nom du tenant */
+      }
+    }
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { name: true },
+    });
+    return (tenant?.name || 'École').trim();
+  }
+
+  /**
    * Sauvegarde de la configuration SMTP (Phase 1).
    * - Chiffre le mot de passe d'application s'il est fourni ; sinon conserve
    *   le secret existant (édition sans retaper).
@@ -108,19 +170,22 @@ export class SchoolEmailSettingsService {
     userId: string,
     dto: SaveSchoolEmailConfigDto,
   ): Promise<SchoolEmailSettingsView> {
+    const levelCategory: EmailLevelCategory181 = dto.levelCategory || 'MATERNAL_PRIMARY';
     const fromEmail = dto.fromEmail.trim().toLowerCase();
     const smtpUser = (dto.smtpUser || fromEmail).trim().toLowerCase();
     const smtpHost = (dto.smtpHost || 'smtp.gmail.com').trim();
     const smtpPort = dto.smtpPort ?? 587;
     const replyTo = (dto.replyTo || fromEmail).trim().toLowerCase();
 
-    if (smtpPort !== 587 && smtpPort !== 465) {
+    if (smtpPort !== 587 && smtpPort !== 465 && smtpPort !== 2525) {
       throw new BadRequestException(
-        'Port SMTP non supporté pour Gmail : utilisez 587 (STARTTLS) ou 465 (SSL).',
+        'Port SMTP non supporté : utilisez 587 (STARTTLS), 465 (SSL) ou 2525 (relais professionnel).',
       );
     }
 
-    const existing = await this.findRaw(tenantId);
+    const existing = await this.prisma.schoolEmailSetting.findFirst({
+      where: { tenantId, levelCategory },
+    });
 
     // Secrets : nouveau mot de passe fourni, sinon on conserve l'existant.
     let secretCols: { secretEncrypted: string; secretIv: string; secretTag: string } | null = null;
@@ -154,15 +219,15 @@ export class SchoolEmailSettingsService {
     };
 
     await this.prisma.schoolEmailSetting.upsert({
-      where: { tenantId },
+      where: { tenantId_levelCategory: { tenantId, levelCategory } },
       update: { ...prismaUpdateDefaults(), ...data },
-      create: { ...prismaCreateDefaults(), tenantId, ...data },
+      create: { ...prismaCreateDefaults(), tenantId, levelCategory, ...data },
     });
 
     this.logger.log(
-      `Configuration e-mail enregistrée (tenant ${tenantId}, user ${userId}) — secret ${secretCols ? 'chiffré' : 'inchangé'}`,
+      `Configuration e-mail enregistrée (tenant ${tenantId}, niveau ${levelCategory}, user ${userId}) — secret ${secretCols ? 'chiffré' : 'inchangé'}`,
     );
-    return this.getView(tenantId);
+    return this.getView(tenantId, levelCategory);
   }
 
   /**
@@ -172,29 +237,38 @@ export class SchoolEmailSettingsService {
    *
    * From bloqué : fromEmail = adresse du compte RÉELLEMENT autorisé (rule
    * Gmail — le compte authentifié). Migration 1 clic : fromName/replyTo
-   * existants conservés (param > existant > nom du tenant), plafond conservé.
+   * existants conservés (param > existant > nom du niveau), plafond conservé.
+   *
+   * ⭐ 2026-11-26 : persiste dans la ligne du NIVEAU visé (state OAuth) —
+   * secondaire pour les écoles à double identité.
    */
   async saveGoogleConnection(
     tenantId: string,
     userId: string,
-    p: { refreshToken: string; googleEmail: string; fromName?: string; replyTo?: string },
+    p: {
+      refreshToken: string;
+      googleEmail: string;
+      fromName?: string;
+      replyTo?: string;
+      levelCategory?: EmailLevelCategory181;
+    },
   ): Promise<SchoolEmailSettingsView> {
+    const levelCategory: EmailLevelCategory181 = p.levelCategory || 'MATERNAL_PRIMARY';
     if (!p.refreshToken || p.refreshToken.length < 20) {
       throw new BadRequestException('Refresh token Google invalide.');
     }
     const googleEmail = p.googleEmail.trim().toLowerCase();
 
-    const existing = await this.findRaw(tenantId);
+    const existing = await this.prisma.schoolEmailSetting.findFirst({
+      where: { tenantId, levelCategory },
+    });
 
     // fromName : param (formulaire au moment du « Connecter Google ») >
-    // existant (migration 1 clic sans ressaisir) > nom du tenant.
+    // existant (migration 1 clic sans ressaisir) > identité du niveau
+    // (secondaire de l'onglet Identité si configurée) > nom du tenant.
     let fromName = (p.fromName || existing?.fromName || '').trim();
     if (!fromName) {
-      const tenant = await this.prisma.tenant.findUnique({
-        where: { id: tenantId },
-        select: { name: true },
-      });
-      fromName = (tenant?.name || 'École').trim();
+      fromName = await this.defaultFromNameForLevel(tenantId, levelCategory);
     }
 
     // Reply-To : param > existant > adresse Google (défaut).
@@ -217,21 +291,24 @@ export class SchoolEmailSettingsService {
     };
 
     await this.prisma.schoolEmailSetting.upsert({
-      where: { tenantId },
+      where: { tenantId_levelCategory: { tenantId, levelCategory } },
       update: { ...prismaUpdateDefaults(), ...data },
-      create: { ...prismaCreateDefaults(), tenantId, ...data },
+      create: { ...prismaCreateDefaults(), tenantId, levelCategory, ...data },
     });
 
     this.logger.log(
-      `Connexion Google OAuth2 enregistrée (tenant ${tenantId}, user ${userId}, compte ${googleEmail}) — refresh token chiffré AES-256-GCM`,
+      `Connexion Google OAuth2 enregistrée (tenant ${tenantId}, niveau ${levelCategory}, user ${userId}, compte ${googleEmail}) — refresh token chiffré AES-256-GCM`,
     );
-    return this.getView(tenantId);
+    return this.getView(tenantId, levelCategory);
   }
 
-  /** Marque la connexion comme vérifiée (connexion SMTP OK). */
-  async markVerified(tenantId: string): Promise<void> {
+  /** Marque la connexion comme vérifiée (connexion SMTP OK) — ligne du niveau. */
+  async markVerified(
+    tenantId: string,
+    levelCategory: EmailLevelCategory181 = 'MATERNAL_PRIMARY',
+  ): Promise<void> {
     await this.prisma.schoolEmailSetting.updateMany({
-      where: { tenantId },
+      where: { tenantId, levelCategory },
       data: {
         ...prismaUpdateDefaults(),
         status: 'actif',
@@ -241,10 +318,14 @@ export class SchoolEmailSettingsService {
     });
   }
 
-  /** Marque la connexion en erreur (5xx / auth refusée). */
-  async markError(tenantId: string, errorMessage: string): Promise<void> {
+  /** Marque la connexion en erreur (5xx / auth refusée) — ligne du niveau. */
+  async markError(
+    tenantId: string,
+    errorMessage: string,
+    levelCategory: EmailLevelCategory181 = 'MATERNAL_PRIMARY',
+  ): Promise<void> {
     await this.prisma.schoolEmailSetting.updateMany({
-      where: { tenantId },
+      where: { tenantId, levelCategory },
       data: {
         ...prismaUpdateDefaults(),
         status: 'erreur',
@@ -254,21 +335,30 @@ export class SchoolEmailSettingsService {
     });
   }
 
-  /** Marque la connexion comme expirée (clé de chiffrement changée / invalid_grant en phase 2). */
-  async markExpired(tenantId: string, reason: string): Promise<void> {
+  /** Marque la connexion comme expirée (clé changée / invalid_grant) — ligne du niveau. */
+  async markExpired(
+    tenantId: string,
+    reason: string,
+    levelCategory: EmailLevelCategory181 = 'MATERNAL_PRIMARY',
+  ): Promise<void> {
     await this.prisma.schoolEmailSetting.updateMany({
-      where: { tenantId },
+      where: { tenantId, levelCategory },
       data: { ...prismaUpdateDefaults(), status: 'expire', lastError: reason.slice(0, 500) },
     });
   }
 
   /**
-   * Déconnexion (CDC section 2.8) : supprime TOUS les secrets de l'école et
-   * repasse le statut à Non configuré. Le journal des envois est conservé.
+   * Déconnexion (CDC section 2.8) : supprime TOUS les secrets de la ligne du
+   * niveau et repasse le statut à Non configuré. Le journal des envois est
+   * conservé.
    */
-  async disconnect(tenantId: string, userId: string): Promise<SchoolEmailSettingsView> {
+  async disconnect(
+    tenantId: string,
+    userId: string,
+    levelCategory: EmailLevelCategory181 = 'MATERNAL_PRIMARY',
+  ): Promise<SchoolEmailSettingsView> {
     await this.prisma.schoolEmailSetting.updateMany({
-      where: { tenantId },
+      where: { tenantId, levelCategory },
       data: {
         ...prismaUpdateDefaults(),
         mode: 'aucun',
@@ -283,18 +373,27 @@ export class SchoolEmailSettingsService {
         lastVerifiedAt: null,
       },
     });
-    this.logger.log(`Déconnexion e-mail (tenant ${tenantId}, user ${userId}) — secrets supprimés`);
-    return this.getView(tenantId);
+    this.logger.log(
+      `Déconnexion e-mail (tenant ${tenantId}, niveau ${levelCategory}, user ${userId}) — secrets supprimés`,
+    );
+    return this.getView(tenantId, levelCategory);
   }
 
   /**
-   * Déchiffre le secret SMTP. Gère la mesure de dépannage du CDC :
-   * clé changée → statut Expiré + EmailSecretDecryptError.
+   * Déchiffre le secret de la ligne du NIVEAU. Gère la mesure de dépannage du
+   * CDC : clé changée → statut Expiré + EmailSecretDecryptError.
    */
-  async decryptSecret(tenantId: string): Promise<string> {
-    const row = await this.findRaw(tenantId);
+  async decryptSecret(
+    tenantId: string,
+    levelCategory: EmailLevelCategory181 = 'MATERNAL_PRIMARY',
+  ): Promise<string> {
+    const row = await this.prisma.schoolEmailSetting.findFirst({
+      where: { tenantId, levelCategory },
+    });
     if (!row || !this.crypto.hasSecret(row)) {
-      throw new EmailSecretDecryptError('Aucun secret e-mail configuré pour cette école.');
+      throw new EmailSecretDecryptError(
+        'Aucun secret e-mail configuré pour cette école.',
+      );
     }
     try {
       return this.crypto.decrypt({
@@ -307,6 +406,7 @@ export class SchoolEmailSettingsService {
         await this.markExpired(
           tenantId,
           "Secret indéchiffrable — reconfigurez la connexion e-mail de l'école.",
+          levelCategory,
         );
       }
       throw err;
@@ -318,12 +418,14 @@ export class SchoolEmailSettingsService {
    * à zéro. Fenêtre GLISSANTE de 24 h comme Gmail (pas un jour calendaire).
    * Compte les destinataires pending + envoyés via le Gmail de l'école
    * (provider != resend). La catégorie system ne compte pas.
+   * ⭐ Le plafond reste GLOBAL à l'école (les deux connexions partagent la
+   *    même fenêtre — une seule école aux yeux de Gmail).
    */
   async getUsage(tenantId: string): Promise<SchoolEmailUsageView> {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const [settings, agg, oldest, deferredAgg, testAgg] = await Promise.all([
-      this.prisma.schoolEmailSetting.findUnique({
+      this.prisma.schoolEmailSetting.findFirst({
         where: { tenantId },
         select: { dailyCap: true },
       }),

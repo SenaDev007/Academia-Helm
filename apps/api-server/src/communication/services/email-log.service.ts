@@ -94,6 +94,14 @@ export interface CategorizedEmailRequest {
   relatedEntityId?: string; // ex: HrApplication.id, Contract.id
   relatedEntityType?: string; // ex: 'HrApplication' | 'Contract'
 
+  /**
+   * ⭐ 2026-11-26 (retour promoteur) — DOUBLE IDENTITÉ PAR NIVEAU SCOLAIRE :
+   * connexion Google du niveau émetteur. 'SECONDARY' pour les classes /
+   * personnel du secondaire des écoles combinées ; défaut (absent) =
+   * connexion principale maternelle/primaire.
+   */
+  levelCategory?: 'MATERNAL_PRIMARY' | 'SECONDARY';
+
   // Reply-to
   enableReplyTracking?: boolean; // Default: true si Volet 2 activé
   /**

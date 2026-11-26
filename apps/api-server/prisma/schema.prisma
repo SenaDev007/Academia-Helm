@@ -9265,7 +9265,12 @@ model InboundEmail {
 
 model SchoolEmailSetting {
   id        String   @id @default(uuid())
-  tenantId  String   @unique
+  tenantId  String
+
+  // ⭐ 2026-11-26 (retour promoteur) — DOUBLE IDENTITÉ PAR NIVEAU : une
+  // connexion PAR niveau pour les écoles combinées (maternelle/primaire +
+  // secondaire). Ligne existante = MATERNAL_PRIMARY (défaut, aucune perte).
+  levelCategory String @default("MATERNAL_PRIMARY") // MATERNAL_PRIMARY | SECONDARY
 
   // ─── Mode de connexion ───
   mode String @default("aucun") // smtp | google_oauth | aucun
@@ -9298,6 +9303,7 @@ model SchoolEmailSetting {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@unique([tenantId, levelCategory], map: "school_email_settings_tenantId_levelCategory_key")
   @@map("school_email_settings")
 }
 

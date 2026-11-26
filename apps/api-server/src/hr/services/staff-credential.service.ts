@@ -22,6 +22,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
+// ⭐ 2026-11-26 — double identité : e-mail du NIVEAU du personnel.
+import { resolveEmailLevelCategory } from '../../common/utils/level-category.helper';
 import { EmailService } from '../../communication/services/email.service';
 import { UserRole, ROLE_PORTAL_MAP, Portal } from '../../common/enums/user-role.enum';
 import { ADMIN_ROLE_TO_USER_ROLE, resolveUserRoleWithLevel, resolveAggregatedUserRole } from '../../common/constants/admin-roles';
@@ -878,6 +880,8 @@ IMPORTANT : Ce mot de passe est temporaire. Veuillez le modifier dès votre prem
       triggeredBy: 'SYSTEM',
       relatedEntityId: staffId,
       relatedEntityType: 'Staff',
+      // ⭐ 2026-11-26 — adresse d'envoi du NIVEAU du personnel (double identité).
+      levelCategory: resolveEmailLevelCategory(schoolLevel),
     });
   }
 

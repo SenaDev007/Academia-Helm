@@ -29,6 +29,9 @@ import { WhatsAppService } from '../communication/services/whatsapp.service';
 import { SmsService } from '../communication/services/sms.service';
 import { ReceiptFinanceService } from './receipt-finance.service';
 import { HelmConnectFinanceNotificationService } from './helm-connect-finance-notification.service';
+// ⭐ 2026-11-26 — double identité : relance envoyée depuis l'adresse e-mail
+//    du NIVEAU de la classe de l'élève (maternel/primaire ou secondaire).
+import { resolveEmailLevelCategory } from '../common/utils/level-category.helper';
 
 export type RecoveryChannel = 'email' | 'whatsapp' | 'sms' | 'helm_connect';
 export type RecoveryLevel = 'PREMIERE_RELANCE' | 'DEUXIEME_RELANCE' | 'MISE_EN_DEMEURE';
@@ -105,13 +108,16 @@ export class RecoveryNotificationFinanceService {
     const contacts = await this.receiptFinanceService.getParentContacts(student.id);
     const branding = await this.getTenantBranding(tenantId);
 
-    // Récupérer la classe de l'élève pour cette année
+    // Récupérer la classe de l'élève pour cette année (+ niveau scolaire —
+    // ⭐ 2026-11-26 : la relance part de l'adresse e-mail du NIVEAU).
     let className = '—';
     const enrollment = await this.prisma.studentEnrollment.findFirst({
       where: { studentId: student.id, academicYearId: arrear.academicYearId },
-      include: { class: { select: { name: true } } },
+      include: { class: { select: { name: true, schoolLevel: { select: { code: true, name: true } } } } },
     });
     className = enrollment?.class?.name || '—';
+    const clsLevel: any = (enrollment as any)?.class?.schoolLevel;
+    const emailLevelCategory = resolveEmailLevelCategory(clsLevel?.code, clsLevel?.name);
 
     const balanceDue = Number(arrear.balanceDue ?? 0);
     const totalDue = Number(arrear.totalDue ?? 0);
@@ -152,6 +158,7 @@ export class RecoveryNotificationFinanceService {
             academicYearName,
             isPreviousYearArrear,
             yearContextLabel,
+            levelCategory: emailLevelCategory,
           });
         } else if (channel === 'whatsapp') {
           results.whatsapp = await this.sendByWhatsApp({
@@ -276,6 +283,8 @@ export class RecoveryNotificationFinanceService {
     academicYearName?: string;
     isPreviousYearArrear?: boolean;
     yearContextLabel?: string;
+    /** ⭐ 2026-11-26 — connexion e-mail du NIVEAU de la classe (double identité). */
+    levelCategory?: 'MATERNAL_PRIMARY' | 'SECONDARY';
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun email parent disponible' };
@@ -381,7 +390,7 @@ export class RecoveryNotificationFinanceService {
 
             <p style="margin: 24px 0 0; font-size: 13px; color: #64748b;">
               Cordialement,<br>
-              <strong>La Direction — ${schoolName}</strong>
+              <strong>Le Service Comptable — ${schoolName}</strong>
             </p>
           </div>
 
@@ -410,6 +419,8 @@ export class RecoveryNotificationFinanceService {
       triggeredBy: 'SYSTEM',
       relatedEntityId: params.arrearId,
       relatedEntityType: 'FeeArrear',
+      // ⭐ 2026-11-26 — adresse d'envoi du NIVEAU de la classe (double identité).
+      levelCategory: params.levelCategory,
     } as any);
 
     if (result.success) {
@@ -459,7 +470,7 @@ export class RecoveryNotificationFinanceService {
       `\nMerci de régulariser cette situation dans les meilleurs délais. ` +
       `Pour toute question, contactez l'administration de ${schoolName}.\n\n` +
       `Cordialement,\n` +
-      `La Direction — ${schoolName}`;
+      `Le Service Comptable — ${schoolName}`;
 
     const result = await this.whatsappService.sendCategorized({
       tenantId: params.tenantId,

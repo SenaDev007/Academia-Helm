@@ -936,6 +936,8 @@ export class EmailService {
             attachments: request.attachments,
             emailLogId: logId,
             triggeredByUserId: request.triggeredByUserId,
+            // ⭐ 2026-11-26 — connexion Google du NIVEAU (double identité).
+            levelCategory: request.levelCategory,
           });
 
         if (outcome === 'sent') {

@@ -2059,6 +2059,36 @@ async function bootstrap() {
     }
   }, 1200);
 
+  // ─── DOUBLE IDENTITÉ E-MAIL PAR NIVEAU — 2026-11-26 (retour promoteur) ────
+  // Miroir idempotent de la migration 20261126120000_school_email_level_category :
+  // colonne levelCategory sur school_email_settings + unicité (tenant, niveau).
+  // Garantit le schéma au boot même si `prisma migrate deploy` n'a pas été joué
+  // (SKIP_MIGRATIONS=true par défaut en prod). Les lignes existantes restent
+  // MATERNAL_PRIMARY (défaut) — aucune perte de configuration Google/SMTP.
+  setTimeout(async () => {
+    try {
+      const prisma = app.get(PrismaService);
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "school_email_settings"
+           ADD COLUMN IF NOT EXISTS "levelCategory" TEXT NOT NULL DEFAULT 'MATERNAL_PRIMARY'`,
+      ).catch(() => {});
+      await prisma.$executeRawUnsafe(
+        `UPDATE "school_email_settings" SET "levelCategory" = 'MATERNAL_PRIMARY'
+          WHERE "levelCategory" IS NULL OR "levelCategory" NOT IN ('MATERNAL_PRIMARY', 'SECONDARY')`,
+      ).catch(() => {});
+      await prisma.$executeRawUnsafe(
+        `DROP INDEX IF EXISTS "school_email_settings_tenantId_key"`,
+      ).catch(() => {});
+      await prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "school_email_settings_tenantId_levelCategory_key"
+           ON "school_email_settings"("tenantId", "levelCategory")`,
+      ).catch(() => {});
+      logger.log('✅ school_email_settings : colonne levelCategory + unicité (tenant, niveau) ensured (double identité e-mail)');
+    } catch (e: any) {
+      logger.warn(`School email level category ensure warning: ${e?.message}`);
+    }
+  }, 1300);
+
   // ─── ACADEMIA COMMUNITY — bootstrap idempotent (tables + canaux + admin) ───
   // Espace clients/prospects du produit : tables community_*, 7 canaux par
   // défaut (annonces, conseils quotidiens, discussion, formation, support,

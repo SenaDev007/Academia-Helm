@@ -22,6 +22,8 @@
 
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+// ⭐ 2026-11-26 — double identité : e-mail du NIVEAU du personnel.
+import { resolveStaffEmailLevelCategory } from '../common/utils/level-category.helper';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 import { EmailService } from '../communication/services/email.service';
 import { RecruitmentNotificationService } from './recruitment-notification.service';
@@ -635,6 +637,8 @@ export class LeavesPrismaService {
         subject,
         html,
         fromName: branding.schoolName || 'Academia Helm',
+        // ⭐ 2026-11-26 — adresse d'envoi du NIVEAU du personnel (double identité).
+        levelCategory: await resolveStaffEmailLevelCategory(this.prisma, staff.id),
       });
 
       this.logger.log(`Leave decision email sent to ${staff.email} (${decision})`);

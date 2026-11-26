@@ -66,13 +66,21 @@ export class EmailBrandingService {
    * Résout le branding d'un tenant (nom, logo, coordonnées) avec cache 10 min.
    * @param fallbackName nom affiché de l'onglet E-mail (fromName) — prioritaire
    *                     car c'est celui que la direction a explicitement choisi.
+   * @param levelCategory ⭐ 2026-11-26 (double identité) — SECONDARY : le
+   *                     branding (logo, nom, coordonnées) de l'identité du
+   *                     NIVEAU (onglet Identité) prime sur l'identité globale.
    */
-  async resolve(tenantId: string, fallbackName?: string | null): Promise<ResolvedSchoolBranding> {
-    const cached = this.cache.get(tenantId);
+  async resolve(
+    tenantId: string,
+    fallbackName?: string | null,
+    levelCategory: 'MATERNAL_PRIMARY' | 'SECONDARY' = 'MATERNAL_PRIMARY',
+  ): Promise<ResolvedSchoolBranding> {
+    const cacheKey = `${tenantId}:${levelCategory}`;
+    const cached = this.cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.value;
 
-    const value = await this.queryAndBuild(tenantId, fallbackName);
-    this.cache.set(tenantId, { expiresAt: Date.now() + CACHE_TTL_MS, value });
+    const value = await this.queryAndBuild(tenantId, fallbackName, levelCategory);
+    this.cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, value });
     return value;
   }
 
@@ -86,8 +94,25 @@ export class EmailBrandingService {
   private async queryAndBuild(
     tenantId: string,
     fallbackName?: string | null,
+    levelCategory: 'MATERNAL_PRIMARY' | 'SECONDARY' = 'MATERNAL_PRIMARY',
   ): Promise<ResolvedSchoolBranding> {
     try {
+      // ⭐ 2026-11-26 — identité du NIVEAU secondaire (onglet Identité) :
+      // logo, contacts et adresse propres au secondaire pour les envois de
+      // ce niveau (repli champ à champ sur l'identité globale).
+      const secondaryIdentity =
+        levelCategory === 'SECONDARY'
+          ? await this.prisma.tenantLevelIdentityProfile.findFirst({
+              where: {
+                tenantId,
+                educationLevel: { name: { in: ['SECONDAIRE', 'SECONDARY'] } },
+              },
+              select: {
+                schoolName: true, logoUrl: true, phonePrimary: true, phoneSecondary: true,
+                email: true, website: true, address: true, city: true,
+              },
+            }).catch(() => null)
+          : null;
       const tenant = await this.prisma.tenant.findUnique({
         where: { id: tenantId },
         select: {
@@ -127,20 +152,25 @@ export class EmailBrandingService {
       const school = tenant?.schools ?? null;
 
       // Cascade identique au landing page : profil d'identité actif →
-      // SchoolSettings → School.
+      // SchoolSettings → School. ⭐ Secondaire : l'identité du niveau PRIME.
       const logoRaw =
+        secondaryIdentity?.logoUrl ||
         tenant?.identityProfiles?.[0]?.logoUrl || settings?.logoUrl || school?.logo || null;
 
       const schoolName =
-        (fallbackName || '').trim() || settings?.schoolName || school?.name || 'École';
+        (fallbackName || '').trim() ||
+        secondaryIdentity?.schoolName?.trim() ||
+        settings?.schoolName || school?.name || 'École';
 
       const contactLines = [
-        [settings?.address || school?.address, settings?.city || school?.city]
+        [secondaryIdentity?.address || settings?.address || school?.address,
+         secondaryIdentity?.city || settings?.city || school?.city]
           .filter(Boolean)
           .join(', '),
-        settings?.phone || school?.primaryPhone || '',
-        settings?.email || school?.primaryEmail || '',
-        settings?.website || school?.website || '',
+        secondaryIdentity?.phonePrimary || secondaryIdentity?.phoneSecondary ||
+          settings?.phone || school?.primaryPhone || '',
+        secondaryIdentity?.email || settings?.email || school?.primaryEmail || '',
+        secondaryIdentity?.website || settings?.website || school?.website || '',
       ].filter((l): l is string => !!l && l.trim().length > 0);
 
       const branding: SchoolEmailBranding = { schoolName, contactLines };

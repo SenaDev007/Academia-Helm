@@ -734,6 +734,10 @@ La Direction pedagogique`,
   },
 
   // ─── 21. Reçu de paiement (Finance) ───────────────────────────────────────
+  // ⭐ 2026-11-26 (retour promoteur) — signature « Le Service Comptable » :
+  //    ce n'est pas la direction qui encaisse. NB : le template approuvé côté
+  //    Meta doit être RE-SOUMIS avec ce nouveau libellé (sinon Meta continue
+  //    d'envoyer l'ancien corps approuvé « La Direction »).
   {
     elementName: 'recu_paiement',
     category: 'UTILITY',
@@ -752,7 +756,7 @@ Date : {{6}}
 Le recu PDF detaille est disponible aupres de l'etablissement.
 
 Cordialement,
-La Direction`,
+Le Service Comptable`,
     footer: FOOTER,
     language: 'fr',
     bodyVariables: ["parent_name", "student_name", "school_name", "receipt_number", "amount", "payment_date", "balance_line"],

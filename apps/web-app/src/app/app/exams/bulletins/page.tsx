@@ -6843,10 +6843,17 @@ function WorkflowBar({
         timeout: 60000, // ⭐ 1 minute — peut itérer sur de nombreux élèves
       });
       const data = res.data;
+      // ⭐ 2026-11-26 — livraison automatique e-mail + Helm Connect en cours
+      //    (fire-and-forget côté API) : on l'indique au directeur.
+      const deliveryNote = data?.delivery?.status === 'in_progress'
+        ? isEN
+          ? ` Automatic delivery in progress (${data.delivery.targetsCount} report card(s)): email + Helm Connect.`
+          : ` Livraison automatique en cours (${data.delivery.targetsCount} bulletin(s)) : e-mail + Helm Connect.`
+        : '';
       toastSuccess(isEN ? 'Sending complete' : 'Envoi terminé', {
         description: isEN
-          ? data.sent + ' sent to parents, ' + data.blocked + ' blocked (unpaid fees).'
-          : data.sent + ' envoyé(s) aux parents, ' + data.blocked + ' bloqué(s) (scolarité impayée).',
+          ? data.sent + ' sent to parents, ' + data.blocked + ' blocked (unpaid fees).' + deliveryNote
+          : data.sent + ' envoyé(s) aux parents, ' + data.blocked + ' bloqué(s) (scolarité impayée).' + deliveryNote,
       });
       loadStatus();
       onRefresh();

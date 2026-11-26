@@ -21,6 +21,7 @@ import { PrismaService } from '../../../database/prisma.service';
 import { AcademicRulesEngine, SubjectAverageRule, AppreciationScale, PromotionRule } from '../../../exams-grades/academic-rules-engine.service';
 import { AcademicSettingsService } from '../../../exams-grades/academic-settings.service';
 import { HelmConnectNotificationBridgeService } from '../../../communication/services/helm-connect-bridge.service';
+import { BulletinDeliveryService, type BulletinDeliveryTarget } from './bulletin-delivery.service';
 
 @Injectable()
 export class BulletinsService {
@@ -32,6 +33,8 @@ export class BulletinsService {
     private readonly academicSettingsService: AcademicSettingsService,
     @Optional() @Inject(HelmConnectNotificationBridgeService)
     private readonly bridge?: HelmConnectNotificationBridgeService,
+    // ⭐ 2026-11-26 — envoi automatique des bulletins aux parents (e-mail + Helm Connect)
+    private readonly deliveryService?: BulletinDeliveryService,
   ) {}
 
   /**
@@ -659,6 +662,12 @@ export class BulletinsService {
       },
     });
 
+    // ⭐ 2026-11-26 — MODE ENVOI AUTOMATIQUE : si le critère
+    //    autoSendAfterTeacherSign est actif (onglet Critères d'envoi), les
+    //    bulletins dès lors disponibles partent automatiquement aux parents
+    //    (e-mail + Helm Connect) sans attendre le clic « Envoyer aux parents ».
+    this.triggerAutoSendIfNeeded(tenantId, academicYearId, periodId, classId, teacherUserId);
+
     return {
       success: true,
       message: `${result.count} bulletin(s) signés par l'enseignant`,
@@ -746,6 +755,14 @@ export class BulletinsService {
       },
     });
 
+    // ⭐ 2026-11-26 — MODE ENVOI AUTOMATIQUE : renvoi au directeur = bulletin
+    //    disponible pour l'envoi. Si le critère autoSendAfterTeacherSign est
+    //    actif, les bulletins partent automatiquement aux parents (e-mail +
+    //    Helm Connect) — protection anti-double : seuls les statuts
+    //    TEACHER_RETURNED/TEACHER_SIGNED sont pris, PARENT_SENT n'est jamais
+    //    renvoyé.
+    this.triggerAutoSendIfNeeded(tenantId, academicYearId, periodId, classId, teacherUserId);
+
     return {
       success: true,
       message: `${result.count} bulletin(s) renvoyé(s) au directeur`,
@@ -755,9 +772,51 @@ export class BulletinsService {
   }
 
   /**
+   * ⭐ 2026-11-26 — Envoi automatique aux parents si le critère
+   * autoSendAfterTeacherSign est actif (onglet « Critères d'envoi »).
+   * Fire-and-forget : n'altère JAMAIS la réponse de l'étape de signature.
+   */
+  private triggerAutoSendIfNeeded(
+    tenantId: string,
+    academicYearId: string,
+    periodId: string,
+    classId: string,
+    userId: string,
+  ): void {
+    try {
+      this.getSendingCriteria(tenantId)
+        .then((criteria) => {
+          if (!criteria?.autoSendAfterTeacherSign) return;
+          this.logger.log(
+            `autoSendAfterTeacherSign actif — envoi automatique des bulletins (classe ${classId}, période ${periodId})`,
+          );
+          return this.sendBulletinsToParents(tenantId, academicYearId, periodId, classId, userId);
+        })
+        .catch((err) =>
+          this.logger.warn(`triggerAutoSendIfNeeded non bloquant échoué: ${err.message}`),
+        );
+    } catch {
+      // ignore — jamais bloquant
+    }
+  }
+
+  /**
    * Étape 5 : Le directeur envoie les bulletins aux parents
    * Seuls les élèves dont la scolarité est en règle reçoivent leur bulletin.
    * Les autres sont bloqués avec blockedReason = "ARREARS_UNPAID".
+   *
+   * ⭐ 2026-11-26 (demande promoteur) — ENVOI RÉEL AUTOMATIQUE : chaque bulletin
+   *    marqué PARENT_SENT est désormais livré au parent concerné sur DEUX canaux
+   *    (fire-and-forget, jamais bloquant) :
+   *      1. E-MAIL avec le PDF en pièce jointe — uniquement si l'adresse du
+   *         tuteur est configurée (⭐ depuis la connexion Google du NIVEAU de
+   *         la classe : maternelle/primaire vs secondaire) ;
+   *      2. HELM CONNECT — le PDF dans la conversation directe du parent.
+   *    Contrôlé par le critère notifyParentOnSend (défaut : actif).
+   *
+   * ⭐ 2026-11-26 — correctif : la requête filtre désormais PAR CLASSE (via
+   *    StudentEnrollment OU ClassStudent, comme getWorkflowStatus) — l'étape 5
+   *    d'une classe n'envoie plus les bulletins des autres classes.
    */
   async sendBulletinsToParents(
     tenantId: string,
@@ -767,16 +826,36 @@ export class BulletinsService {
     sentBy: string,
     criteria?: { blockIfArrears?: boolean; minPaymentPercentage?: number },
   ) {
-    const blockIfArrears = criteria?.blockIfArrears !== false; // default true
-    const minPct = criteria?.minPaymentPercentage ?? 100;
+    // ⭐ Critères COMPLETS du tenant : notifyParentOnSend n'est pas transmis
+    //    par le front (qui n'envoie que blockIfArrears/minPaymentPercentage).
+    const tenantCriteria = await this.getSendingCriteria(tenantId).catch(() => null);
+    const blockIfArrears = criteria?.blockIfArrears ?? tenantCriteria?.blockIfArrears ?? true;
+    const minPct = criteria?.minPaymentPercentage ?? tenantCriteria?.minPaymentPercentage ?? 100;
+    const notifyParent = tenantCriteria?.notifyParentOnSend !== false; // défaut true
 
     // Récupérer tous les bulletins TEACHER_RETURNED ou TEACHER_SIGNED
+    // ⭐ filtrés sur la classe demandée (FR : StudentEnrollment.classId ;
+    //   EN : ClassStudent — cf. getWorkflowStatus).
     const bulletins = await this.prisma.reportCard.findMany({
       where: {
         tenantId,
         academicYearId,
         quarterId: periodId,
         status: { in: ['TEACHER_RETURNED', 'TEACHER_SIGNED'] },
+        student: {
+          OR: [
+            {
+              studentEnrollments: {
+                some: { classId, academicYearId, tenantId },
+              },
+            },
+            {
+              classStudents: {
+                some: { classId, academicYearId, tenantId, status: 'ACTIVE' },
+              },
+            },
+          ],
+        },
       },
       include: {
         student: {
@@ -787,6 +866,8 @@ export class BulletinsService {
 
     const now = new Date();
     const results = { sent: 0, blocked: 0, blockedStudents: [] as any[] };
+    // ⭐ Cibles de la livraison automatique (bulletins passés à PARENT_SENT).
+    const deliveryTargets: BulletinDeliveryTarget[] = [];
 
     for (const bulletin of bulletins) {
       let isBlocked = false;
@@ -836,13 +917,50 @@ export class BulletinsService {
         });
       } else {
         results.sent++;
+        deliveryTargets.push({
+          reportCardId: bulletin.id,
+          studentId: bulletin.studentId,
+          studentName: `${bulletin.student.lastName} ${bulletin.student.firstName}`,
+          filePath: bulletin.filePath,
+          evaluationTypeId: bulletin.evaluationTypeId || null,
+        });
       }
+    }
+
+    // ⭐ LIVRAISON AUTOMATIQUE (e-mail + Helm Connect + bell icon) —
+    //    fire-and-forget : la réponse HTTP n'attend pas les envois (une
+    //    classe de 40 élèves dépasse sinon le timeout front de 60 s).
+    if (this.deliveryService && deliveryTargets.length > 0) {
+      this.deliveryService
+        .deliverClassBulletins({
+          tenantId,
+          academicYearId,
+          periodId,
+          classId,
+          sentByUserId: sentBy,
+          targets: deliveryTargets,
+          notifyParent,
+        })
+        .then((r) =>
+          this.logger.log(
+            `sendBulletinsToParents: livraison ${deliveryTargets.length} bulletin(s) — email=${r.emailSent}/${r.emailSkipped}skipped/${r.emailFailed}fail, helm=${r.helmConnectSent}/${r.helmConnectFailed}fail`,
+          ),
+        )
+        .catch((err) =>
+          this.logger.warn(`sendBulletinsToParents: livraison non bloquante échouée: ${err.message}`),
+        );
     }
 
     return {
       success: true,
       message: `${results.sent} bulletin(s) envoyé(s) aux parents, ${results.blocked} bloqué(s)`,
       ...results,
+      // ⭐ Informe l'UI que la livraison automatique est en cours.
+      delivery: {
+        channels: notifyParent ? ['email', 'helm_connect'] : [],
+        status: notifyParent && deliveryTargets.length > 0 ? 'in_progress' : 'skipped',
+        targetsCount: deliveryTargets.length,
+      },
     };
   }
 

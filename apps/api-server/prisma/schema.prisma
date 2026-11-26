@@ -119,7 +119,10 @@ model Tenant {
   educationSeries                  EducationSeries[]
   emailLogs                        EmailLog[]
   inboundEmails                    InboundEmail[]
-  schoolEmailSetting               SchoolEmailSetting?
+  // ⭐ 2026-11-26 (double identité par niveau) — one-to-many : une ligne PAR
+  // niveau (MATERNAL_PRIMARY | SECONDARY) — @@unique([tenantId, levelCategory])
+  // côté SchoolEmailSetting. (Avant : one-to-one, une seule ligne par tenant.)
+  schoolEmailSettings              SchoolEmailSetting[]
   emailSendLogs                    EmailSendLog[]
   emailQueueItems                  EmailQueue[]
   contractSignTokens               ContractSignToken[]

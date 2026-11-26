@@ -15,6 +15,8 @@ import { ValidationController } from './validation.controller';
 import { ValidationService } from './services/validation.service';
 import { BulletinsController } from './bulletins.controller';
 import { BulletinsService } from './services/bulletins.service';
+// ⭐ 2026-11-26 — Envoi automatique des bulletins aux parents (e-mail + Helm Connect)
+import { BulletinDeliveryService } from './services/bulletin-delivery.service';
 import { ExamsConfigController } from './exams-config.controller';
 import { ExamsConfigService } from './services/exams-config.service';
 import { CouncilsController } from './councils.controller';
@@ -70,6 +72,7 @@ import { ParentProvisioningModule } from '../../students/parent-provisioning.mod
     GradesService,
     ValidationService,
     BulletinsService,
+    BulletinDeliveryService,
     ExamsConfigService,
     CouncilsService,
     AcademicAuditService,

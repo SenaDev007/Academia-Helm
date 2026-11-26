@@ -8,6 +8,12 @@ import {
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import {
+  LevelSectionHeader,
+  splitByLevel,
+  staffLevelCategory,
+  useSecondaryLevelEnabled,
+} from '../level-separation';
 import { toast } from '@/components/ui/toast';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -320,6 +326,16 @@ export function ContractsWorkspace() {
         `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : [];
+
+  // ⭐ 2026-11-26 — Séparation par niveau (retour promoteur) : contrats ET
+  //    personnel sans contrat séparés Maternelle & Primaire / Secondaire.
+  const secondaryEnabled = useSecondaryLevelEnabled();
+  const contractLevelGroups = secondaryEnabled
+    ? splitByLevel(filteredContracts, (c) => staffLevelCategory(c.staff ?? c))
+    : null;
+  const pendingLevelGroups = secondaryEnabled
+    ? splitByLevel(staffWithoutContracts, staffLevelCategory)
+    : null;
 
   const selectClass =
     'rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 ' +
@@ -877,6 +893,64 @@ export function ContractsWorkspace() {
           </div>
           <h3 className="text-base font-bold text-slate-800">Aucun contrat trouvé</h3>
           <p className="text-sm text-slate-500 mt-2">Commencez par générer un contrat pour un membre du personnel.</p>
+        </div>
+      ) : contractLevelGroups && pendingLevelGroups ? (
+        <div className="space-y-8">
+          {([
+            ['MATERNEL_PRIMAIRE', contractLevelGroups.maternelPrimaire, pendingLevelGroups.maternelPrimaire],
+            ['SECONDAIRE', contractLevelGroups.secondaire, pendingLevelGroups.secondaire],
+          ] as const).map(([category, groupContracts, groupPending]) => (
+            <div key={category} className="space-y-3">
+              <LevelSectionHeader category={category} count={groupContracts.length + groupPending.length} />
+              {groupContracts.length === 0 && groupPending.length === 0 ? (
+                <p className="text-center text-xs text-slate-400 py-6 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                  Aucun contrat {category === 'SECONDAIRE' ? 'du personnel du secondaire' : 'du personnel maternelle & primaire'}.
+                </p>
+              ) : (
+                <>
+                  {groupContracts.map((contract, idx) => (
+                    <ContractRow
+                      key={contract.id}
+                      contract={contract}
+                      index={idx}
+                      tenantId={tenant.id}
+                      onTerminate={(c) => { setSelectedContract(c); setTerminationModalOpen(true); }}
+                      onRequalify={(c) => {
+                        setRequalifyModal(c);
+                        setRequalifyForm({ newType: 'CDD', statut: 'SALARIE_DECLARE', endDate: '', cddMotif: '', baseSalary: c.baseSalary ? String(Number(c.baseSalary)) : '', justification: '', testAnswers: {} });
+                      }}
+                      onRenew={openRenewModal}
+                      onCloseCdd={openCloseModal}
+                    />
+                  ))}
+                  {groupPending.length > 0 && (
+                    <>
+                      <div className="flex items-center gap-2 pt-2 pb-1">
+                        <AlertCircle className="h-4 w-4 text-amber-500" />
+                        <p className="text-xs font-bold text-amber-700 uppercase tracking-wider">
+                          Personnel sans contrat ({groupPending.length})
+                        </p>
+                      </div>
+                      {groupPending.map((staff, idx) => (
+                        <PendingContractRow
+                          key={staff.id}
+                          staff={staff}
+                          index={idx}
+                          onCreate={() => {
+                            setModalForm({
+                              ...modalForm,
+                              staffId: staff.id,
+                            });
+                            setModalOpen(true);
+                          }}
+                        />
+                      ))}
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
         </div>
       ) : (
         <div className="space-y-3">

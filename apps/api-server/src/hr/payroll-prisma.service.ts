@@ -194,6 +194,10 @@ export class PayrollPrismaService {
                 statutContractuel: true,
                 documentPaieType: true,
                 ifuNumber: true,
+                // ⭐ 2026-11-26 — séparation RH par niveau (Paie) : le niveau
+                //    de la fiche personnel alimente la catégorie d'affichage
+                //    du tableau des lignes de paie.
+                schoolLevel: { select: { name: true, code: true } },
                 employeeCNSS: {
                   select: { cnssNumber: true },
                 },

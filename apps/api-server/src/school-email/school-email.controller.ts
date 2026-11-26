@@ -120,12 +120,13 @@ export class SchoolEmailController {
       verified = true;
       await this.settings.markVerified(tenantId);
     } catch (err: any) {
-      // ⭐ Retour promoteur 2026-11-26 — diagnostic différencié : un timeout
-      // de connexion n'est PAS un mauvais mot de passe. L'API est hébergée sur
-      // Railway, qui BLOQUE les ports SMTP sortants (25/465/587) par défaut
-      // → le mode « mot de passe d'application » ne peut pas s'y connecter,
-      // quelle que soit la configuration. La connexion Google (API Gmail sur
-      // le port 443) n'est pas concernée : c'est la voie recommandée.
+      // ⭐ Diagnostic différencié : un timeout de connexion n'est PAS un
+      //    mauvais mot de passe. Certains hébergements n'exposent pas les
+      //    ports SMTP classiques (587/465) — le port 2525 (relais
+      //    professionnel) reste disponible, et la connexion Google (API Gmail
+      //    sur le port 443) fonctionne partout : c'est la voie recommandée.
+      //    NB 2026-11-26 : message UTILISATEUR neutre — les contraintes
+      //    d'infrastructure interne ne sont plus exposées.
       const code = String(err?.code || '');
       const msg = String(err?.message || err || '');
       const isNetworkBlock =
@@ -136,7 +137,7 @@ export class SchoolEmailController {
         err?.responseCode === 535 || /auth/i.test(msg)
           ? "Authentification refusée par Gmail — vérifiez le mot de passe d'application (et que la validation en deux étapes est active)."
           : isNetworkBlock
-            ? "Connexion SMTP impossible : les ports SMTP sortants (587/465) sont bloqués par l'hébergeur de l'application. Utilisez plutôt la connexion Google (bouton « Connecter Google ») : elle passe par une API sécurisée sur le port 443 et fonctionne sur cet hébergement."
+            ? "La connexion SMTP n'a pas pu être établie. Vérifiez le serveur et le port (587, 465 ou 2525) — ou utilisez la connexion Google (bouton « Connecter Google »), sécurisée et fiable dans tous les environnements."
             : `Connexion SMTP échouée : ${msg.slice(0, 200)}`;
       await this.settings.markError(tenantId, verifyError);
       this.logger.warn(`Vérification SMTP échouée (tenant ${tenantId}) : ${verifyError}`);

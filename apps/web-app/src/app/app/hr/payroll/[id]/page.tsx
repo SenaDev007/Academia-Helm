@@ -49,6 +49,11 @@ import { useParams } from 'next/navigation';
 import { toast } from '@/components/ui/toast';
 import { HRShell } from '../../_components/HRShell';
 import { cn } from '@/lib/utils';
+import {
+  splitByLevel,
+  staffLevelCategory,
+  useSecondaryLevelEnabled,
+} from '../../_components/level-separation';
 
 const PRIMARY = '#1A2BA6';
 
@@ -530,6 +535,12 @@ export default function PayrollDetailPage() {
     }
   };
 
+  // ⭐ 2026-11-26 — Séparation par niveau (retour promoteur) : le tableau des
+  //    lignes de paie sépare Maternelle & Primaire / Secondaire (écoles
+  //    mixtes) — bandeaux pleine largeur, ordre conservé dans chaque groupe.
+  //    ⚠️ Le hook est appelé AVANT les early returns (Rules of Hooks).
+  const secondaryEnabled = useSecondaryLevelEnabled();
+
   if (loading) {
     return (
       <HRShell activeId="payroll" title="Paie" titleEn="Payroll" description="Périodes de paie, calculs fiscaux et bulletins." descriptionEn="Payroll periods, tax calculations and payslips.">
@@ -572,197 +583,37 @@ export default function PayrollDetailPage() {
     || new Date(period.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
   const statusClass = STATUS_CLASS[period.status] || STATUS_CLASS.OPEN;
 
-  return (
-    <HRShell activeId="payroll" title="Paie" titleEn="Payroll" description="Périodes de paie, calculs fiscaux et bulletins." descriptionEn="Payroll periods, tax calculations and payslips.">
-    <div className="space-y-6 pb-12">
-      {/* ─── Retour + en-tête compact (aligné staff/[id] & autres onglets) ─── */}
-      <div className="px-4 sm:px-6 pt-2">
-        <Link href="/app/hr/payroll" className="flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-[#1A2BA6] transition-colors">
-          <ArrowLeft size={16} /> Retour à la liste
-        </Link>
-      </div>
+  const payrollLevelGroups = secondaryEnabled && Array.isArray(period.payrolls)
+    ? splitByLevel(period.payrolls, (p: any) => staffLevelCategory(p.staff ?? p))
+    : null;
+  const payrollColCount = 7 + (period.attendanceBased ? 1 : 0) + 1; // + colonne Actions
 
-      <div className="px-4 sm:px-6">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-11 h-11 rounded-xl flex items-center justify-center font-black text-xs shrink-0" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
-              {monthLabel.substring(0, 3).toUpperCase()}
-            </div>
-            <div>
-              <h3 className="font-bold text-slate-900 text-base capitalize">{monthLabel}</h3>
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase', statusClass)}>
-                  {PERIOD_STATUS_LABELS[period.status] || period.status}
-                </span>
-                {/* ⭐ 22/11/2026 — mode de calcul de la période : badge visible */}
-                <span
-                  className={cn(
-                    'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap',
-                    period.attendanceBased
-                      ? 'bg-teal-50 text-teal-700 border-teal-200'
-                      : 'bg-slate-50 text-slate-500 border-slate-200',
-                  )}
-                  title={period.attendanceBased
-                    ? 'La base de chaque ligne est proratée par les présences pointées de la période'
-                    : 'Salaire de base + indemnités, sans tenir compte des présences'}
-                >
-                  <CalendarDays className="h-3 w-3" />
-                  {period.attendanceBased ? 'Présences' : 'Base + indemnités'}
-                </span>
-                <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
-                  {new Date(period.startDate).toLocaleDateString('fr-FR')} → {new Date(period.endDate).toLocaleDateString('fr-FR')}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex gap-2 flex-wrap">
-            {/* ⭐ 22/11/2026 — BASCULE « TENIR COMPTE DES PRÉSENCES » : la RH
-                choisit librement le mode de calcul de la paie de la période
-                (proratation de la base par les pointages, ou base +
-                indemnités sans en tenir compte). */}
-            {['OPEN', 'CALCULATED'].includes(period.status) && (
-              <button
-                onClick={handleToggleAttendanceMode}
-                disabled={togglingAttendance || processing}
-                className={cn(
-                  'flex items-center gap-2 px-3.5 py-2 rounded-xl transition-all font-bold text-xs disabled:opacity-50 border',
-                  period.attendanceBased
-                    ? 'bg-teal-50 text-teal-700 border-teal-300 hover:bg-teal-100'
-                    : 'bg-slate-50 text-slate-600 border-slate-300 hover:bg-slate-100',
-                )}
-                title={period.attendanceBased
-                  ? 'Désactiver : revenir au salaire de base + indemnités, sans tenir compte des présences'
-                  : 'Activer : prorater la base de chaque ligne par les présences pointées de la période'}
-              >
-                {togglingAttendance ? <Loader2 size={14} className="animate-spin" /> : <CalendarDays size={14} />}
-                {togglingAttendance
-                  ? 'Application…'
-                  : period.attendanceBased
-                    ? 'Présences : activé'
-                    : 'Présences : désactivé'}
-              </button>
-            )}
-            <button
-              onClick={openDocumentsRegister}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl hover:opacity-90 transition font-bold text-xs text-white"
-              style={{ backgroundColor: PRIMARY }}
-              title="Registre des fiches de paie (FP) et états de paiement (EP) émis"
-            >
-              <FileBadge2 size={14} />
-              Documents émis
-              <span className="bg-white/20 rounded-full px-1.5 py-0.5 text-[9px]">{docsIssued}</span>
-            </button>
-            {period.status === 'OPEN' && (
-              <>
-                <button
-                  onClick={handleGeneratePayrolls}
-                  disabled={processing}
-                  className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-all font-bold text-xs disabled:opacity-50"
-                >
-                  <RefreshCcw size={14} className={processing ? 'animate-spin' : ''} />
-                  Générer les lignes
-                </button>
-                <button
-                  onClick={handleCalculateAll}
-                  disabled={processing}
-                  className="flex items-center gap-2 px-4 py-2 text-white rounded-xl hover:opacity-90 shadow-sm transition-all font-bold text-xs disabled:opacity-50"
-                  style={{ backgroundColor: PRIMARY }}
-                >
-                  <Calculator size={14} />
-                  Calculer Tout (Taxes/CNSS)
-                </button>
-              </>
-            )}
-            {(period.status === 'CALCULATED' || period.status === 'VALIDATED' || (period.status === 'PAID' && unpaidCount > 0)) && (
-              <>
-                {unpaidCount > 0 && (
-                  <button
-                    onClick={handleMarkAllReceived}
-                    disabled={payingAll || processing}
-                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-sm transition-all font-bold text-xs disabled:opacity-50"
-                    title="Confirmer que tous les employés ont reçu leur salaire (espèces / virement)"
-                  >
-                    {payingAll ? <Loader2 size={14} className="animate-spin" /> : <CheckCheck size={14} />}
-                    {payingAll ? 'Enregistrement...' : `Marquer tout perçu (${unpaidCount})`}
-                  </button>
-                )}
-                <button
-                  onClick={handleCalculateAll}
-                  disabled={processing}
-                  className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-all font-bold text-xs disabled:opacity-50"
-                  title="Recalculer toutes les lignes (taxes/CNSS) et rafraîchir les déclarations"
-                >
-                  <Calculator size={14} className={processing ? 'animate-spin' : ''} />
-                  Recalculer
-                </button>
-              </>
-            )}
-          </div>
+  /** Lignes de séparation « Maternelle & Primaire » / « Secondaire ». */
+  const renderLevelSeparator = (category: 'MATERNEL_PRIMAIRE' | 'SECONDAIRE', count: number) => (
+    <tr>
+      <td colSpan={payrollColCount} className="p-0">
+        <div className={cn(
+          'flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider border-y',
+          category === 'SECONDAIRE'
+            ? 'bg-blue-50 text-[#1A2BA6] border-blue-200'
+            : 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        )}>
+          {category === 'SECONDAIRE' ? 'Personnel du Secondaire' : 'Personnel Maternelle & Primaire'}
+          <span className="opacity-70">({count})</span>
         </div>
-      </div>
-
-      {/* ─── Bande de KPI compacte (style PayrollWorkspace) ─── */}
-      <div className="px-4 sm:px-6">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-          {[
-            {
-              label: 'Masse brute',
-              value: formatCurrency(totalGross),
-              sub: totalAllowances > 0 ? `dont indemnités ${formatCurrency(totalAllowances)}` : null,
-            },
-            { label: 'Retenues (CNSS/ITS/AIB)', value: formatCurrency(totalDeductions) },
-            { label: 'Net à payer', value: formatCurrency(totalNet), accent: 'text-emerald-600' },
-            { label: 'Agents', value: `${period.payrolls?.length || 0} ligne(s)` },
-          ].map((k, i) => (
-            <div key={i} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{k.label}</p>
-              <p className={cn('text-base font-bold text-slate-900 mt-0.5', k.accent)}>{k.value}</p>
-              {k.sub && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{k.sub}</p>}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ⭐ CDC §8.3 — bandeau de non-conformité déclarative visible à CHAQUE
-          étape ultérieure du dossier (ici : la paie), sans bloquer l'usage. */}
-      {nonDeclares > 0 && (
-        <div className="mx-4 sm:mx-6">
-          <div className="rounded-xl border border-amber-300 bg-amber-50/70 px-4 py-3 flex items-start gap-2.5">
-            <ShieldCheck className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-            <div className="text-[11px] text-amber-800 leading-relaxed">
-              <strong>Salariés non déclarés à la CNSS dans cette période</strong> ({nonDeclares}) :
-              fiches de paie avec ITS uniquement, sans cotisations CNSS — la régularisation reste due. Ce bandeau
-              est affiché en permanence (le risque n&apos;est jamais masqué) ; la régularisation passe par la
-              procédure tracée de changement de statut sur la fiche du personnel.
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─── Tableau des lignes de paie (typographie resserrée) ─── */}
-      <div className="px-4 sm:px-6">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  {['Employé', 'Salaire Brut', ...(period.attendanceBased ? ['Présences'] : []), 'Retenues', 'Net à Payer', 'Statut Ligne', 'Paiement'].map((h) => (
-                    <th key={h} className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
-                  ))}
-                  <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right whitespace-nowrap">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {period.payrolls?.map((payroll: any) => {
-                  const deductions = Number(payroll.cnssEmployee) + Number(payroll.irppAmount) + Number(payroll.otherDeductions || 0);
-                  const isVacataire = payroll.staff?.contractType === 'VACATAIRE';
-                  const isPrestataire = payroll.staff?.statutContractuel === 'PRESTATAIRE_SERVICE';
-                  const statut = payroll.staff?.statutContractuel || null;
-                  const statutInfo = statut ? STATUT_LABELS[statut] : null;
-                  const doc = payroll.payrollDocument || null;
-                  return (
+      </td>
+    </tr>
+  );
+  /** Ligne de paie d'un agent — extraite du tableau pour permettre la
+   *  séparation par niveau (Maternelle & Primaire / Secondaire). */
+  const renderPayrollRow = (payroll: any) => {
+    const deductions = Number(payroll.cnssEmployee) + Number(payroll.irppAmount) + Number(payroll.otherDeductions || 0);
+    const isVacataire = payroll.staff?.contractType === 'VACATAIRE';
+    const isPrestataire = payroll.staff?.statutContractuel === 'PRESTATAIRE_SERVICE';
+    const statut = payroll.staff?.statutContractuel || null;
+    const statutInfo = statut ? STATUT_LABELS[statut] : null;
+    const doc = payroll.payrollDocument || null;
+    return (
                   <tr key={payroll.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2.5">
@@ -1020,8 +871,204 @@ export default function PayrollDetailPage() {
                       </div>
                     </td>
                   </tr>
-                  );
-                })}
+    );
+  };
+
+
+
+  return (
+    <HRShell activeId="payroll" title="Paie" titleEn="Payroll" description="Périodes de paie, calculs fiscaux et bulletins." descriptionEn="Payroll periods, tax calculations and payslips.">
+    <div className="space-y-6 pb-12">
+      {/* ─── Retour + en-tête compact (aligné staff/[id] & autres onglets) ─── */}
+      <div className="px-4 sm:px-6 pt-2">
+        <Link href="/app/hr/payroll" className="flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-[#1A2BA6] transition-colors">
+          <ArrowLeft size={16} /> Retour à la liste
+        </Link>
+      </div>
+
+      <div className="px-4 sm:px-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center font-black text-xs shrink-0" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
+              {monthLabel.substring(0, 3).toUpperCase()}
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-900 text-base capitalize">{monthLabel}</h3>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase', statusClass)}>
+                  {PERIOD_STATUS_LABELS[period.status] || period.status}
+                </span>
+                {/* ⭐ 22/11/2026 — mode de calcul de la période : badge visible */}
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap',
+                    period.attendanceBased
+                      ? 'bg-teal-50 text-teal-700 border-teal-200'
+                      : 'bg-slate-50 text-slate-500 border-slate-200',
+                  )}
+                  title={period.attendanceBased
+                    ? 'La base de chaque ligne est proratée par les présences pointées de la période'
+                    : 'Salaire de base + indemnités, sans tenir compte des présences'}
+                >
+                  <CalendarDays className="h-3 w-3" />
+                  {period.attendanceBased ? 'Présences' : 'Base + indemnités'}
+                </span>
+                <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  {new Date(period.startDate).toLocaleDateString('fr-FR')} → {new Date(period.endDate).toLocaleDateString('fr-FR')}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-2 flex-wrap">
+            {/* ⭐ 22/11/2026 — BASCULE « TENIR COMPTE DES PRÉSENCES » : la RH
+                choisit librement le mode de calcul de la paie de la période
+                (proratation de la base par les pointages, ou base +
+                indemnités sans en tenir compte). */}
+            {['OPEN', 'CALCULATED'].includes(period.status) && (
+              <button
+                onClick={handleToggleAttendanceMode}
+                disabled={togglingAttendance || processing}
+                className={cn(
+                  'flex items-center gap-2 px-3.5 py-2 rounded-xl transition-all font-bold text-xs disabled:opacity-50 border',
+                  period.attendanceBased
+                    ? 'bg-teal-50 text-teal-700 border-teal-300 hover:bg-teal-100'
+                    : 'bg-slate-50 text-slate-600 border-slate-300 hover:bg-slate-100',
+                )}
+                title={period.attendanceBased
+                  ? 'Désactiver : revenir au salaire de base + indemnités, sans tenir compte des présences'
+                  : 'Activer : prorater la base de chaque ligne par les présences pointées de la période'}
+              >
+                {togglingAttendance ? <Loader2 size={14} className="animate-spin" /> : <CalendarDays size={14} />}
+                {togglingAttendance
+                  ? 'Application…'
+                  : period.attendanceBased
+                    ? 'Présences : activé'
+                    : 'Présences : désactivé'}
+              </button>
+            )}
+            <button
+              onClick={openDocumentsRegister}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl hover:opacity-90 transition font-bold text-xs text-white"
+              style={{ backgroundColor: PRIMARY }}
+              title="Registre des fiches de paie (FP) et états de paiement (EP) émis"
+            >
+              <FileBadge2 size={14} />
+              Documents émis
+              <span className="bg-white/20 rounded-full px-1.5 py-0.5 text-[9px]">{docsIssued}</span>
+            </button>
+            {period.status === 'OPEN' && (
+              <>
+                <button
+                  onClick={handleGeneratePayrolls}
+                  disabled={processing}
+                  className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-all font-bold text-xs disabled:opacity-50"
+                >
+                  <RefreshCcw size={14} className={processing ? 'animate-spin' : ''} />
+                  Générer les lignes
+                </button>
+                <button
+                  onClick={handleCalculateAll}
+                  disabled={processing}
+                  className="flex items-center gap-2 px-4 py-2 text-white rounded-xl hover:opacity-90 shadow-sm transition-all font-bold text-xs disabled:opacity-50"
+                  style={{ backgroundColor: PRIMARY }}
+                >
+                  <Calculator size={14} />
+                  Calculer Tout (Taxes/CNSS)
+                </button>
+              </>
+            )}
+            {(period.status === 'CALCULATED' || period.status === 'VALIDATED' || (period.status === 'PAID' && unpaidCount > 0)) && (
+              <>
+                {unpaidCount > 0 && (
+                  <button
+                    onClick={handleMarkAllReceived}
+                    disabled={payingAll || processing}
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-sm transition-all font-bold text-xs disabled:opacity-50"
+                    title="Confirmer que tous les employés ont reçu leur salaire (espèces / virement)"
+                  >
+                    {payingAll ? <Loader2 size={14} className="animate-spin" /> : <CheckCheck size={14} />}
+                    {payingAll ? 'Enregistrement...' : `Marquer tout perçu (${unpaidCount})`}
+                  </button>
+                )}
+                <button
+                  onClick={handleCalculateAll}
+                  disabled={processing}
+                  className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-all font-bold text-xs disabled:opacity-50"
+                  title="Recalculer toutes les lignes (taxes/CNSS) et rafraîchir les déclarations"
+                >
+                  <Calculator size={14} className={processing ? 'animate-spin' : ''} />
+                  Recalculer
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Bande de KPI compacte (style PayrollWorkspace) ─── */}
+      <div className="px-4 sm:px-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+          {[
+            {
+              label: 'Masse brute',
+              value: formatCurrency(totalGross),
+              sub: totalAllowances > 0 ? `dont indemnités ${formatCurrency(totalAllowances)}` : null,
+            },
+            { label: 'Retenues (CNSS/ITS/AIB)', value: formatCurrency(totalDeductions) },
+            { label: 'Net à payer', value: formatCurrency(totalNet), accent: 'text-emerald-600' },
+            { label: 'Agents', value: `${period.payrolls?.length || 0} ligne(s)` },
+          ].map((k, i) => (
+            <div key={i} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{k.label}</p>
+              <p className={cn('text-base font-bold text-slate-900 mt-0.5', k.accent)}>{k.value}</p>
+              {k.sub && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{k.sub}</p>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ⭐ CDC §8.3 — bandeau de non-conformité déclarative visible à CHAQUE
+          étape ultérieure du dossier (ici : la paie), sans bloquer l'usage. */}
+      {nonDeclares > 0 && (
+        <div className="mx-4 sm:mx-6">
+          <div className="rounded-xl border border-amber-300 bg-amber-50/70 px-4 py-3 flex items-start gap-2.5">
+            <ShieldCheck className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-[11px] text-amber-800 leading-relaxed">
+              <strong>Salariés non déclarés à la CNSS dans cette période</strong> ({nonDeclares}) :
+              fiches de paie avec ITS uniquement, sans cotisations CNSS — la régularisation reste due. Ce bandeau
+              est affiché en permanence (le risque n&apos;est jamais masqué) ; la régularisation passe par la
+              procédure tracée de changement de statut sur la fiche du personnel.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Tableau des lignes de paie (typographie resserrée) ─── */}
+      <div className="px-4 sm:px-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  {['Employé', 'Salaire Brut', ...(period.attendanceBased ? ['Présences'] : []), 'Retenues', 'Net à Payer', 'Statut Ligne', 'Paiement'].map((h) => (
+                    <th key={h} className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  ))}
+                  <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right whitespace-nowrap">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {payrollLevelGroups && (period.payrolls?.length ?? 0) > 0 ? (
+                  <>
+                    {renderLevelSeparator('MATERNEL_PRIMAIRE', payrollLevelGroups.maternelPrimaire.length)}
+                    {payrollLevelGroups.maternelPrimaire.map((payroll: any) => renderPayrollRow(payroll))}
+                    {renderLevelSeparator('SECONDAIRE', payrollLevelGroups.secondaire.length)}
+                    {payrollLevelGroups.secondaire.map((payroll: any) => renderPayrollRow(payroll))}
+                  </>
+                ) : (
+                  period.payrolls?.map((payroll: any) => renderPayrollRow(payroll))
+                )}
                 {(!period.payrolls || period.payrolls.length === 0) && (
                   <tr>
                     <td colSpan={period.attendanceBased ? 8 : 7} className="px-4 py-12 text-center text-slate-400">

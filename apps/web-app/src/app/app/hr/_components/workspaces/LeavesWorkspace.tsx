@@ -5,6 +5,12 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Plus, Calendar, CheckCircle2, XCircle, FileText, Coffee, X, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import {
+  LevelSectionHeader,
+  splitByLevel,
+  staffLevelCategory,
+  useSecondaryLevelEnabled,
+} from '../level-separation';
 import { toast } from '@/components/ui/toast';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -135,6 +141,110 @@ export function LeavesWorkspace() {
     return todayStr >= start && todayStr <= end;
   }).length;
 
+  // ⭐ 2026-11-26 — Séparation par niveau (retour promoteur) : si le niveau
+  //    secondaire est activé dans les paramètres de l'école, les demandes de
+  //    congés sont séparées Maternelle & Primaire / Secondaire.
+  const secondaryEnabled = useSecondaryLevelEnabled();
+  const requestLevelGroups = secondaryEnabled
+    ? splitByLevel(requests, (r) => staffLevelCategory(r.staff ?? r))
+    : null;
+
+  /** Tableau des demandes d'un groupe de niveau (ou de l'ensemble). */
+  const renderRequestsTable = (list: any[]) => (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+      <table className="w-full text-left">
+        <thead>
+          <tr className="border-b border-slate-200 bg-slate-50">
+            {['Collaborateur', 'Type / Motif', 'Période', 'Durée', 'Statut', 'Actions'].map((h, i) => (
+              <th key={h} className={cn('px-5 py-3.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500', i === 5 && 'text-right')}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {list.map((request, idx) => {
+            const s = STATUS_CONFIG[request.status] || STATUS_CONFIG.PENDING;
+            return (
+              <motion.tr key={request.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.04 }} className="hover:bg-slate-50/50 transition-colors">
+                <td className="px-5 py-4">
+                  <div className="flex items-center gap-3">
+                    {request.staff?.photoUrl ? (
+                      <img src={request.staff.photoUrl} alt={`${request.staff?.firstName} ${request.staff?.lastName}`} className="w-9 h-9 rounded-xl object-cover shrink-0" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
+                        {request.staff?.firstName?.[0]}{request.staff?.lastName?.[0]}
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">{request.staff?.firstName} {request.staff?.lastName}</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{request.staff?.staffCode || request.staff?.employeeNumber}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-5 py-4">
+                  <p className="text-sm font-semibold text-slate-700">{LEAVE_TYPES.find(t => t.value === request.type)?.label || request.type}</p>
+                  <p className="text-xs text-slate-400 italic truncate max-w-[180px]">"{request.reason || 'Pas de motif'}"</p>
+                </td>
+                <td className="px-5 py-4">
+                  <div className="flex items-center gap-1.5 text-sm text-slate-600 font-medium">
+                    <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                    {new Date(request.startDate).toLocaleDateString('fr-FR')}
+                    <span className="text-slate-300">→</span>
+                    {new Date(request.endDate).toLocaleDateString('fr-FR')}
+                  </div>
+                </td>
+                <td className="px-5 py-4">
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                    {calculateDays(request.startDate, request.endDate)} jrs
+                  </span>
+                </td>
+                <td className="px-5 py-4">
+                  <div className="flex items-center gap-1.5">
+                    {request.status === 'PENDING' && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}
+                    <span className={cn('text-xs font-bold uppercase tracking-wider', s.className)}>{s.label}</span>
+                  </div>
+                </td>
+                <td className="px-5 py-4 text-right">
+                  {request.status === 'PENDING' ? (
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => handleProcessRequest(request.id, 'APPROVED')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
+                        title="Approuver la demande"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span className="hidden sm:inline">Approuver</span>
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const ok = await confirmDialog.danger(
+                            'Cette demande de congé sera rejetée définitivement.',
+                            'Rejeter la demande',
+                          );
+                          if (ok) handleProcessRequest(request.id, 'REJECTED');
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 transition-colors"
+                        title="Rejeter la demande"
+                      >
+                        <XCircle className="h-4 w-4" />
+                        <span className="hidden sm:inline">Rejeter</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">
+                      {request.status === 'APPROVED' ? 'Demande approuvée' : request.status === 'REJECTED' ? 'Demande rejetée' : request.status}
+                    </span>
+                  )}
+                </td>
+              </motion.tr>
+            );
+          })}
+        </tbody>
+      </table>
+      </div>
+    </motion.div>
+  );
+
   return (
     <>
     {confirmDialog.dialog}
@@ -234,99 +344,28 @@ export function LeavesWorkspace() {
           <h3 className="text-base font-bold text-slate-800">Aucune demande trouvée</h3>
           <p className="text-sm text-slate-500 mt-2">Le personnel est au complet ou aucune demande n'a été soumise.</p>
         </div>
+      ) : requestLevelGroups ? (
+        /* ⭐ 2026-11-26 — Séparation par niveau : une section + un tableau par
+           groupe (Maternelle & Primaire / Secondaire) — plus de listes mélangées. */
+        <div className="space-y-6">
+          {([
+            ['MATERNEL_PRIMAIRE', requestLevelGroups.maternelPrimaire],
+            ['SECONDAIRE', requestLevelGroups.secondaire],
+          ] as const).map(([category, groupRequests]) => (
+            <div key={category} className="space-y-3">
+              <LevelSectionHeader category={category} count={groupRequests.length} />
+              {groupRequests.length === 0 ? (
+                <p className="text-center text-xs text-slate-400 py-6 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                  Aucune demande {category === 'SECONDAIRE' ? 'du personnel du secondaire' : 'du personnel maternelle & primaire'}.
+                </p>
+              ) : (
+                renderRequestsTable(groupRequests)
+              )}
+            </div>
+          ))}
+        </div>
       ) : (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50">
-                {['Collaborateur', 'Type / Motif', 'Période', 'Durée', 'Statut', 'Actions'].map((h, i) => (
-                  <th key={h} className={cn('px-5 py-3.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500', i === 5 && 'text-right')}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {requests.map((request, idx) => {
-                const s = STATUS_CONFIG[request.status] || STATUS_CONFIG.PENDING;
-                return (
-                  <motion.tr key={request.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.04 }} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-3">
-                        {request.staff?.photoUrl ? (
-                          <img src={request.staff.photoUrl} alt={`${request.staff?.firstName} ${request.staff?.lastName}`} className="w-9 h-9 rounded-xl object-cover shrink-0" />
-                        ) : (
-                          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}>
-                            {request.staff?.firstName?.[0]}{request.staff?.lastName?.[0]}
-                          </div>
-                        )}
-                        <div>
-                          <p className="text-sm font-bold text-slate-900">{request.staff?.firstName} {request.staff?.lastName}</p>
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{request.staff?.staffCode || request.staff?.employeeNumber}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <p className="text-sm font-semibold text-slate-700">{LEAVE_TYPES.find(t => t.value === request.type)?.label || request.type}</p>
-                      <p className="text-xs text-slate-400 italic truncate max-w-[180px]">"{request.reason || 'Pas de motif'}"</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-1.5 text-sm text-slate-600 font-medium">
-                        <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                        {new Date(request.startDate).toLocaleDateString('fr-FR')}
-                        <span className="text-slate-300">→</span>
-                        {new Date(request.endDate).toLocaleDateString('fr-FR')}
-                      </div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                        {calculateDays(request.startDate, request.endDate)} jrs
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-1.5">
-                        {request.status === 'PENDING' && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}
-                        <span className={cn('text-xs font-bold uppercase tracking-wider', s.className)}>{s.label}</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      {request.status === 'PENDING' ? (
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => handleProcessRequest(request.id, 'APPROVED')}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
-                            title="Approuver la demande"
-                          >
-                            <CheckCircle2 className="h-4 w-4" />
-                            <span className="hidden sm:inline">Approuver</span>
-                          </button>
-                          <button
-                            onClick={async () => {
-                              const ok = await confirmDialog.danger(
-                                'Cette demande de congé sera rejetée définitivement.',
-                                'Rejeter la demande',
-                              );
-                              if (ok) handleProcessRequest(request.id, 'REJECTED');
-                            }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 transition-colors"
-                            title="Rejeter la demande"
-                          >
-                            <XCircle className="h-4 w-4" />
-                            <span className="hidden sm:inline">Rejeter</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-400 italic">
-                          {request.status === 'APPROVED' ? 'Demande approuvée' : request.status === 'REJECTED' ? 'Demande rejetée' : request.status}
-                        </span>
-                      )}
-                    </td>
-                  </motion.tr>
-                );
-              })}
-            </tbody>
-          </table>
-          </div>
-        </motion.div>
+        renderRequestsTable(requests)
       )}
     </div>
     </>

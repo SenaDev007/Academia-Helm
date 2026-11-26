@@ -265,7 +265,8 @@ export class SubscriptionLifecycleController {
 
     const sub = tenant?.helmSubscriptions;
     const currentPlan = sub?.plan || 'SEED';
-    const alignment = this.studentCountVerifier.checkPlanAlignment(currentPlan, realCount);
+    // ⭐ 2026-11-26 — checkPlanAlignment est ASYNC (grille pricing_plans)
+    const alignment = await this.studentCountVerifier.checkPlanAlignment(currentPlan, realCount);
 
     return {
       tenantId,

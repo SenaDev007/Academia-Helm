@@ -173,6 +173,10 @@ export class LeavesPrismaService {
             email: true,
             position: true,
             roleType: true,
+            // ⭐ 2026-11-26 — séparation RH par niveau (maternel/primaire vs
+            //    secondaire) : le niveau de la fiche personnel alimente la
+            //    catégorie d'affichage côté Congés & Absences.
+            schoolLevel: { select: { name: true, code: true } },
           },
         },
       },
@@ -676,6 +680,8 @@ export class LeavesPrismaService {
             position: true,
             roleType: true,
             photo: { select: { thumbnailUrl: true } },
+            // ⭐ 2026-11-26 — séparation RH par niveau (Congés & Absences)
+            schoolLevel: { select: { name: true, code: true } },
           },
         },
       },

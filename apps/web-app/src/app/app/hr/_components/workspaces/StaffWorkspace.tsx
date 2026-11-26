@@ -13,6 +13,12 @@ import { OnboardingWizardModal } from '../modals/OnboardingWizardModal';
 import { StaffTerminationModal } from '../modals/StaffTerminationModal';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import {
+  LevelSectionHeader,
+  splitByLevel,
+  staffLevelCategory,
+  useSecondaryLevelEnabled,
+} from '../level-separation';
 
 const PRIMARY = '#1A2BA6';
 
@@ -156,6 +162,14 @@ export function StaffWorkspace() {
     `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (s.staffCode && s.staffCode.toLowerCase().includes(searchQuery.toLowerCase()))
   );
+
+  // ⭐ 2026-11-26 — Séparation par niveau (retour promoteur) : si le niveau
+  //    secondaire est activé dans les paramètres de l'école, la grille du
+  //    personnel sépare Maternelle & Primaire / Secondaire — plus de mélange.
+  const secondaryEnabled = useSecondaryLevelEnabled();
+  const levelGroups = secondaryEnabled
+    ? splitByLevel(filteredStaff, staffLevelCategory)
+    : null;
 
   const selectClass =
     'rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 ' +
@@ -391,6 +405,34 @@ export function StaffWorkspace() {
           >
             <Plus className="h-4 w-4" /> Ajouter un collaborateur
           </button>
+        </div>
+      ) : levelGroups ? (
+        <div className="space-y-8">
+          {([
+            ['MATERNEL_PRIMAIRE', levelGroups.maternelPrimaire],
+            ['SECONDAIRE', levelGroups.secondaire],
+          ] as const).map(([category, members]) => (
+            <div key={category} className="space-y-3">
+              <LevelSectionHeader category={category} count={members.length} />
+              {members.length === 0 ? (
+                <p className="text-center text-xs text-slate-400 py-6 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                  Aucun personnel {category === 'SECONDAIRE' ? 'du secondaire' : 'maternelle & primaire'} pour ces filtres.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
+                  {members.map((member, idx) => (
+                    <StaffCard
+                      key={member.id}
+                      member={member}
+                      index={idx}
+                      onTerminate={handleTerminate}
+                      onReactivate={(id) => setReactivateId(id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">

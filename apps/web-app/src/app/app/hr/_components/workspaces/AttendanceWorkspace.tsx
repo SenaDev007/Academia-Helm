@@ -4,6 +4,12 @@ import { useState, useEffect } from 'react';
 import { Plus, Search, Calendar, UserCheck, UserX, Clock, ChevronRight, Check, X, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import {
+  LevelSectionHeader,
+  splitByLevel,
+  staffLevelCategory,
+  useSecondaryLevelEnabled,
+} from '../level-separation';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
@@ -180,6 +186,13 @@ export function AttendanceWorkspace() {
     `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // ⭐ 2026-11-26 — Séparation par niveau (retour promoteur) : la liste du
+  //    personnel (présence) sépare Maternelle & Primaire / Secondaire.
+  const secondaryEnabled = useSecondaryLevelEnabled();
+  const staffLevelGroups = secondaryEnabled
+    ? splitByLevel(filteredStaff, staffLevelCategory)
+    : null;
+
   // Calculate total validated overtime hours
   const totalValidatedOvertimeHours = overtimes
     .filter((o) => o.validated === true)
@@ -211,6 +224,51 @@ export function AttendanceWorkspace() {
               ))
             ) : filteredStaff.length === 0 ? (
               <p className="text-sm text-slate-500 text-center py-4">Aucun collaborateur trouvé</p>
+            ) : staffLevelGroups ? (
+              <div className="space-y-4">
+                {([
+                  ['MATERNEL_PRIMAIRE', staffLevelGroups.maternelPrimaire],
+                  ['SECONDAIRE', staffLevelGroups.secondaire],
+                ] as const).map(([category, members]) => (
+                  <div key={category} className="space-y-1">
+                    <LevelSectionHeader category={category} count={members.length} className="my-1" />
+                    {members.length === 0 ? (
+                      <p className="text-xs text-slate-400 text-center py-2">Aucun personnel {category === 'SECONDAIRE' ? 'du secondaire' : 'maternelle & primaire'}.</p>
+                    ) : (
+                      members.map((member) => (
+                        <button
+                          key={member.id}
+                          onClick={() => setSelectedStaff(member)}
+                          className={cn(
+                            'w-full flex items-center justify-between p-3 rounded-lg text-left transition-all',
+                            selectedStaff?.id === member.id
+                              ? 'bg-slate-50 border border-slate-300 shadow-sm'
+                              : 'hover:bg-slate-50 border border-transparent'
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            {member.photoUrl ? (
+                              <img src={member.photoUrl} alt={`${member.firstName} ${member.lastName}`} className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                            ) : (
+                              <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
+                                style={{ backgroundColor: PRIMARY + '15', color: PRIMARY }}
+                              >
+                                {member.firstName?.[0]}{member.lastName?.[0]}
+                              </div>
+                            )}
+                            <div>
+                              <p className="text-sm font-bold text-slate-900">{member.firstName} {member.lastName}</p>
+                              <p className="text-[10px] text-slate-400 uppercase tracking-wider">{member.position || 'Poste non renseigné'}</p>
+                            </div>
+                          </div>
+                          <ChevronRight className="h-4 w-4 text-slate-400" />
+                        </button>
+                      ))
+                    )}
+                  </div>
+                ))}
+              </div>
             ) : (
               filteredStaff.map((member) => (
                 <button

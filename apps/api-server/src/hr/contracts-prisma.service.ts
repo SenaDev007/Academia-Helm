@@ -340,6 +340,8 @@ export class ContractsPrismaService {
             position: true,
             roleType: true,
             photo: { select: { thumbnailUrl: true, originalUrl: true } },
+            // ⭐ 2026-11-26 — séparation RH par niveau (Contrats)
+            schoolLevel: { select: { name: true, code: true } },
           },
         },
         template: { select: { id: true, name: true } },

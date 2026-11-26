@@ -126,6 +126,8 @@ export function SchoolEmailTab() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  // ⭐ Modal de déconnexion personnalisé (fin du window.confirm générique).
+  const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
 
   // Tâche 183 (Phase 2) — Google OAuth2
@@ -162,9 +164,9 @@ export function SchoolEmailTab() {
         setUsage(data.usage);
         setGoogleAvailable(Boolean(data.googleOauthAvailable));
         // ⭐ 2026-11-26 — non configuré OU connexion SMTP en erreur : proposer
-        // Google d'abord. Les ports SMTP sortants (587/465) sont bloqués par
-        // l'hébergeur (Railway) : le mode mot de passe d'application échoue
-        // systématiquement en timeout — la reconnexion Google est la voie.
+        // Google d'abord. La connexion Google (API Gmail via HTTPS) est la voie
+        // la plus fiable ; le SMTP direct reste disponible (587/465, ou 2525
+        // pour les relais professionnels compatibles avec tout hébergement).
         setModeChoice(
           data.settings?.mode === "google_oauth"
             ? "google"
@@ -368,10 +370,9 @@ export function SchoolEmailTab() {
   };
 
   // ─── Déconnexion ───────────────────────────────────────────────────────
+  // ⭐ La confirmation passe par un MODAL personnalisé (confirmDisconnectOpen)
+  //    — fin du window.confirm générique du navigateur.
   const disconnect = async () => {
-    if (!window.confirm(
-      "Déconnecter l'e-mail de l'école ?\n\nTous les secrets (mot de passe d'application) seront supprimés et le statut repassera à « Non configuré ». Les e-mails des modules ne partiront plus tant qu'une nouvelle connexion ne sera pas configurée.",
-    )) return;
     setDisconnecting(true);
     try {
       const res = await fetch("/api/school-email/disconnect", {
@@ -390,6 +391,7 @@ export function SchoolEmailTab() {
       toast.error("Erreur réseau pendant la déconnexion.");
     } finally {
       setDisconnecting(false);
+      setConfirmDisconnectOpen(false);
     }
   };
 
@@ -428,7 +430,7 @@ export function SchoolEmailTab() {
         </div>
         {settings?.configured && (
           <button
-            onClick={disconnect}
+            onClick={() => setConfirmDisconnectOpen(true)}
             disabled={disconnecting}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 disabled:opacity-50"
           >
@@ -437,6 +439,68 @@ export function SchoolEmailTab() {
           </button>
         )}
       </div>
+
+      {/* ═══ Modal personnalisé de confirmation de déconnexion ═══════════ */}
+      {confirmDisconnectOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={() => !disconnecting && setConfirmDisconnectOpen(false)}
+        >
+          <div
+            className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 px-6 py-5 text-white" style={{ background: "#dc2626" }}>
+              <div className="rounded-lg bg-white/15 p-2"><LogOut className="h-5 w-5" /></div>
+              <div>
+                <h3 className="text-base font-bold">Déconnecter l&apos;e-mail de l&apos;école</h3>
+                <p className="text-xs text-white/70">Cette action interrompt l&apos;envoi des e-mails</p>
+              </div>
+            </div>
+            <div className="p-6 space-y-3 text-sm text-slate-700">
+              <p>
+                Le compte <strong>{settings?.fromEmail || "de l'école"}</strong>{" "}
+                ({settings?.mode === "google_oauth" ? "connexion Google" : "connexion SMTP"}) sera déconnecté
+                et la configuration enregistrée sera supprimée.
+              </p>
+              <ul className="space-y-2 rounded-xl bg-slate-50 border border-slate-100 p-3 text-xs text-slate-600">
+                <li className="flex items-start gap-2">
+                  <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                  Les e-mails des modules (bulletins, reçus, relances, convocations) ne partiront plus.
+                </li>
+                <li className="flex items-start gap-2">
+                  <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                  {settings?.mode === "google_oauth"
+                    ? "L'autorisation Google pourra être rétablie à tout moment via « Connecter Google »."
+                    : "Le mot de passe d'application devra être ressaisi pour réactiver l'envoi."}
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                  Aucune donnée de l&apos;école (élèves, finances, RH…) n&apos;est affectée.
+                </li>
+              </ul>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
+              <button
+                onClick={() => setConfirmDisconnectOpen(false)}
+                disabled={disconnecting}
+                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 transition"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={disconnect}
+                disabled={disconnecting}
+                className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition"
+                style={{ backgroundColor: "#dc2626" }}
+              >
+                {disconnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                Déconnecter
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══ Alerte plafond : messages reportés ══════════════════════════ */}
       {(usage?.deferredCount ?? 0) > 0 && usage && (
@@ -544,7 +608,7 @@ export function SchoolEmailTab() {
             <p className="text-xs text-gray-600 mt-1">
               {settings?.mode === "google_oauth"
                 ? "Revenir au SMTP — le mot de passe d'application devra être ressaisi (il est remplacé par le jeton Google)."
-                : "Fonctionne avec tout compte Gmail muni de la validation en deux étapes. ⚠️ Les ports SMTP sortants (587/465) sont bloqués par l'hébergeur de l'application : ce mode échoue en timeout — privilégiez la connexion Google."}
+                : "Fonctionne avec tout compte Gmail muni de la validation en deux étapes, ou avec un serveur SMTP professionnel (ports 587, 465 ou 2525). La connexion Google reste la voie la plus simple et la plus fiable."}
             </p>
           </button>
         </div>
@@ -570,10 +634,9 @@ export function SchoolEmailTab() {
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 flex items-start gap-2">
             <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5" />
             <div>
-              Vous serez redirigé vers Google pour autoriser l'envoi d'e-mails depuis le compte de l'école
-              (portée <strong>gmail.send</strong> uniquement — aucun accès en lecture). Aucun mot de passe
-              n'est stocké : un jeton chiffré AES-256-GCM est conservé et peut être révoqué à tout moment
-              depuis le compte Google ou le bouton « Déconnecter ».
+              Vous serez redirigé vers Google pour autoriser l&apos;envoi des e-mails de l&apos;école
+              depuis son compte Gmail. L&apos;autorisation peut être révoquée à tout moment, depuis
+              votre compte Google ou avec le bouton « Déconnecter ».
             </div>
           </div>
         )}
@@ -644,6 +707,7 @@ export function SchoolEmailTab() {
                   >
                     <option value={587}>587 (STARTTLS — défaut)</option>
                     <option value={465}>465 (SSL)</option>
+                    <option value={2525}>2525 (relais SMTP professionnel)</option>
                   </select>
                 </div>
               </div>
@@ -674,7 +738,7 @@ export function SchoolEmailTab() {
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Chiffré (AES-256-GCM) dès l&apos;enregistrement — jamais renvoyé au navigateur ensuite.
+                  Protégé côté serveur — jamais réaffiché après l&apos;enregistrement.
                 </p>
               </div>
             </>

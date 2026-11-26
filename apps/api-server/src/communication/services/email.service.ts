@@ -590,6 +590,205 @@ export class EmailService {
     return { subject, html, text };
   }
 
+  /**
+   * ⭐ 2026-11-26 — EMAIL DE MISE À NIVEAU (upgrade) — aligné sur la NOUVELLE
+   * grille de tarification et brandé Academia Helm.
+   *
+   * Envoyé quand l'effectif réel d'une école dépasse la capacité de son plan
+   * (moteur : StudentCountVerifierService). Gabarit professionnel structuré :
+   * logo + en-tête dégradé, bloc « Votre situation », recommandation chiffrée,
+   * délai de grâce, CTA, grille tarifaire complète (plan recommandé mis en
+   * avant) et pied de page — mêmes codes visuels que l'e-mail de rappel
+   * d'expiration (formatBillingReminderEmail).
+   */
+  formatPlanUpgradeEmail(data: {
+    schoolName: string;
+    currentPlanName: string;
+    currentPlanCode?: string | null;
+    currentPlanRange?: string | null;
+    recommendedPlanName: string;
+    recommendedPlanCode?: string | null;
+    recommendedPlanRange?: string | null;
+    recommendedYearlyFee?: number | null;
+    actualStudentCount: number;
+    currentPlanLimit: number | null;
+    overBy: number;
+    graceDays: number;
+    upgradeUrl: string;
+    plansGrid?: Array<{
+      code: string;
+      name: string;
+      studentMin: number;
+      studentMax: number | null;
+      initialFee: number;
+      yearlyAmount: number | null;
+    }> | null;
+  }): { subject: string; html: string; text: string } {
+    const fmt = (n: number | null | undefined) => this.fmtFCFA(n);
+    const grid = (data.plansGrid || []).filter((p) => p && p.name);
+    const currentCode = data.currentPlanCode ?? null;
+    const recommendedCode = data.recommendedPlanCode ?? null;
+    const recommendedFee = data.recommendedYearlyFee ?? null;
+
+    const subject = `[Action requise] Mise à niveau de votre plan Academia Helm — ${data.schoolName}`;
+
+    const logoUrl = this.configService.get<string>('APP_PUBLIC_URL', 'https://academiahelm.com') + '/images/logo-academia-helm-email.png';
+
+    // ── Bloc « Votre situation » ──
+    const situationRows: string[] = [
+      `<tr><td style="padding:4px 0;color:#475569;font-size:14px;">Effectif actuel de l'école</td><td style="padding:4px 0;text-align:right;color:#0b2f73;font-size:14px;font-weight:700;">${data.actualStudentCount} élèves</td></tr>`,
+      `<tr><td style="padding:4px 0;color:#475569;font-size:14px;">Plan souscrit</td><td style="padding:4px 0;text-align:right;color:#0b2f73;font-size:14px;font-weight:600;">${data.currentPlanName}${data.currentPlanRange ? ` (${data.currentPlanRange})` : ''}</td></tr>`,
+    ];
+    if (data.currentPlanLimit != null) {
+      situationRows.push(
+        `<tr><td style="padding:4px 0;color:#475569;font-size:14px;">Capacité du plan</td><td style="padding:4px 0;text-align:right;color:#0b2f73;font-size:14px;font-weight:600;">${data.currentPlanLimit} élèves max</td></tr>`,
+      );
+    }
+    if (data.overBy > 0) {
+      situationRows.push(
+        `<tr><td style="padding:4px 0;color:#b91c1c;font-size:14px;font-weight:600;">Dépassement</td><td style="padding:4px 0;text-align:right;color:#b91c1c;font-size:14px;font-weight:700;">+${data.overBy} élève${data.overBy > 1 ? 's' : ''}</td></tr>`,
+      );
+    }
+    const situationBlock = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;border-radius:8px;padding:14px 18px;margin:16px 0;border:1px solid #e2e8f0;">
+      <tr><td colspan="2" style="padding:0 0 8px 0;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Votre situation</td></tr>
+      ${situationRows.join('')}
+    </table>`;
+
+    // ── Bloc recommandation ──
+    const recommendLines: string[] = [
+      `Plan recommandé pour votre effectif : <strong>${data.recommendedPlanName}</strong>${data.recommendedPlanRange ? ` (${data.recommendedPlanRange})` : ''}`,
+    ];
+    if (recommendedFee != null) {
+      recommendLines.push(`Frais annuels du nouveau plan : <strong>${fmt(recommendedFee)} FCFA/an</strong> — seuls les frais annuels sont dus, les frais d'activation ayant déjà été réglés à la signature.`);
+    }
+    const recommendBlock = `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-left:4px solid #1d4fa5;border-radius:8px;padding:16px 20px;margin:16px 0;">
+      <p style="margin:0 0 10px 0;font-size:14px;color:#1e3a8a;line-height:1.6;">Votre effectif a évolué — le plan adapté à votre école est désormais :</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 10px 0;">${recommendLines.map((l) => `<tr><td style="padding:3px 0;font-size:14px;color:#1e40af;line-height:1.6;">• ${l}</td></tr>`).join('')}</table>
+    </div>`;
+
+    // ── Bloc délai de grâce ──
+    const graceBlock = `<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:14px 18px;margin:16px 0;">
+      <p style="margin:0;font-size:14px;color:#92400e;line-height:1.6;"><strong>Vous disposez de ${data.graceDays} jours</strong> pour effectuer cette mise à niveau. Passé ce délai, l'ajout de nouveaux élèves sera suspendu — l'accès de vos équipes et vos données restent intégralement conservés.</p>
+    </div>`;
+
+    // ── Grille tarifaire (plan recommandé mis en avant) ──
+    const gridRows = grid
+      .map((p) => {
+        const isRecommended = recommendedCode ? p.code === recommendedCode : p.name === data.recommendedPlanName;
+        const isCurrent = currentCode ? p.code === currentCode : p.name === data.currentPlanName;
+        const bg = isRecommended ? 'background:#eff6ff;' : '';
+        const bold = isRecommended ? 'font-weight:700;color:#1e3a8a;' : isCurrent ? 'color:#64748b;' : 'color:#334155;';
+        const badge = isRecommended
+          ? ' <span style="background:#1d4fa5;color:#ffffff;border-radius:10px;padding:1px 8px;font-size:10.5px;font-weight:600;">Recommandé</span>'
+          : isCurrent
+            ? ' <span style="color:#94a3b8;font-size:11px;">(plan actuel)</span>'
+            : '';
+        return `<tr style="${bg}">
+          <td style="padding:8px 10px;font-size:13.5px;${bold}">${p.name}${badge}</td>
+          <td style="padding:8px 10px;font-size:13.5px;text-align:center;${bold}">${this.fmtStudentRange(p.studentMin, p.studentMax)}</td>
+          <td style="padding:8px 10px;font-size:13.5px;text-align:right;${bold}">${fmt(p.initialFee)}</td>
+          <td style="padding:8px 10px;font-size:13.5px;text-align:right;${bold}">${fmt(p.yearlyAmount)} / an</td>
+        </tr>`;
+      })
+      .join('');
+    const gridBlock = gridRows
+      ? `<h3 style="font-size:15px;color:#0b2f73;margin:24px 0 8px 0;">Grille tarifaire — plans Academia Helm</h3>
+        <p style="margin:0 0 10px 0;font-size:13px;color:#64748b;line-height:1.6;">Tous les plans incluent l'intégralité des 21 modules métier + 6 modules complémentaires — aucune restriction. Montants en FCFA, toutes taxes comprises.</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+          <thead>
+            <tr style="background:#0b2f73;">
+              <th style="padding:9px 10px;font-size:12.5px;color:#ffffff;text-align:left;font-weight:600;">Plan</th>
+              <th style="padding:9px 10px;font-size:12.5px;color:#ffffff;text-align:center;font-weight:600;">Capacité (élèves)</th>
+              <th style="padding:9px 10px;font-size:12.5px;color:#ffffff;text-align:right;font-weight:600;">Activation (FCFA)</th>
+              <th style="padding:9px 10px;font-size:12.5px;color:#ffffff;text-align:right;font-weight:600;">Frais annuels (FCFA)</th>
+            </tr>
+          </thead>
+          <tbody>${gridRows}</tbody>
+        </table>`
+      : '';
+
+    const html = `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { margin: 0; padding: 0; background: #f8fafc; font-family: 'Segoe UI', Arial, sans-serif; }
+    .container { max-width: 600px; margin: 0 auto; }
+    .header { background: linear-gradient(135deg, #0b2f73, #1d4fa5); padding: 28px 24px; text-align: center; border-radius: 12px 12px 0 0; }
+    .header img { max-width: 48px; margin-bottom: 8px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 700; }
+    .header p { color: #f5b335; margin: 4px 0 0; font-size: 12px; font-weight: 500; }
+    .content { background: #ffffff; padding: 36px 32px; border: 1px solid #e2e8f0; border-top: none; }
+    .content h2 { font-size: 18px; color: #0b2f73; margin: 0 0 16px; }
+    .content p { font-size: 14px; color: #475569; line-height: 1.7; margin: 0 0 12px; }
+    .button { display: inline-block; background: linear-gradient(135deg, #0b2f73, #1d4fa5); color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 8px; margin-top: 16px; font-weight: 600; font-size: 14px; }
+    .footer { background: #f8fafc; padding: 20px 24px; text-align: center; border-radius: 0 0 12px 12px; border: 1px solid #e2e8f0; border-top: none; }
+    .footer p { font-size: 12px; color: #94a3b8; margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <img src="${logoUrl}" alt="Academia Helm" />
+      <h1>Academia Helm</h1>
+      <p>Plateforme SaaS de gestion scolaire</p>
+    </div>
+    <div class="content">
+      <h2>Mise à niveau de votre abonnement</h2>
+      <p>Bonjour,</p>
+      <p>L'effectif de <strong>${data.schoolName}</strong> a dépassé la capacité du plan souscrit. Pour continuer à inscrire vos élèves en toute sérénité, une mise à niveau est nécessaire.</p>
+      ${situationBlock}
+      ${recommendBlock}
+      ${graceBlock}
+      <a href="${data.upgradeUrl}" class="button">Mettre à niveau maintenant</a>
+      ${gridBlock}
+      <p style="margin-top: 24px;">Si vous avez des questions sur les plans ou le règlement, notre équipe reste à votre disposition.</p>
+      <p>Cordialement,<br>L'équipe Academia Helm</p>
+    </div>
+    <div class="footer">
+      <p>Academia Helm — Solution de gestion scolaire</p>
+      <p>Cet email a été envoyé automatiquement. Merci de ne pas y répondre.</p>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    // ── Version texte ──
+    const textLines: string[] = [
+      'Academia Helm - Mise à niveau de votre abonnement',
+      '',
+      'Bonjour,',
+      '',
+      `L'effectif de ${data.schoolName} (${data.actualStudentCount} élèves) dépasse la capacité de votre plan ${data.currentPlanName}${data.currentPlanLimit != null ? ` (${data.currentPlanLimit} élèves max)` : ''}.`,
+      '',
+      `Plan recommandé : ${data.recommendedPlanName}${data.recommendedPlanRange ? ` (${data.recommendedPlanRange})` : ''}${recommendedFee != null ? ` — frais annuels ${fmt(recommendedFee)} FCFA/an` : ''}.`,
+      '',
+      `Vous disposez de ${data.graceDays} jours pour effectuer cette mise à niveau. Passé ce délai, l'ajout de nouveaux élèves sera suspendu (accès et données conservés).`,
+      '',
+    ];
+    if (grid.length) {
+      textLines.push('Grille tarifaire — plans Academia Helm :');
+      grid.forEach((p) => {
+        const isRecommended = recommendedCode ? p.code === recommendedCode : p.name === data.recommendedPlanName;
+        const isCurrent = currentCode ? p.code === currentCode : p.name === data.currentPlanName;
+        textLines.push(`- ${p.name}${isRecommended ? ' (recommandé)' : isCurrent ? ' (plan actuel)' : ''} : ${this.fmtStudentRange(p.studentMin, p.studentMax)} élèves — activation ${fmt(p.initialFee)} FCFA, frais annuels ${fmt(p.yearlyAmount)} FCFA/an`);
+      });
+      textLines.push('');
+    }
+    textLines.push('Pour mettre à niveau :');
+    textLines.push(data.upgradeUrl);
+    textLines.push('');
+    textLines.push('Cordialement,');
+    textLines.push("L'équipe Academia Helm");
+
+    const text = textLines.join('\n').trim();
+
+    return { subject, html, text };
+  }
+
   // ============================================================================
   // MÉTHODE sendCategorized() — Wrapper avec traçabilité
   // ============================================================================

@@ -6,6 +6,12 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 import { formatCurrency } from '@/lib/utils';
+import {
+  LevelSectionHeader,
+  splitByLevel,
+  staffLevelCategory,
+  useSecondaryLevelEnabled,
+} from '../level-separation';
 
 export function StaffListPDF() {
   const { tenant } = useModuleContext();
@@ -29,7 +35,21 @@ export function StaffListPDF() {
   const departments = Array.from(new Set(staff.map(s => s.department || 'Non classé').filter(Boolean)));
   const filtered = departmentFilter === 'ALL' ? staff : staff.filter(s => (s.department || 'Non classé') === departmentFilter);
 
-  // Group by department
+  // ⭐ 2026-11-26 — Séparation par niveau (retour promoteur) : si le niveau
+  //    secondaire est activé, la liste sépare Maternelle & Primaire /
+  //    Secondaire — à l'écran ET dans le PDF généré.
+  const secondaryEnabled = useSecondaryLevelEnabled();
+  const levelGroups = secondaryEnabled
+    ? splitByLevel(filtered, staffLevelCategory)
+    : null;
+
+  /** Départements d'un sous-ensemble de personnel (ordre conservé). */
+  const departmentsOf = (members: any[]): Array<[string, any[]]> => {
+    const depts = Array.from(new Set(members.map(s => s.department || 'Non classé').filter(Boolean)));
+    return depts.map(dept => [dept, members.filter(s => (s.department || 'Non classé') === dept)] as [string, any[]]);
+  };
+
+  // Group by department (vue sans séparation — écoles non mixtes)
   const grouped = departments.reduce<Record<string, any[]>>((acc, dept) => {
     acc[dept] = staff.filter(s => (s.department || 'Non classé') === dept);
     return acc;
@@ -40,19 +60,34 @@ export function StaffListPDF() {
     if (!printWindow) return;
 
     const N = '#0b2f73', B = '#1d4fa5', G = '#f5b335';
-    const rows = (departmentFilter === 'ALL' ? Object.entries(grouped) : [[departmentFilter, filtered]])
-      .map(([dept, members]) => `
-        <tr><td colspan="6" style="background:${N};color:#fff;padding:6px 8px;font-weight:bold;font-size:11px;">${dept} (${members.length})</td></tr>
-        ${members.map((s, i) => `
+    // ⭐ Sections PDF : bandeau de niveau (maternelle & primaire / secondaire)
+    //    avant les départements de chaque groupe — mêmes sections qu'à l'écran.
+    const memberRows = (members: any[], startIdx = 0) =>
+      members.map((s, i) => `
         <tr style="background:${i % 2 === 0 ? '#fff' : '#f8fafc'}">
-          <td style="padding:4px 8px;text-align:center">${i + 1}</td>
+          <td style="padding:4px 8px;text-align:center">${startIdx + i + 1}</td>
           <td style="padding:4px 8px;font-weight:bold">${s.firstName || ''} ${s.lastName || ''}</td>
           <td style="padding:4px 8px">${s.position || '—'}</td>
           <td style="padding:4px 8px;font-family:monospace">${s.tenantMatricule || s.employeeNumber || '—'}</td>
           <td style="padding:4px 8px">${s.phone || '—'}</td>
           <td style="padding:4px 8px">${s.hireDate ? new Date(s.hireDate).toLocaleDateString('fr-FR') : '—'}</td>
-        </tr>`).join('')}
-      `).join('');
+        </tr>`).join('');
+    const deptRows = (members: any[], startIdx = 0) =>
+      departmentsOf(members).map(([dept, deptMembers]) => `
+        <tr><td colspan="6" style="background:${N};color:#fff;padding:6px 8px;font-weight:bold;font-size:11px;">${dept} (${deptMembers.length})</td></tr>
+        ${memberRows(deptMembers, startIdx)}`
+      ).join('');
+    const levelSection = (label: string, members: any[]) => `
+      <tr><td colspan="6" style="background:${G};color:#3a2c00;padding:7px 8px;font-weight:bold;font-size:12px;border-left:4px solid ${N}">PERSONNEL ${label} (${members.length})</td></tr>
+      ${deptRows(members)}`;
+    const rows = levelGroups
+      ? levelSection('MATERNELLE & PRIMAIRE', levelGroups.maternelPrimaire) +
+        levelSection('DU SECONDAIRE', levelGroups.secondaire)
+      : (departmentFilter === 'ALL' ? Object.entries(grouped) : [[departmentFilter, filtered]])
+        .map(([dept, members]) => `
+        <tr><td colspan="6" style="background:${N};color:#fff;padding:6px 8px;font-weight:bold;font-size:11px;">${dept} (${(members as any[]).length})</td></tr>
+        ${memberRows(members as any[])}`
+        ).join('');
 
     printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Liste du personnel</title>
 <style>
@@ -111,42 +146,69 @@ th{background:${N};color:#fff}.footer{margin-top:20px;text-align:center;font-siz
         </div>
       </div>
 
-      {/* Tableau par département */}
+      {/* Tableau — par niveau (école mixte) ou par département */}
       <div className="space-y-4">
-        {(departmentFilter === 'ALL' ? Object.entries(grouped) : [[departmentFilter, filtered]]).map(([dept, members]) => (
-          <div key={dept} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
-              <p className="text-xs font-bold text-slate-700">{dept} <span className="text-slate-400">({members.length})</span></p>
+        {levelGroups ? (
+          ([
+            ['MATERNEL_PRIMAIRE', levelGroups.maternelPrimaire],
+            ['SECONDAIRE', levelGroups.secondaire],
+          ] as const).map(([category, members]) => (
+            <div key={category} className="space-y-3">
+              <LevelSectionHeader category={category} count={members.length} />
+              {members.length === 0 ? (
+                <p className="text-center text-xs text-slate-400 py-6 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                  Aucun personnel {category === 'SECONDAIRE' ? 'du secondaire' : 'maternelle & primaire'}.
+                </p>
+              ) : (
+                departmentsOf(members).map(([dept, deptMembers]) => (
+                  <StaffDeptTable key={`${category}-${dept}`} dept={dept} members={deptMembers} />
+                ))
+              )}
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-[#1A2BA6] text-white">
-                  <tr>
-                    <th className="px-3 py-2 text-left whitespace-nowrap">N°</th>
-                    <th className="px-3 py-2 text-left whitespace-nowrap">Nom et Prénoms</th>
-                    <th className="px-3 py-2 text-left whitespace-nowrap">Fonction</th>
-                    <th className="px-3 py-2 text-left whitespace-nowrap">Matricule</th>
-                    <th className="px-3 py-2 text-left whitespace-nowrap">Téléphone</th>
-                    <th className="px-3 py-2 text-left whitespace-nowrap">Embauche</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {members.map((s, i) => (
-                    <tr key={s.id} className={`border-b border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
-                      <td className="px-3 py-2 text-slate-400">{i + 1}</td>
-                      <td className="px-3 py-2 font-bold text-slate-900 whitespace-nowrap">{s.firstName} {s.lastName}</td>
-                      <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{s.position || '—'}</td>
-                      <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{s.tenantMatricule || s.employeeNumber || '—'}</td>
-                      <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{s.phone || '—'}</td>
-                      <td className="px-3 py-2 text-slate-600 text-xs whitespace-nowrap">{s.hireDate ? new Date(s.hireDate).toLocaleDateString('fr-FR') : '—'}</td>
-                    </tr>
-                  ))}
-                  {members.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-slate-400">Aucun personnel dans ce département</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))}
+          ))
+        ) : (
+          (departmentFilter === 'ALL' ? Object.entries(grouped) : [[departmentFilter, filtered]]).map(([dept, members]) => (
+            <StaffDeptTable key={String(dept)} dept={String(dept)} members={members as any[]} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Tableau d'un département (en-tête bleu + lignes du personnel). */
+function StaffDeptTable({ dept, members }: { dept: string; members: any[] }) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
+        <p className="text-xs font-bold text-slate-700">{dept} <span className="text-slate-400">({members.length})</span></p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-[#1A2BA6] text-white">
+            <tr>
+              <th className="px-3 py-2 text-left whitespace-nowrap">N°</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">Nom et Prénoms</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">Fonction</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">Matricule</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">Téléphone</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">Embauche</th>
+            </tr>
+          </thead>
+          <tbody>
+            {members.map((s, i) => (
+              <tr key={s.id} className={`border-b border-slate-100 ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
+                <td className="px-3 py-2 text-slate-400">{i + 1}</td>
+                <td className="px-3 py-2 font-bold text-slate-900 whitespace-nowrap">{s.firstName} {s.lastName}</td>
+                <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{s.position || '—'}</td>
+                <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{s.tenantMatricule || s.employeeNumber || '—'}</td>
+                <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{s.phone || '—'}</td>
+                <td className="px-3 py-2 text-slate-600 text-xs whitespace-nowrap">{s.hireDate ? new Date(s.hireDate).toLocaleDateString('fr-FR') : '—'}</td>
+              </tr>
+            ))}
+            {members.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-slate-400">Aucun personnel dans ce département</td></tr>}
+          </tbody>
+        </table>
       </div>
     </div>
   );

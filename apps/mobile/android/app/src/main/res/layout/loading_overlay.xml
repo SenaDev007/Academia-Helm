@@ -10,12 +10,16 @@
      visibles : dessinées par SystemUI au-dessus des fenêtres de l'app.
      ════════════════════════════════════════════════════════════════════ -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/loading_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/colorPrimary">
 
-    <!-- Logo Academia Helm (même drawable que la splash, couvre tout le fond). -->
+    <!-- Logo Academia Helm (même drawable que la splash, couvre tout le fond).
+         Rébrandé au runtime par MainActivity si une école est connectée
+         (SchoolBrandingStore → logo école centré sur fond couleur école). -->
     <ImageView
+        android:id="@+id/loading_logo"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:scaleType="centerCrop"

@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ════════════════════════════════════════════════════════════════════
+     WIDGET « BRANDING DE L'ÉCOLE » — RemoteViews (4×2, redimensionnable)
+
+     Affiche le logo + nom de l'école connectée (ou l'identité Academia
+     Helm tant qu'aucune école n'est sélectionnée). Le fond est teinté au
+     runtime (setColorStateList → setBackgroundTintList) avec la couleur
+     principale de l'école, ou reste navy #0B2F73 par défaut.
+     Rempli par SchoolWidgetProvider.buildRemoteViews() :
+       - widget_school_logo    : bitmap téléchargé (coins arrondis) ou
+                                 icône Academia Helm par défaut ;
+       - widget_school_name    : nom de l'école ;
+       - widget_school_tagline : « Portail Academia Helm » / « Portails scolaires ».
+     Contraintes RemoteViews : LinearLayout/FrameLayout/TextView/ImageView
+     uniquement — pas de vues custom.
+     ════════════════════════════════════════════════════════════════════ -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/school_widget_bg">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="14dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="10dp">
+
+        <ImageView
+            android:id="@+id/widget_school_logo"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:scaleType="fitCenter"
+            android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_school_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/school_widget_default_name"
+                android:textColor="#FFFFFFFF"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:maxLines="2"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/widget_school_tagline"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="@string/school_widget_default_tagline"
+                android:textColor="#B3FFFFFF"
+                android:textSize="12sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

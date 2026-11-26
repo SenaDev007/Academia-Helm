@@ -4,4 +4,10 @@
     <string name="title_activity_main">Academia Helm</string>
     <string name="package_name">com.yehiortech.academiahelm</string>
     <string name="custom_url_scheme">com.yehiortech.academiahelm</string>
+
+    <!-- Widget « Branding de l\'école » (SchoolWidgetProvider) -->
+    <string name="school_widget_name">Branding de l\'école</string>
+    <string name="school_widget_description">Affiche le logo et le nom de votre école après connexion</string>
+    <string name="school_widget_default_name">Academia Helm</string>
+    <string name="school_widget_default_tagline">Portails scolaires</string>
 </resources>

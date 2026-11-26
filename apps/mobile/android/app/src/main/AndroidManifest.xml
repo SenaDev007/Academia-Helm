@@ -44,6 +44,25 @@
 
         </activity>
 
+        <!-- ══ Widget « Branding de l'école » ════════════════════════════
+             Affiche sur l'écran d'accueil le logo + nom de l'école
+             connectée (téléchargés au runtime via SchoolBrandingPlugin
+             après la sélection/login). exported=false est la forme
+             officielle actuelle : seul le système (host de widgets)
+             délivre les broadcasts APPWIDGET_UPDATE. -->
+        <receiver
+            android:name=".SchoolWidgetProvider"
+            android:exported="false">
+
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/school_widget_info" />
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

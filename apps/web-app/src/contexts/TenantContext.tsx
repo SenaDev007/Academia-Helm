@@ -20,6 +20,11 @@ import {
   tryRefreshAccessToken,
   hasLocalSessionHints,
 } from '@/lib/auth/client-access-token';
+import {
+  applyTenantStatusBarColor,
+  clearSchoolBranding,
+  syncSchoolBranding,
+} from '@/lib/mobile/school-branding';
 
 export interface AppContext {
   user: {
@@ -235,6 +240,8 @@ export function TenantContextProvider({ children }: { children: ReactNode }) {
     setContext(null);
     clearClientSessionSync();
     offlineCacheService.clearContextCache();
+    // ⭐ Native : widget + écran de chargement → identité Academia Helm.
+    void clearSchoolBranding();
     router.push('/auth/login');
   };
 
@@ -242,6 +249,17 @@ export function TenantContextProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     loadContext();
   }, []);
+
+  // ⭐ Pont natif (coquille Capacitor — apps/mobile) : dès que le contexte
+  //    tenant est connu (bootstrap ou cache offline), l'école connectée est
+  //    propagée au natif — widget « Branding de l'école » + barre de statut.
+  //    No-op silencieux dans le navigateur (feature-detect Capacitor).
+  useEffect(() => {
+    if (context) {
+      void syncSchoolBranding(context);
+      void applyTenantStatusBarColor(context);
+    }
+  }, [context]);
 
   return (
     <TenantContext.Provider

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ════════════════════════════════════════════════════════════════════
+     MÉTADONNÉES DU WIDGET « BRANDING DE L'ÉCOLE »
+     - 4×2 cellules (targetCellWidth/Height, API 31+ ; fallback
+       minWidth/minHeight en dp pour les versions antérieures).
+     - updatePeriodMillis : plafond système 30 min → re-synchronisation du
+       logo si l'école a changé son logo côté serveur. La mise à jour
+       IMMÉDIATE au login passe par SchoolBrandingPlugin (pas par ce timer).
+     - resizeMode : l'utilisateur peut étirer horizontalement (bandeau) ou
+       verticalement ; le layout RemoteViews s'adapte (gravity + weight).
+     ════════════════════════════════════════════════════════════════════ -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/school_widget"
+    android:previewLayout="@layout/school_widget"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/school_widget_description" />

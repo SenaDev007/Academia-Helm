@@ -48,7 +48,7 @@ import {
   hslToHex,
   type ThemeMode,
 } from '@/lib/themes/themes.config';
-import { resolveTenantColors, type TenantColors } from '@/lib/tenant/use-tenant-colors';
+import { resolveTenantColors, type TenantColors } from '@/lib/tenant/tenant-colors-core';
 
 export type { TenantColors };
 
@@ -147,6 +147,10 @@ export async function resolveAppBrandColors(
 }
 
 // Référence pour détecter le fallback HELM_DEFAULT de resolveTenantColors.
+// ⭐ 2026-11-26 — fix build Vercel : resolveTenantColors est importée depuis
+// tenant-colors-core (module PARTAGÉ sans 'use client') et non plus depuis
+// use-tenant-colors — Next.js 16 interdit d'appeler une fonction client
+// depuis un module serveur évalué au build (« Collecting page data »).
 const HELM_DEFAULT_COMPARE = resolveTenantColors(null);
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -5,22 +5,35 @@
  * ID CARD VISUAL — Carte scolaire premium (recto + verso)
  * ============================================================================
  *
- * Design hybride :
- *   - EN-TÊTE RECTO : style ANCIEN conservé (République du Bénin + drapeau +
- *     ministère + nom école + slogan + logo). La bande est CONTINUE (pas de
- *     clip-path) pour que toutes les informations restent lisibles.
- *   - EN-TÊTE VERSO : bande continue (pas de clip-path) avec "CONDITIONS
- *     D'UTILISATION" + dates émise/expire clairement visibles.
- *   - CORPS + FOOTER : design Claude AI (photo + 6 champs, footer gradient
- *     avec clip-path diagonal + signature Directeur, verso avec conditions
- *     + bloc contact + QR code).
+ * ⭐ 2026-11-27 (retour promoteur) — refonte visuelle :
+ *   - PALETTE DYNAMIQUE : la carte suit la palette de marque de l'école
+ *     (thème officiel > customColors CMS > logoPalette AUTO du logo) via les
+ *     variables CSS --brand-* injectées par le layout /app — exactement la
+ *     même chaîne que le site institutionnel. Contraste GARANTI : bandes
+ *     assombries jusqu'à luminance ≤ 0,45 / 0,58 (texte blanc toujours
+ *     lisible, jamais de texte pâle sur fond pâle). Bascule manuelle
+ *     possible via Paramètres Design (cardUseBrandPalette=false).
+ *   - RECTO : signature manuscrite RÉELLE du directeur (remplace le mot
+ *     « Signature ») + CACHET appliqué dynamiquement (déborde sur la zone
+ *     blanche) + nom du directeur dans la bande ; nom d'école trop long →
+ *     SIGLE ; labels compactés (place récupérée pour les noms d'élèves
+ *     longs, fin des «... ») ; numéro d'URGENCE en rouge ; adresse et
+ *     téléphone bien séparés dans la bande.
+ *   - VERSO : N° carte intégré au header (au-dessus de « CONDITIONS
+ *     D'UTILISATION ») ; interlignes serrés ; ligne « Direction » avec le
+ *     nom du directeur (différent selon le niveau : secondaire ≠
+ *     maternel/primaire).
  *
- * ⚠️ La corde (lanyard) au-dessus de la carte a été SUPPRIMÉE. Seul le point
- *    d'attache (clip circulaire) est conservé.
+ * Design hybride conservé :
+ *   - EN-TÊTE RECTO : République du Bénin + drapeau + ministère + école +
+ *     slogan + logo. Bande CONTINUE (pas de clip-path).
+ *   - EN-TÊTE VERSO : bande continue avec N° carte + conditions + (maternelle)
+ *     heures de sortie.
+ *   - CORPS + FOOTER : photo + champs, footer gradient avec clip-path
+ *     diagonal + zone signature/cachet, verso conditions + contacts + QR.
  *
- * Toutes les dimensions sont en `cqw` (container query width) ce qui permet
- * à la carte de scaling proportionnellement avec la largeur du conteneur.
- * Format naturel : 400 × 250 px (ratio 1.6 ≈ CR80 85.6 × 53.98 mm).
+ * Toutes les dimensions sont en `cqw` (container query width) — la carte
+ * scale proportionnellement. Format naturel : 400 × 250 px (CR80).
  * ============================================================================
  */
 
@@ -85,7 +98,12 @@ export interface TenantInfo {
   cardShowEmergencyCall?: boolean;
   cardShowSchoolAddress?: boolean;
   cardConditionsText?: string;
-  cardFooterText?: string;
+  // ⭐ 2026-11-27 — palette de marque automatique + direction
+  cardUseBrandPalette?: boolean;
+  schoolAcronym?: string;
+  directorName?: string | null;
+  directorSignatureUrl?: string | null;
+  stampUrl?: string | null;
   // ⚠️ Champs conservés pour compatibilité avec CardDesignTab,
   //    mais non utilisés par ce design hybride.
   cardShowBarcode?: boolean;
@@ -104,12 +122,73 @@ function formatDate(d?: string) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// PALETTE DE MARQUE — lecture des variables CSS --brand-* (chaîne identique
+// au site institutionnel) + contraste garanti (miroir de app-brand-theme.ts)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function normalizeHex(hex: string | null | undefined): string | null {
+  if (!hex || typeof hex !== 'string') return null;
+  let h = hex.trim().replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  return /^[0-9a-fA-F]{6}$/.test(h) ? `#${h.toLowerCase()}` : null;
+}
+
+function parseHex(hex: string): [number, number, number] {
+  const n = normalizeHex(hex) || '#000000';
+  return [
+    parseInt(n.substring(1, 3), 16) || 0,
+    parseInt(n.substring(3, 5), 16) || 0,
+    parseInt(n.substring(5, 7), 16) || 0,
+  ];
+}
+
+function clamp255(v: number): number {
+  return Math.max(0, Math.min(255, Math.round(v)));
+}
+
+function hexOf(r: number, g: number, b: number): string {
+  return '#' + [r, g, b].map(x => clamp255(x).toString(16).padStart(2, '0')).join('');
+}
+
+function luminance(r: number, g: number, b: number): number {
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+/** Assombrit jusqu'à luminance simple ≤ max (garde la teinte). */
+function darkenUntil(hex: string, maxLum: number): string {
+  let [r, g, b] = parseHex(hex);
+  let guard = 0;
+  while (luminance(r, g, b) > maxLum && guard < 24) {
+    r *= 0.92; g *= 0.92; b *= 0.92;
+    guard++;
+  }
+  return hexOf(r, g, b);
+}
+
+function lighten(hex: string, amount: number): string {
+  const [r, g, b] = parseHex(hex);
+  return hexOf(r + amount, g + amount, b + amount);
+}
+
+/**
+ * Lit --brand-primary / --brand-secondary sur :root (injectées par le layout
+ * /app — palette de l'école). Retourne null si absentes (thème Helm défaut).
+ */
+function readBrandPalette(): { primary: string; secondary: string } | null {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return null;
+  try {
+    const styles = getComputedStyle(document.documentElement);
+    const primary = normalizeHex(styles.getPropertyValue('--brand-primary').trim());
+    const secondaryRaw = normalizeHex(styles.getPropertyValue('--brand-secondary').trim());
+    if (!primary) return null;
+    return { primary, secondary: secondaryRaw || lighten(primary, 18) };
+  } catch {
+    return null;
+  }
+}
+
 // ⭐ QR code réel — génère une image base64 depuis le qrPayload
-// ⭐ PERF (chantier GTMetrix — spéc. §3) : la lib qrcode (~18 Ko gz) est
-//    chargée À LA DEMANDE au premier QR réellement affiché — retirée du
-//    chunk de la vue Élèves (cartes d'identité). Le placeholder grillé
-//    s'affiche pendant ce court chargement (déjà le comportement existant
-//    pendant la génération).
 function RealQRCode({ payload }: { payload?: string }) {
   const [dataUrl, setDataUrl] = useState<string>('');
 
@@ -155,40 +234,55 @@ export function IdCardVisual({
   const s = card.student;
   const g = card.guardian;
 
+  // ─── Palette de marque (lecture différée — SSR safe) ─────────────────────
+  const [brandPalette, setBrandPalette] = useState<{ primary: string; secondary: string } | null>(null);
+  useEffect(() => {
+    setBrandPalette(readBrandPalette());
+  }, []);
+
   // ─── Données école (avec fallbacks) ──────────────────────────────────────
   const schoolName = identity?.schoolName || 'Établissement Scolaire';
   const slogan = identity?.slogan || 'Excellence • Discipline • Travail';
-  const tagline = identity?.tagline || identity?.slogan || 'Éducation • Avenir • Réussite';
   const logoUrl = identity?.logoUrl || '';
   const logoText = identity?.logoText ||
     (schoolName.split(/\s+/).filter(w => w.length > 2).slice(0, 2).map(w => w[0] || '').join('').toUpperCase()) ||
     'AH';
+
+  // ⭐ 2026-11-27 — SIGLE : nom d'école trop long → acronyme (fin de la
+  //    troncature «... » dans l'en-tête).
+  const schoolAcronym =
+    identity?.schoolAcronym ||
+    (schoolName.split(/\s+/).filter(w => w.length > 2).slice(0, 2).map(w => w[0] || '').join('').toUpperCase()) ||
+    'AH';
+  const displaySchoolName =
+    schoolName.length > 26 && schoolAcronym && schoolAcronym.length >= 2
+      ? schoolAcronym
+      : schoolName;
 
   const schoolAddress = [identity?.address, identity?.city].filter(Boolean).join(', ') || '';
   const schoolPhone = identity?.phonePrimary || '';
   const schoolEmail = identity?.email || '';
   const schoolWebsite = identity?.website || '';
 
-  // ─── Données élève / tuteur ─────────────────────────────────────────────
+  // ─── Données élève / tuteur / direction ──────────────────────────────────
   const guardianName = g ? `${g.firstName} ${g.lastName}`.trim() : '—';
   const guardianPhone = g?.phone || '—';
+  const directorName = identity?.directorName || null;
+  const directorSignatureUrl = identity?.directorSignatureUrl || null;
+  const stampUrl = identity?.stampUrl || null;
 
-  // ─── Couleurs (tokens dynamiques) ────────────────────────────────────────
-  const primaryColor = identity?.cardPrimaryColor || '#17348f';
-  const secondaryColor = identity?.cardSecondaryColor || '#29c2e8';
+  // ─── Couleurs (palette de marque, contraste garanti) ─────────────────────
+  // ⭐ cardUseBrandPalette=false (Paramètres Design) → couleurs manuelles.
+  const useBrand = identity?.cardUseBrandPalette !== false;
+  const brand = useBrand ? brandPalette : null;
+  const primaryColor = darkenUntil(brand?.primary || identity?.cardPrimaryColor || '#17348f', 0.45);
+  const secondaryColor = darkenUntil(brand?.secondary || identity?.cardSecondaryColor || '#29c2e8', 0.58);
 
   // ─── Conditions d'utilisation ─────────────────────────────────────────────
-  // ⭐ Texte par défaut — la phrase "La carte doit être restituée en cas de
-  //    départ de l'établissement" a été SUPPRIMÉE car la carte reste pour
-  //    l'élève (l'école ne reprend pas la carte).
-  //    Si l'admin a personnalisé cardConditionsText dans TenantIdentityProfile,
-  //    on l'utilise tel quel (l'admin peut y mettre ce qu'il veut).
   const conditionsText = identity?.cardConditionsText ||
     "Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l'administration.";
 
-  // ⭐ Mention spécifique MATERNELLE : ajoutée APRÈS le conditionsText
-  //    Paragraphe complémentaire qui rappelle que la carte est OBLIGATOIRE
-  //    pour récupérer l'enfant — sans la carte, l'enfant n'est pas remis.
+  // ⭐ Mention spécifique MATERNELLE (remise de l'enfant sur présentation)
   const maternellePickupClause =
     "En cas de maternelle, la personne autorisée venue chercher l'enfant doit obligatoirement présenter cette carte. Sans présentation de la carte, la remise de l'enfant ne sera pas effectuée.";
 
@@ -203,16 +297,13 @@ export function IdCardVisual({
     ? "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes"
     : 'Ministère des Enseignements Maternel et Primaire';
 
-  // ─── Heures de sortie maternelle (configurées dans TenantIdentityProfile) ──
-  // Affichées dans le back-header du verso POUR LA MATERNELLE UNIQUEMENT,
-  // à la place des dates d'émission/expiration (qui sont déplacées vers le
-  // back-footer, à côté du QR code).
+  // ─── Heures de sortie maternelle ──────────────────────────────────────────
   const maternelleSingleExit = identity?.maternelleSingleExit ?? false;
   const maternellePickupMorning = identity?.maternellePickupMorning || '12:00';
   const maternellePickupAfternoon = identity?.maternellePickupAfternoon || '16:30';
   const maternelleSingleExitTime = identity?.maternelleSingleExitTime || '15:30';
 
-  // ─── Composant : Drapeau du Bénin (vert à gauche, jaune/rouge à droite) ──
+  // ─── Composant : Drapeau du Bénin ──
   const BeninFlag = ({ sizeCqw = 3.5 }: { sizeCqw?: number }) => (
     <div
       style={{
@@ -233,7 +324,7 @@ export function IdCardVisual({
     </div>
   );
 
-  // ─── Composant : Logo école (image ou sigle/acronym en fallback) ──────────
+  // ─── Composant : Logo école (image ou sigle en fallback) ──────────────────
   const SchoolLogo = ({ sizeCqw = 6.5 }: { sizeCqw?: number }) => {
     if (logoUrl) {
       return (
@@ -265,14 +356,12 @@ export function IdCardVisual({
     );
   };
 
-  // ═══════════════════════════════════════════════════════════════════════
+  // ═════════════════════════════════════════════════════════════════════════
   // RECTO — Face avant
-  // ═══════════════════════════════════════════════════════════════════════
+  // ═════════════════════════════════════════════════════════════════════════
   if (face === 'recto') {
     return (
       <div className="w-full flex flex-col items-center" style={{ containerType: 'inline-size' }}>
-        {/* ⭐ Clip circulaire SUPPRIMÉ — la carte est maintenant un bloc unique continue */}
-
         {/* Carte */}
         <div
           className="relative bg-white overflow-hidden flex flex-col"
@@ -285,9 +374,7 @@ export function IdCardVisual({
             fontFamily: 'Inter, Poppins, Arial, sans-serif',
           }}
         >
-          {/* ═══ HEADER BLEU (style ancien — Republic + flag + ministry + school + slogan + logo) ═══ */}
-          {/* BANDE CONTINUE : pas de clip-path, pas d'accent-bar séparée */}
-          {/* ⭐ Hauteur 28% (au lieu de 24%) + tailles de police agrandies + interlignes */}
+          {/* ═══ HEADER (bande continue : République + drapeau + ministère + école + slogan + logo) ═══ */}
           <div
             className="shrink-0 flex items-center text-white"
             style={{
@@ -297,11 +384,8 @@ export function IdCardVisual({
               gap: '0.8cqw',
             }}
           >
-            {/* Drapeau du Bénin à gauche */}
             <BeninFlag sizeCqw={4.5} />
-            {/* Centre : République + Ministère + École + Slogan */}
             <div className="flex-1 text-center min-w-0" style={{ padding: '0 0.5cqw' }}>
-              {/* République — taille correspondant à la hauteur du logo */}
               <div style={{
                 fontSize: '2.5cqw',
                 fontWeight: 800,
@@ -312,7 +396,6 @@ export function IdCardVisual({
               }}>
                 RÉPUBLIQUE DU BÉNIN
               </div>
-              {/* Ministère — agrandi pour lisibilité */}
               <div style={{
                 fontSize: '1.25cqw',
                 lineHeight: 1.15,
@@ -324,7 +407,7 @@ export function IdCardVisual({
               }}>
                 {ministry}
               </div>
-              {/* Nom école — taille intermédiaire */}
+              {/* ⭐ Nom école : SIGLE si trop long (fin de la troncature) */}
               <div style={{
                 fontSize: '1.75cqw',
                 fontWeight: 700,
@@ -333,10 +416,10 @@ export function IdCardVisual({
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
                 marginBottom: '0.4cqw',
+                ...(displaySchoolName !== schoolName ? { letterSpacing: '0.2cqw' } : {}),
               }}>
-                {schoolName}
+                {displaySchoolName}
               </div>
-              {/* Devise/Slogan — agrandi */}
               <div style={{
                 fontSize: '1.15cqw',
                 fontStyle: 'italic',
@@ -349,18 +432,16 @@ export function IdCardVisual({
                 {slogan}
               </div>
             </div>
-            {/* Logo école à droite — agrandi pour matcher la hauteur République */}
             <SchoolLogo sizeCqw={8} />
           </div>
 
-          {/* ═══ CORPS (Claude AI style : photo + 6 champs) ═══ */}
+          {/* ═══ CORPS (photo + champs — labels compactés pour les noms longs) ═══ */}
           <div className="flex" style={{
             padding: '3.5cqw 4cqw 0 4cqw',
             gap: '3.5cqw',
             flex: 1,
             minHeight: 0,
           }}>
-            {/* photo-box */}
             {identity?.cardShowPhoto !== false && (
               <div style={{
                 width: '22.5cqw',
@@ -375,7 +456,6 @@ export function IdCardVisual({
                   <img src={s.photoUrl} alt={`${s.firstName} ${s.lastName}`}
                     className="w-full h-full object-cover" />
                 ) : (
-                  // Damier placeholder
                   <div className="w-full h-full" style={{
                     backgroundColor: '#f2f2f2',
                     backgroundImage:
@@ -390,7 +470,6 @@ export function IdCardVisual({
               </div>
             )}
 
-            {/* fields — ⭐ N° Carte supprimé du recto (déplacé au verso) + espacement réduit */}
             <div className="flex-1 flex flex-col" style={{
               fontSize: '2.2cqw',
               color: '#1a1a2e',
@@ -398,7 +477,6 @@ export function IdCardVisual({
               gap: 0,
             }}>
               <FieldRow label="Matricule" value={s.matricule || s.studentCode || '—'} />
-              {/* ⭐ Nom sur 1 ligne + Prénom sur 2e ligne (si nom long) */}
               <FieldRow label="Nom" value={s.lastName || '—'} bold />
               <FieldRow label="Prénom" value={s.firstName || '—'} bold />
               {identity?.cardShowGuardian !== false && (
@@ -406,53 +484,124 @@ export function IdCardVisual({
               )}
               <FieldRow label="Classe" value={card.className || '—'} />
               {identity?.cardShowEmergencyCall !== false && (
-                <FieldRow label="Urgence" value={guardianPhone} />
+                <FieldRow label="Urgence" value={guardianPhone} emergency />
               )}
             </div>
           </div>
 
-          {/* ═══ FOOTER (Claude AI style : gradient + clip-path + adresse + signature) ═══ */}
+          {/* ═══ FOOTER (bande + zone signature/cachet) ═══ */}
+          {/* ⭐ Cachet appliqué dynamiquement — déborde sur la zone blanche,
+              soigneusement positionné à gauche de la signature. */}
+          {stampUrl && (
+            <img
+              src={stampUrl}
+              alt=""
+              aria-hidden
+              style={{
+                position: 'absolute',
+                right: '38.5cqw',
+                bottom: '3.5cqw',
+                width: '14cqw',
+                height: '14cqw',
+                objectFit: 'contain',
+                opacity: 0.92,
+                zIndex: 2,
+                pointerEvents: 'none',
+              }}
+            />
+          )}
+          {/* ⭐ Zone signature — HORS de la bande (frère) : le clip-path de la
+              bande ne coupe PAS la signature qui déborde dans la zone blanche.
+              Le mot « Signature » a disparu : image manuscrite réelle ou nom
+              du directeur en script. */}
           <div
-            className="absolute left-0 right-0 flex items-center justify-between"
+            className="text-center"
+            style={{
+              position: 'absolute',
+              right: '3cqw',
+              bottom: '0.6cqw',
+              zIndex: 3,
+            }}
+          >
+            {directorSignatureUrl ? (
+              <img
+                src={directorSignatureUrl}
+                alt="Signature du directeur"
+                style={{
+                  height: '6cqw',
+                  maxWidth: '28cqw',
+                  objectFit: 'contain',
+                  objectPosition: 'bottom',
+                  display: 'block',
+                  margin: '0 auto 0.3cqw',
+                  filter: 'drop-shadow(0 0 0.1cqw rgba(0,0,0,0.15))',
+                }}
+              />
+            ) : directorName ? (
+              <div style={{
+                fontFamily: '"Brush Script MT", cursive',
+                fontSize: '3.4cqw',
+                color: '#0f172a',
+                lineHeight: 1,
+                maxWidth: '32cqw',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                margin: '0 auto 0.3cqw',
+              }}>
+                {directorName}
+              </div>
+            ) : (
+              <div style={{ height: '4cqw' }} />
+            )}
+            <div style={{
+              color: '#fff',
+              fontSize: '2.1cqw',
+              fontWeight: 700,
+              lineHeight: 1.15,
+            }}>
+              Directeur(trice)
+            </div>
+            {directorName && (
+              <div style={{
+                color: '#fff',
+                fontSize: '1.9cqw',
+                fontWeight: 600,
+                lineHeight: 1.15,
+                maxWidth: '34cqw',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+                {directorName}
+              </div>
+            )}
+          </div>
+          {/* Bande footer — adresse et téléphone SÉPARÉS (2 lignes nettes,
+              la 1re ligne ne touche plus la diagonale) */}
+          <div
+            className="absolute left-0 right-0 flex items-center"
             style={{
               bottom: 0,
               height: '11.5cqw',
               background: `linear-gradient(90deg, ${primaryColor} 0%, ${primaryColor} 55%, ${secondaryColor} 100%)`,
               padding: '0 4cqw',
-              clipPath: 'polygon(0 25%, 100% 0, 100% 100%, 0 100%)',
+              clipPath: 'polygon(0 22%, 100% 0, 100% 100%, 0 100%)',
             }}
           >
-            {/* footer-address */}
             <div style={{
               color: '#fff',
-              fontSize: '2cqw',
-              lineHeight: 1.5,
-              maxWidth: '60%',
+              fontSize: '1.9cqw',
+              lineHeight: 1.3,
+              maxWidth: '56%',
+              paddingTop: '1.2cqw',
             }}>
               {identity?.cardShowSchoolAddress !== false && schoolAddress && (
                 <div className="truncate">{schoolAddress}</div>
               )}
-              {schoolPhone && <div>Tél : {schoolPhone}</div>}
-            </div>
-
-            {/* footer-sign */}
-            <div className="text-center" style={{ paddingTop: '1cqw' }}>
-              <div style={{
-                fontFamily: '"Brush Script MT", cursive',
-                fontSize: '4cqw',
-                color: '#fff',
-                lineHeight: 1,
-              }}>
-                Signature
-              </div>
-              <div style={{
-                color: '#fff',
-                fontSize: '2.25cqw',
-                fontWeight: 700,
-                marginTop: '0.5cqw',
-              }}>
-                Directeur(trice)
-              </div>
+              {schoolPhone && (
+                <div style={{ marginTop: '0.3cqw' }}>Tél : {schoolPhone}</div>
+              )}
             </div>
           </div>
         </div>
@@ -460,13 +609,11 @@ export function IdCardVisual({
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════
+  // ═════════════════════════════════════════════════════════════════════════
   // VERSO — Face arrière
-  // ═══════════════════════════════════════════════════════════════════════
+  // ═════════════════════════════════════════════════════════════════════════
   return (
     <div className="w-full flex flex-col items-center" style={{ containerType: 'inline-size' }}>
-      {/* ⭐ Clip circulaire SUPPRIMÉ — la carte est maintenant un bloc unique continue */}
-
       {/* Carte */}
       <div
         className="relative bg-white overflow-hidden flex flex-col"
@@ -479,9 +626,7 @@ export function IdCardVisual({
           fontFamily: 'Inter, Poppins, Arial, sans-serif',
         }}
       >
-        {/* ═══ BACK-HEADER (BANDE CONTINUE) ═══ */}
-        {/* ⭐ Maternelle : "CONDITIONS D'UTILISATION" (taille réduite) + heures de sortie (matin/après-midi) */}
-        {/* ⭐ Autres niveaux : "CONDITIONS D'UTILISATION" uniquement (dates déplacées au footer) */}
+        {/* ═══ BACK-HEADER — ⭐ N° CARTE au-dessus du titre + heures maternelle ═══ */}
         <div
           className="shrink-0 flex items-center justify-between text-white"
           style={{
@@ -490,23 +635,33 @@ export function IdCardVisual({
             padding: '0 4cqw',
           }}
         >
-          <div style={{
-            fontWeight: 800,
-            // ⭐ Maternelle : taille réduite pour que "CONDITIONS D'UTILISATION" tienne à côté des heures
-            fontSize: isMaternelle ? '1.4cqw' : '2cqw',
-            letterSpacing: '0.15cqw',
-            lineHeight: 1.1,
-            flex: 1,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}>
-            CONDITIONS D'UTILISATION
+          <div className="flex-1 min-w-0">
+            <div style={{
+              fontSize: '1.35cqw',
+              fontWeight: 700,
+              letterSpacing: '0.08cqw',
+              opacity: 0.92,
+              marginBottom: '0.35cqw',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              N° CARTE : {card.cardNumber || '—'}
+            </div>
+            <div style={{
+              fontWeight: 800,
+              fontSize: isMaternelle ? '1.4cqw' : '2cqw',
+              letterSpacing: '0.15cqw',
+              lineHeight: 1.1,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              CONDITIONS D'UTILISATION
+            </div>
           </div>
-          {/* Maternelle uniquement : heures de sortie maternelle (à la place des dates) */}
           {isMaternelle && (
             <div style={{
-              // ⭐ Taille réduite pour la lisibilité (les deux lignes tiennent à côté du titre)
               fontSize: '1.25cqw',
               textAlign: 'right',
               lineHeight: 1.35,
@@ -527,7 +682,7 @@ export function IdCardVisual({
           )}
         </div>
 
-        {/* ═══ BACK-BODY (Claude AI style : N° Carte + conditions + contact + logo filigrane) ═══ */}
+        {/* ═══ BACK-BODY (conditions + contacts serrés + direction) ═══ */}
         <div
           className="relative"
           style={{
@@ -536,22 +691,7 @@ export function IdCardVisual({
             minHeight: 0,
           }}
         >
-          {/* ⭐ N° CARTE — déplacé du recto vers le verso, taille réduite,
-              affiché au-dessus de 'Conditions d'utilisation'. */}
-          <div
-            className="relative"
-            style={{
-              fontSize: '1.4cqw',
-              fontWeight: 700,
-              color: primaryColor,
-              marginBottom: '1.5cqw',
-              textAlign: 'right',
-              zIndex: 1,
-            }}
-          >
-            N° Carte : {card.cardNumber || '—'}
-          </div>
-          {/* ⭐ LOGO FILIGRANE — semi-transparent au centre de la section blanche */}
+          {/* LOGO FILIGRANE */}
           {logoUrl && (
             <div
               aria-hidden
@@ -587,23 +727,22 @@ export function IdCardVisual({
             gap: '1.5cqw',
             fontSize: '1.8cqw',
             color: '#444',
-            lineHeight: 1.35,
-            marginBottom: '1cqw',
+            lineHeight: 1.3,
+            marginBottom: '0.8cqw',
             zIndex: 1,
           }}>
             <span style={{ color: primaryColor, fontWeight: 900, flexShrink: 0 }}>■</span>
             <span>{conditionsText}</span>
           </div>
 
-          {/* ⭐ Mention spécifique MATERNELLE — paragraphe complémentaire
-              rappelant que la carte est OBLIGATOIRE pour récupérer l'enfant */}
+          {/* Mention spécifique MATERNELLE */}
           {isMaternelle && (
             <div className="flex relative" style={{
               gap: '1.5cqw',
               fontSize: '1.8cqw',
               color: '#444',
-              lineHeight: 1.35,
-              marginBottom: '1cqw',
+              lineHeight: 1.3,
+              marginBottom: '0.8cqw',
               zIndex: 1,
             }}>
               <span style={{ color: primaryColor, fontWeight: 900, flexShrink: 0 }}>■</span>
@@ -611,10 +750,10 @@ export function IdCardVisual({
             </div>
           )}
 
-          {/* contact-block */}
+          {/* contact-block — ⭐ interlignes SERRETS + ligne Direction */}
           <div className="relative" style={{
-            marginTop: '1cqw',
-            fontSize: '2cqw',
+            marginTop: '0.6cqw',
+            fontSize: '1.95cqw',
             color: '#1a1a2e',
             zIndex: 1,
           }}>
@@ -624,14 +763,11 @@ export function IdCardVisual({
             {identity?.cardShowSchoolAddress !== false && schoolAddress && (
               <ContactRow label="Adresse" value={schoolAddress} />
             )}
+            {directorName && <ContactRow label="Direction" value={directorName} bold />}
           </div>
         </div>
 
         {/* ═══ BACK-FOOTER (dates + QR) ═══ */}
-        {/* ⭐ Acronyme école + tagline SUPPRIMÉS du back-footer (déjà affichés
-            dans le header du recto : nom école + slogan). Le back-footer ne
-            contient plus que les dates (émise/expire) à gauche et le QR code
-            à droite. */}
         <div
           className="absolute left-0 right-0 flex items-center justify-end gap-4"
           style={{
@@ -642,7 +778,6 @@ export function IdCardVisual({
             clipPath: 'polygon(0 30%, 100% 0, 100% 100%, 0 100%)',
           }}
         >
-          {/* ⭐ DATES — à droite, à côté du QR code */}
           <div style={{
             color: '#fff',
             fontSize: '1.4cqw',
@@ -656,7 +791,6 @@ export function IdCardVisual({
             {card.validUntil && <div>Expire le : {formatDate(card.validUntil)}</div>}
           </div>
 
-          {/* QR code (right) */}
           {identity?.cardShowQRCode !== false && (
             <div style={{
               width: '11.5cqw',
@@ -677,20 +811,22 @@ export function IdCardVisual({
 }
 
 // ─── Sous-composant : ligne de champ (label : value) ──────────────────────
-function FieldRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+// ⭐ Labels COMPACTS : largeur 19.5cqw → 13cqw + colonne 2.5cqw → 1cqw →
+//    ~8cqw récupérés pour la valeur (noms d'élèves longs sans «... »).
+function FieldRow({ label, value, bold, emergency }: { label: string; value: string; bold?: boolean; emergency?: boolean }) {
   return (
     <div className="flex" style={{ marginBottom: '0.2cqw' }}>
       <span style={{
         fontWeight: 700,
-        width: '19.5cqw',
+        width: '13cqw',
         flexShrink: 0,
       }}>
         {label}
       </span>
-      <span style={{ width: '2.5cqw', flexShrink: 0 }}>:</span>
+      <span style={{ width: '1cqw', flexShrink: 0 }}>:</span>
       <span style={{
-        color: '#333',
-        fontWeight: bold ? 700 : 400,
+        color: emergency ? '#dc2626' : '#333',
+        fontWeight: emergency ? 700 : bold ? 700 : 400,
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
@@ -701,19 +837,21 @@ function FieldRow({ label, value, bold }: { label: string; value: string; bold?:
   );
 }
 
-// ─── Sous-composant : ligne de contact (label : value) ────────────────────
-function ContactRow({ label, value }: { label: string; value: string }) {
+// ─── Sous-composant : ligne de contact (interligne serré) ─────────────────
+function ContactRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
-    <div className="flex" style={{ marginBottom: '0.3cqw' }}>
+    <div className="flex" style={{ marginBottom: '0.12cqw', lineHeight: 1.2 }}>
       <span style={{
         fontWeight: 700,
-        width: '15cqw',
+        width: '11cqw',
         flexShrink: 0,
       }}>
         {label}
       </span>
-      <span style={{ marginRight: '0.5cqw' }}>:</span>
+      <span style={{ marginRight: '0.4cqw', flexShrink: 0 }}>:</span>
       <span style={{
+        fontWeight: bold ? 700 : 400,
+        color: bold ? '#0f172a' : undefined,
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',

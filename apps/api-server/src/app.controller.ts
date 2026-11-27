@@ -30,7 +30,7 @@ export class AppController {
       //    au build) : le marqueur « version » manuel était resté bloqué à
       //    1.0.21 alors que les builds 1.0.40+ tournaient — impossible de dater
       //    le code déployé. Le SHA règle définitivement la question.
-      version: '1.0.60',
+      version: '1.0.61',
       commit: process.env.RAILWAY_GIT_COMMIT_SHORT_SHA
         || (process.env.RAILWAY_GIT_COMMIT_SHA
           ? process.env.RAILWAY_GIT_COMMIT_SHA.slice(0, 7)

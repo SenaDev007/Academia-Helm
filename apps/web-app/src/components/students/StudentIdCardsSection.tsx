@@ -23,7 +23,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   CreditCard, CheckCircle, XCircle, AlertCircle, Users, RefreshCw,
   FileDown, Loader2, ChevronDown, ChevronRight, Search, Ban, Download,
@@ -64,6 +64,8 @@ interface GroupedCard {
   };
   className: string;
   levelName: string;
+  // ⭐ 2026-11-27 — identifiant du niveau (résolution signature/cachet par niveau)
+  levelId?: string;
 }
 
 interface GroupedClass {
@@ -134,6 +136,8 @@ export default function StudentIdCardsSection() {
     maternellePickupAfternoon: '16:30',
     maternelleSingleExit: false,
     maternelleSingleExitTime: '15:30',
+    // ⭐ 2026-11-27 — palette de marque automatique (logo/CMS) : true par défaut
+    cardUseBrandPalette: true,
     cardPrimaryColor: '#0D1F6E',
     cardShowQRCode: true,
     cardShowPhoto: true,
@@ -142,6 +146,23 @@ export default function StudentIdCardsSection() {
     cardShowSchoolAddress: true,
     cardConditionsText: 'Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l\'administration.',
   });
+
+  // ⭐ 2026-11-27 — Signature + cachet + nom du directeur PAR NIVEAU scolaire
+  //    (directeur du secondaire ≠ directeur maternel/primaire). Résolus via
+  //    le même moteur que les bulletins — injectés dans l'aperçu des cartes.
+  const [sealsByLevel, setSealsByLevel] = useState<Record<string, { holderName: string | null; signatureUrl: string | null; stampUrl: string | null }>>({});
+
+  /** Identité complète pour l'aperçu d'une carte d'un niveau donné. */
+  const identityForLevel = useCallback((levelId?: string): TenantInfo | null => {
+    if (!identity) return null;
+    const seals = (levelId && sealsByLevel[levelId]) || null;
+    return {
+      ...identity,
+      directorName: seals?.holderName ?? null,
+      directorSignatureUrl: seals?.signatureUrl ?? null,
+      stampUrl: seals?.stampUrl ?? null,
+    };
+  }, [identity, sealsByLevel]);
 
   // Charger l'identité du tenant et initialiser les paramètres
   useEffect(() => {
@@ -159,10 +180,13 @@ export default function StudentIdCardsSection() {
             email: p?.email || '',
             website: p?.website || '',
             logoUrl: p?.logoUrl || '',
+            schoolAcronym: p?.schoolAcronym || '',
             maternellePickupMorning: p?.maternellePickupMorning || '12:00',
             maternellePickupAfternoon: p?.maternellePickupAfternoon || '16:30',
             maternelleSingleExit: p?.maternelleSingleExit ?? false,
             maternelleSingleExitTime: p?.maternelleSingleExitTime || '15:30',
+            // ⭐ palette de marque automatique (logo/CMS)
+            cardUseBrandPalette: p?.cardUseBrandPalette ?? true,
             cardPrimaryColor: p?.cardPrimaryColor || '#0D1F6E',
             cardShowQRCode: p?.cardShowQRCode ?? true,
             cardShowPhoto: p?.cardShowPhoto ?? true,
@@ -177,6 +201,7 @@ export default function StudentIdCardsSection() {
             maternellePickupAfternoon: tenantInfo.maternellePickupAfternoon,
             maternelleSingleExit: tenantInfo.maternelleSingleExit,
             maternelleSingleExitTime: tenantInfo.maternelleSingleExitTime,
+            cardUseBrandPalette: tenantInfo.cardUseBrandPalette,
             cardPrimaryColor: tenantInfo.cardPrimaryColor,
             cardShowQRCode: tenantInfo.cardShowQRCode,
             cardShowPhoto: tenantInfo.cardShowPhoto,
@@ -188,6 +213,38 @@ export default function StudentIdCardsSection() {
         }
       }).catch(() => {});
   }, []);
+
+  // ⭐ 2026-11-27 — Charger signature + cachet + nom du directeur pour chaque
+  //    niveau présent (une requête par niveau — peu de niveaux, cache état).
+  useEffect(() => {
+    if (!grouped?.levels?.length) return;
+    let cancelled = false;
+    (async () => {
+      const next: typeof sealsByLevel = {};
+      await Promise.all(
+        (grouped.levels as Array<{ level: { id: string } }>).map(async lv => {
+          if (!lv?.level?.id) return;
+          try {
+            const res = await fetch(
+              `/api/students/id-cards/director-seals?schoolLevelId=${encodeURIComponent(lv.level.id)}`,
+              { credentials: 'include', cache: 'no-store' },
+            );
+            if (!res.ok) return;
+            const data = await res.json();
+            next[lv.level.id] = {
+              holderName: data?.holderName ?? null,
+              signatureUrl: data?.signatureUrl ?? null,
+              stampUrl: data?.stampUrl ?? null,
+            };
+          } catch {
+            /* non bloquant */
+          }
+        }),
+      );
+      if (!cancelled && Object.keys(next).length > 0) setSealsByLevel(next);
+    })();
+    return () => { cancelled = true; };
+  }, [grouped]);
 
   // Enregistrer les paramètres
   const handleSaveSettings = async () => {
@@ -793,7 +850,7 @@ export default function StudentIdCardsSection() {
                                             levelCode: (card as any).levelCode,
                                           }}
                                           face={face}
-                                          identity={identity}
+                                          identity={identityForLevel(level.level.id)}
                                         />
                                         <button
                                           onClick={() => setCardFaces(prev => ({ ...prev, [card.id]: face === 'recto' ? 'verso' : 'recto' }))}
@@ -804,7 +861,7 @@ export default function StudentIdCardsSection() {
                                       </div>
                                       {/* Actions */}
                                       <div className="p-2 flex items-center justify-end gap-1.5 border-t border-slate-100">
-                                        <button onClick={() => setPreviewCard(card)}
+                                        <button onClick={() => setPreviewCard({ ...card, levelId: level.level.id })}
                                           className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 transition">
                                           <Eye className="w-3 h-3" /> Visualiser
                                         </button>
@@ -1025,7 +1082,7 @@ export default function StudentIdCardsSection() {
                       levelCode: (previewCard as any).levelCode,
                     }}
                     face="recto"
-                    identity={identity}
+                    identity={identityForLevel(previewCard.levelId)}
                   />
                 </div>
                 {/* Verso */}
@@ -1045,7 +1102,7 @@ export default function StudentIdCardsSection() {
                       levelCode: (previewCard as any).levelCode,
                     }}
                     face="verso"
-                    identity={identity}
+                    identity={identityForLevel(previewCard.levelId)}
                   />
                 </div>
               </div>
@@ -1165,7 +1222,24 @@ export default function StudentIdCardsSection() {
                 <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
                   <Palette className="w-3.5 h-3.5 text-blue-600" /> Design
                 </h4>
-                <div>
+                {/* ⭐ 2026-11-27 — Palette automatique (logo de l'école) :
+                    même chaîne que le site institutionnel — thème officiel >
+                    couleurs CMS > palette auto du logo. Désactivée → couleurs
+                    manuelles ci-dessous. */}
+                <label className="flex items-start gap-2 p-2.5 rounded-lg border border-blue-100 bg-blue-50/50 cursor-pointer">
+                  <input type="checkbox"
+                    checked={cardSettings.cardUseBrandPalette}
+                    onChange={(e) => setCardSettings(prev => ({ ...prev, cardUseBrandPalette: e.target.checked }))}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                  <span className="text-xs text-slate-700">
+                    <span className="font-bold">Palette automatique (logo de l'école)</span>
+                    <span className="block text-[10px] text-slate-500 mt-0.5">
+                      La carte suit la palette de couleurs du logo / du site institutionnel, avec contraste garanti.
+                      Décochez pour choisir manuellement les couleurs.
+                    </span>
+                  </span>
+                </label>
+                <div className={cardSettings.cardUseBrandPalette ? 'opacity-50 pointer-events-none' : ''}>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Couleur principale (bandeaux)</label>
                   <div className="flex items-center gap-2">
                     <input type="color" value={cardSettings.cardPrimaryColor}
@@ -1175,6 +1249,11 @@ export default function StudentIdCardsSection() {
                       onChange={(e) => setCardSettings(prev => ({ ...prev, cardPrimaryColor: e.target.value }))}
                       className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
+                  {cardSettings.cardUseBrandPalette && (
+                    <p className="text-[10px] text-slate-400 italic mt-1">
+                      Couleurs manuelles désactivées — la palette de l'école est appliquée automatiquement.
+                    </p>
+                  )}
                 </div>
               </div>
 

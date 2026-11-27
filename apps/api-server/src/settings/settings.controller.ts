@@ -371,6 +371,8 @@ export class SettingsController {
       maternelleSingleExit?: boolean;
       maternelleSingleExitTime?: string;
       cardPrimaryColor?: string;
+      // ⭐ 2026-11-27 — palette de marque automatique (logo/CMS) pour la carte
+      cardUseBrandPalette?: boolean;
       cardShowQRCode?: boolean;
       cardShowPhoto?: boolean;
       cardShowGuardian?: boolean;
@@ -411,6 +413,8 @@ export class SettingsController {
         ...(data.maternelleSingleExit !== undefined && { maternelleSingleExit: data.maternelleSingleExit }),
         ...(data.maternelleSingleExitTime !== undefined && { maternelleSingleExitTime: data.maternelleSingleExitTime }),
         ...(data.cardPrimaryColor !== undefined && { cardPrimaryColor: data.cardPrimaryColor }),
+        // ⭐ 2026-11-27 — palette de marque automatique (logo/CMS)
+        ...(data.cardUseBrandPalette !== undefined && { cardUseBrandPalette: data.cardUseBrandPalette }),
         ...(data.cardShowQRCode !== undefined && { cardShowQRCode: data.cardShowQRCode }),
         ...(data.cardShowPhoto !== undefined && { cardShowPhoto: data.cardShowPhoto }),
         ...(data.cardShowGuardian !== undefined && { cardShowGuardian: data.cardShowGuardian }),

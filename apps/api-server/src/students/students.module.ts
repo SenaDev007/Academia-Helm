@@ -59,6 +59,8 @@ import { StudentTransferService } from './student-transfer.service';
 import { FinanceModule } from '../finance/finance.module';
 import { StorageService } from '../common/services/storage.service';
 import { CommunicationModule } from '../communication/communication.module';
+// ⭐ 2026-11-27 — DocumentSealsService (signature + cachet directeur cartes)
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
   imports: [
@@ -71,6 +73,9 @@ import { CommunicationModule } from '../communication/communication.module';
     FinanceModule, // Comptes élèves : création auto StudentAccount à l'admission/réinscription
     BillingModule, // ✅ Pour StudentCountVerifierService (vérification nb élèves vs plan)
     CommunicationModule, // ✅ Pour AdmissionNotificationService (envoi emails aux parents)
+    // ⭐ 2026-11-27 — DocumentSealsService exporté par SettingsModule :
+    //    signature manuscrite + cachet + nom du directeur sur les cartes.
+    SettingsModule,
     // ⭐ 2026-09-19 (demande promoteur) : compte parent créé EN MÊME TEMPS que
     //    l'inscription de l'élève. ParentProvisioningModule ne dépend que de
     //    DatabaseModule → aucun cycle (cf. parent-provisioning.module.ts).

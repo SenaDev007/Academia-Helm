@@ -552,5 +552,115 @@ export class RoomsPrismaService {
 
     return { success: true, message: 'Salle supprimée avec succès' };
   }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // ⭐ 2026-11-27 — GESTION DE SALLE PROFESSIONNELLE (retour promoteur) :
+  // vue détaillée d'une salle (classes affectées + emploi du temps réel +
+  // historique de maintenance) et réactivation après maintenance.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Vue 360° d'une salle pour l'onglet Gestion de salle :
+   *   - la salle (avec niveau et équipements) ;
+   *   - les CLASSES OFFICIELLES affectées à cette salle (AcademicClass.roomId)
+   *     avec niveau + professeur principal + capacité ;
+   *   - l'EMPLOI DU TEMPS RÉEL de la salle (TimetableEntry — cours qui se
+   *     déroulent dans la salle, avec classe / matière / enseignant),
+   *     regroupé par jour de la semaine côté frontend ;
+   *   - les maintenances ACTIVES + les 10 dernières passées.
+   *
+   * Non bloquant : chaque sous-requête est isolée (échec → liste vide).
+   */
+  async getRoomDetail(id: string, tenantId: string, academicYearId?: string) {
+    const room = await this.findRoomByIdSimple(id, tenantId);
+    const yearId = academicYearId || room.academicYearId || undefined;
+
+    const [classes, timetable, activeMaintenances, pastMaintenances] = await Promise.all([
+      this.prisma.academicClass
+        .findMany({
+          where: {
+            tenantId,
+            roomId: id,
+            isActive: true,
+            ...(yearId ? { academicYearId: yearId } : {}),
+          },
+          include: {
+            level: { select: { id: true, name: true } },
+            mainTeacher: { select: { id: true, firstName: true, lastName: true } },
+          },
+          orderBy: { name: 'asc' },
+        })
+        .catch(() => []),
+      this.prisma.timetableEntry
+        .findMany({
+          where: {
+            tenantId,
+            roomId: id,
+            ...(yearId ? { academicYearId: yearId } : {}),
+          },
+          include: {
+            class: { select: { id: true, name: true } },
+            subject: { select: { id: true, name: true } },
+            teacher: { select: { id: true, firstName: true, lastName: true } },
+          },
+          orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+        })
+        .catch(() => []),
+      this.prisma.roomMaintenance
+        .findMany({
+          where: { tenantId, roomId: id, isActive: true },
+          orderBy: { startDate: 'desc' },
+          take: 5,
+        })
+        .catch(() => []),
+      this.prisma.roomMaintenance
+        .findMany({
+          where: { tenantId, roomId: id, isActive: false },
+          orderBy: { startDate: 'desc' },
+          take: 10,
+        })
+        .catch(() => []),
+    ]);
+
+    return {
+      room,
+      classes,
+      timetable,
+      activeMaintenances,
+      pastMaintenances,
+      // Indicateurs calculés pour l'UI
+      stats: {
+        assignedClasses: classes.length,
+        weeklySlots: timetable.length,
+        totalStudents: classes.reduce((sum, c) => sum + (c.capacity || 0), 0),
+        inMaintenance: room.status === 'MAINTENANCE',
+      },
+    };
+  }
+
+  /**
+   * Réactive une salle après maintenance :
+   *   - statut → ACTIVE ;
+   *   - les maintenances actives sont clôturées (endDate = maintenant,
+   *     isActive = false) — l'historique est conservé.
+   */
+  async restoreRoom(id: string, tenantId: string) {
+    // Vérifie l'existence + le périmètre tenant (404 sinon)
+    await this.findRoomByIdSimple(id, tenantId);
+    const now = new Date();
+
+    await this.prisma.roomMaintenance
+      .updateMany({
+        where: { tenantId, roomId: id, isActive: true },
+        data: { ...prismaUpdateDefaults(), endDate: now, isActive: false },
+      })
+      .catch(() => {});
+
+    return this.prisma.room.update({
+      where: { id },
+      data: { ...prismaUpdateDefaults(), status: 'ACTIVE' },
+      include: { schoolLevel: true, academicYear: true },
+    });
+  }
 }
 

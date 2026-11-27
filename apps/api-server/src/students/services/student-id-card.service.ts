@@ -13,6 +13,8 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { PrismaService } from '../../database/prisma.service';
 import { StudentIdentifierService } from './student-identifier.service';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
+// ⭐ 2026-11-27 — signature + cachet du directeur (même moteur que bulletins)
+import { DocumentSealsService } from '../../settings/services/document-seals.service';
 // ⭐ 1.0.17 — liste officielle partagée (mêmes statuts que la « Liste des
 //    Élèves » et les exports EducMaster / PDF)
 import {
@@ -39,7 +41,77 @@ export class StudentIdCardService {
     private readonly prisma: PrismaService,
     private readonly identifierService: StudentIdentifierService,
     private readonly puppeteerPool: PuppeteerPoolService,
+    private readonly documentSeals: DocumentSealsService,
   ) {}
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // ⭐ 2026-11-27 — PALETTE DE MARQUE (logo / CMS) POUR LA CARTE SCOLAIRE
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Résout la palette de marque de l'école (chaîne IDENTIQUE au site
+   * institutionnel) : customColors (choix manuel CMS) > logoPalette
+   * (palette AUTO dérivée du logo — LogoPaletteService).
+   *
+   * ⚠️ Côté API, le themeId (thèmes officiels shadcn) n'est PAS résolu —
+   * les définitions de thèmes vivent dans la web-app. La web-app, elle,
+   * résout les 3 sources via les variables CSS --brand-* (voir IdCardVisual).
+   *
+   * Retourne { primary, secondary, accent } hex ou null si rien n'est
+   * configuré (la carte retombe alors sur cardPrimaryColor du profil).
+   */
+  private async resolveCardBrandColors(tenantId: string): Promise<{
+    primary: string;
+    secondary: string;
+    accent: string;
+  } | null> {
+    try {
+      const website = await this.prisma.tenantWebsite.findUnique({
+        where: { tenantId },
+        select: { customColors: true, logoPalette: true },
+      });
+      const source = website?.customColors || website?.logoPalette;
+      if (!source) return null;
+
+      let colors: Array<{ name?: string; value?: string }> = [];
+      if (Array.isArray(source)) {
+        colors = (source as any[]).filter(c => c && typeof c.value === 'string');
+      } else if (typeof source === 'string') {
+        try { colors = JSON.parse(source).filter((c: any) => c && c.value); } catch { return null; }
+      }
+      if (colors.length === 0) return null;
+
+      // Ordre resolveTenantColors : [0]=primary, [1]=accent, [2]=secondary, [3]=dark
+      const primary = normalizeCardHex(colors[0].value);
+      if (!primary) return null;
+      const accent = normalizeCardHex(colors[1]?.value) || shiftWarm(primary);
+      const secondary =
+        normalizeCardHex(colors[2]?.value) || adjustCardHex(primary, 22);
+      return { primary, secondary, accent };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Dérive les 2 couleurs de la carte (NAVY = fond bandes, NAVY_LIGHT = fin
+   * de gradient) depuis la palette de marque, AVEC CONTRASTE GARANTI :
+   *   - NAVY assombri jusqu'à luminance ≤ 0,45 → texte blanc toujours lisible ;
+   *   - NAVY_LIGHT assombri jusqu'à luminance ≤ 0,58 → pas de texte pâle sur
+   *     fond pâle à l'extrémité claire du gradient.
+   */
+  private deriveCardColors(
+    brand: { primary: string; secondary: string; accent: string } | null,
+    fallbackPrimary?: string | null,
+    fallbackSecondary?: string | null,
+  ): { NAVY: string; NAVY_LIGHT: string; ACCENT: string } {
+    const basePrimary = brand?.primary || fallbackPrimary || '#0D1F6E';
+    const NAVY = darkenCardUntil(basePrimary, 0.45);
+    const rawSecondary = brand?.secondary || fallbackSecondary || '#1A237E';
+    const NAVY_LIGHT = darkenCardUntil(rawSecondary, 0.58);
+    const ACCENT = brand?.accent || '#f5b335';
+    return { NAVY, NAVY_LIGHT, ACCENT };
+  }
 
   /**
    * Génère une carte d'identité scolaire officielle pour un élève
@@ -922,10 +994,14 @@ export class StudentIdCardService {
 
     // On remonte academicYear + schoolLevel au niveau du student pour que
     // generateCardHtml les lise via student.academicYear / student.schoolLevel.
+    // ⭐ 2026-11-27 — schoolLevelId aussi (résolution signature/cachet du
+    //    directeur PAR NIVEAU : secondaire ≠ maternel/primaire).
     const student: any = {
       ...card.student,
       academicYear: card.academicYear,
       schoolLevel: card.schoolLevel,
+      schoolLevelId: card.schoolLevelId ?? card.student?.schoolLevelId ?? null,
+      tenantId: card.student?.tenantId ?? card.tenantId,
     };
 
     return this.generateCardHtml(
@@ -1055,6 +1131,19 @@ export class StudentIdCardService {
       }
     }
 
+    // ── ⭐ 2026-11-27 — SIGNATURE + CACHET + NOM DU DIRECTEUR (par niveau) ──
+    // Même moteur que les bulletins (DocumentSealsService) : le directeur du
+    // SECONDAIRE diffère de celui du MATERNEL/PRIMAIRE — la résolution se fait
+    // par schoolLevelId (repli global), avec signature manuscrite + cachet
+    // institutionnel en data-URL. Non bloquant (carte sans cachet si absent).
+    const seals = cardTenantId
+      ? await this.documentSeals.getDirectorSeals(cardTenantId, student.schoolLevelId, 'FR').catch(() => null)
+      : null;
+    const directorName = seals?.holderName || null;
+    const directorSignatureUrl = seals?.signatureDataUrl || null;
+    const stampDataUrl =
+      seals?.institutionalCircularDataUrl || seals?.nominativeCircularDataUrl || null;
+
     // ── Heures de sortie maternelle (affichées dans le back-header du verso) ──
     const isMaternelle = levelUpper === 'MATERNELLE' || levelUpper === 'MAT';
     const maternelleSingleExit = identityProfile?.maternelleSingleExit ?? false;
@@ -1062,10 +1151,22 @@ export class StudentIdCardService {
     const maternellePickupAfternoon = identityProfile?.maternellePickupAfternoon || '16:30';
     const maternelleSingleExitTime = identityProfile?.maternelleSingleExitTime || '15:30';
 
-    // ── Design tokens (issus de TenantIdentityProfile ou valeurs par défaut) ──
-    // Couleurs par défaut : bleu marine institutionnel Academia Helm.
-    const NAVY = identityProfile?.cardPrimaryColor || '#0D1F6E';
-    const NAVY_LIGHT = identityProfile?.cardSecondaryColor || '#1A237E';
+    // ── Design tokens ──
+    // ⭐ 2026-11-27 — PALETTE DYNAMIQUE (retour promoteur) : la carte suit la
+    //    palette de marque de l'école (customColors CMS > logoPalette AUTO du
+    //    logo — même chaîne que le site institutionnel) avec CONTRASTE GARANTI
+    //    (bandes assombries jusqu'à luminance ≤ 0,45 / 0,58 → texte blanc
+    //    toujours lisible, jamais de texte pâle sur fond pâle).
+    //    cardUseBrandPalette=false (Paramètres Design) → couleurs manuelles.
+    const useBrandPalette = identityProfile?.cardUseBrandPalette !== false;
+    const brand = useBrandPalette && cardTenantId
+      ? await this.resolveCardBrandColors(cardTenantId)
+      : null;
+    const { NAVY, NAVY_LIGHT } = this.deriveCardColors(
+      brand,
+      identityProfile?.cardPrimaryColor,
+      identityProfile?.cardSecondaryColor,
+    );
     const showQRCode = identityProfile?.cardShowQRCode !== false; // défaut true
     const showBarcode = identityProfile?.cardShowBarcode !== false; // défaut true
     const showPhoto = identityProfile?.cardShowPhoto !== false; // défaut true
@@ -1157,12 +1258,21 @@ export class StudentIdCardService {
     // ⭐ Tagline (sous-titre du logo) — peut être différente du slogan
     const schoolTagline = identityProfile?.tagline || schoolSlogan || 'Éducation • Avenir • Réussite';
 
+    // ⭐ 2026-11-27 (retour promoteur) — NOM D'ÉCOLE TROP LONG : le nom
+    //    complet était tronqué (points de suspension) dans l'en-tête. Au-delà
+    //    de 26 caractères, on affiche le SIGLE (acronyme) de l'école — le nom
+    //    complet reste sur les autres documents officiels.
+    const schoolAcronym = identityProfile?.schoolAcronym ||
+      (schoolName.split(/\s+/).filter(w => w.length > 2).slice(0, 2).map(w => w[0] || '').join('').toUpperCase()) ||
+      'AH';
+    const displaySchoolName =
+      schoolName.length > 26 && schoolAcronym && schoolAcronym.length >= 2
+        ? schoolAcronym
+        : schoolName;
+
     // ⭐ Logo école (pour header recto + verso) : URL résolue en absolu si relative.
     //    Si pas de logo, on affiche un placeholder avec les initiales (acronym).
     const rawLogoUrl = identityProfile?.logoUrl || tenant?.logoUrl || '';
-    const schoolAcronym = identityProfile?.schoolAcronym ||
-      (schoolName.split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase()) ||
-      'AH';
     const logoSrc = rawLogoUrl
       ? (rawLogoUrl.startsWith('http') || rawLogoUrl.startsWith('data:')
         ? rawLogoUrl
@@ -1307,6 +1417,11 @@ export class StudentIdCardService {
       white-space: nowrap;
       margin-bottom: 1.5pt;
     }
+    /* ⭐ 2026-11-27 — sigle école : le nom long est remplacé par l'acronyme
+       (displaySchoolName) — cette classe reste pour les noms courts. */
+    .header-school-name.acronym {
+      letter-spacing: 0.8pt;
+    }
     .header-slogan {
       font-size: 4.5pt;
       font-style: italic;
@@ -1380,13 +1495,17 @@ export class StudentIdCardService {
       margin-bottom: 0.3mm;
       line-height: 1.15;
     }
+    /* ⭐ 2026-11-27 — LABELS COMPACTS (retour promoteur) : l'espace entre le
+       libellé et les deux points gaspillait la largeur — les noms d'élèves
+       longs étaient tronqués en «... ». Largeur 21mm → 13.5mm + colonne
+       3mm → 1.2mm → ~9mm récupérés pour la VALEUR. */
     .field-label {
       font-weight: 700;
-      width: 21mm;
+      width: 13.5mm;
       flex-shrink: 0;
     }
     .field-colon {
-      width: 3mm;
+      width: 1.2mm;
       flex-shrink: 0;
     }
     .field-value {
@@ -1398,8 +1517,19 @@ export class StudentIdCardService {
     .field-value.bold {
       font-weight: 700;
     }
+    /* ⭐ 2026-11-27 — numéro d'URGENCE en rouge (retour promoteur) */
+    .field-value.emergency {
+      color: #dc2626;
+      font-weight: 700;
+    }
 
     /* ===== FOOTER (Claude AI style : gradient + clip-path diagonal) ===== */
+    /* ⭐ 2026-11-27 — restructuré (retour promoteur) :
+       - adresse et téléphone bien SÉPARÉS (2 lignes nettes, la 1re ligne ne
+         touche plus la diagonale — padding-top) ;
+       - ZONE SIGNATURE AU-DESSUS de la bande (fond blanc) : signature
+         manuscrite + cachet qui déborde légèrement sur la bande ;
+       - dans la bande : « Directeur(trice) » + NOM du directeur. */
     .footer {
       position: absolute;
       bottom: 0;
@@ -1411,33 +1541,83 @@ export class StudentIdCardService {
       align-items: center;
       justify-content: space-between;
       padding: 0 4.2mm;
-      clip-path: polygon(0 25%, 100% 0, 100% 100%, 0 100%);
+      clip-path: polygon(0 22%, 100% 0, 100% 100%, 0 100%);
     }
     .footer-address {
       color: #fff;
-      font-size: 6pt;
-      line-height: 1.5;
-      max-width: 60%;
+      font-size: 5.5pt;
+      line-height: 1.35;
+      max-width: 58%;
       overflow: hidden;
+      padding-top: 1.2mm;
     }
+    .footer-address .addr-line { display: block; }
+    .footer-address .phone-line { display: block; margin-top: 0.4mm; }
     .footer-sign {
       text-align: center;
-      padding-top: 1mm;
+      position: absolute;
+      right: 3mm;
+      bottom: 0.7mm;
+      z-index: 3;
     }
-    .sign-line {
+    .sign-name {
       font-family: 'Brush Script MT', cursive;
-      font-size: 12pt;
-      color: #fff;
+      font-size: 8pt;
+      color: #0f172a;
       line-height: 1;
+      max-width: 34mm;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .sign-label {
       color: #fff;
-      font-size: 7pt;
+      font-size: 5.5pt;
       font-weight: 700;
-      margin-top: 0.5pt;
+      line-height: 1.15;
+    }
+    .sign-director-name {
+      color: #fff;
+      font-size: 5pt;
+      font-weight: 600;
+      line-height: 1.15;
+      max-width: 36mm;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    /* Signature manuscrite réelle (data-URL) posée dans la zone blanche,
+       au-dessus de la bande — déborde légèrement sur le bandeau. */
+    .sign-img {
+      height: 6.5mm;
+      max-width: 30mm;
+      object-fit: contain;
+      object-position: bottom;
+      display: block;
+      margin: 0 auto 0.3mm;
+      filter: drop-shadow(0 0 0.2mm rgba(0,0,0,0.15));
+    }
+    /* Cachet (data-URL, fond transparent) : appliqué soigneusement à gauche
+       de la signature, débordant sur la zone blanche et la bande.
+       ⭐ QA 2026-11-27 : bottom 3mm + 12mm — le haut du cachet s'arrête à
+       15mm du bas, SOUS la ligne Urgence (≈16,6mm) — plus de collision. */
+    .stamp-img {
+      position: absolute;
+      right: 33mm;
+      bottom: 3mm;
+      width: 12mm;
+      height: 12mm;
+      object-fit: contain;
+      opacity: 0.92;
+      z-index: 2;
+      pointer-events: none;
     }
 
     /* ===== VERSO — Back header (BANDE CONTINUE, pas de clip-path, dates visibles) ===== */
+    /* ⭐ 2026-11-27 — N° CARTE INTÉGRÉ AU HEADER (retour promoteur) : le
+       numéro remonte dans la bande, AU-DESSUS du titre « CONDITIONS
+       D'UTILISATION » — libère une ligne entière dans le corps du verso
+       (utilisée pour le nom du directeur). */
     .back-header {
       flex-shrink: 0;
       height: 22%;
@@ -1448,12 +1628,25 @@ export class StudentIdCardService {
       justify-content: space-between;
       padding: 0 4mm;
     }
+    .back-header-left {
+      flex: 1;
+      min-width: 0;
+    }
+    .card-number-header {
+      font-size: 4.5pt;
+      font-weight: 700;
+      letter-spacing: 0.3pt;
+      opacity: 0.92;
+      margin-bottom: 1pt;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .terms-title {
       font-weight: 800;
       font-size: 5pt;
       letter-spacing: 0.4pt;
       line-height: 1.1;
-      flex: 1;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -1505,11 +1698,7 @@ export class StudentIdCardService {
       z-index: 1;
     }
     .card-number-verso {
-      font-size: 5.5pt;
-      font-weight: 700;
-      color: ${NAVY};
-      margin-bottom: 3pt;
-      text-align: right;
+      display: none; /* ⭐ déplacé dans le back-header */
     }
     .term-item {
       display: flex;
@@ -1524,28 +1713,37 @@ export class StudentIdCardService {
       font-weight: 900;
       flex-shrink: 0;
     }
+    /* ⭐ 2026-11-27 — INTERLIGNES SERRETS (retour promoteur) : trop d'espace
+       entre Tél / Email / Web / Adresse — margin 0.5mm → 0.15mm,
+       line-height 1.3 → 1.2, labels 16mm → 12mm. */
     .contact-block {
-      margin-top: 1mm;
+      margin-top: 0.6mm;
       font-size: 6pt;
       color: #1a1a2e;
     }
     .contact-row {
       display: flex;
-      margin-bottom: 0.5mm;
-      line-height: 1.3;
+      margin-bottom: 0.15mm;
+      line-height: 1.2;
     }
     .contact-label {
       font-weight: 700;
-      width: 16mm;
+      width: 12mm;
       flex-shrink: 0;
     }
     .contact-colon {
       margin-right: 0.5mm;
+      flex-shrink: 0;
     }
     .contact-value {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    /* ⭐ Nom du directeur au verso — ligne dédiée (value en gras) */
+    .contact-value.director {
+      font-weight: 700;
+      color: #0f172a;
     }
 
     /* ===== VERSO — Back footer (Claude AI style : gradient + clip-path) ===== */
@@ -1635,7 +1833,7 @@ export class StudentIdCardService {
         <div class="header-center">
           <div class="header-republic">RÉPUBLIQUE DU BÉNIN</div>
           <div class="header-ministry">${ministry}</div>
-          <div class="header-school-name">${schoolName}</div>
+          <div class="header-school-name${displaySchoolName === schoolAcronym && displaySchoolName !== schoolName ? ' acronym' : ''}">${displaySchoolName}</div>
           <div class="header-slogan">${schoolSlogan}</div>
         </div>
         <!-- Logo école à droite -->
@@ -1655,20 +1853,33 @@ export class StudentIdCardService {
           <div class="field-row"><span class="field-label">Prénom</span><span class="field-colon">:</span><span class="field-value bold">${student.firstName}</span></div>
           ${showGuardian ? `<div class="field-row"><span class="field-label">Tuteur</span><span class="field-colon">:</span><span class="field-value">${guardianName}</span></div>` : ''}
           <div class="field-row"><span class="field-label">Classe</span><span class="field-colon">:</span><span class="field-value">${currentClass?.name || 'N/A'}</span></div>
-          ${showEmergencyCall ? `<div class="field-row"><span class="field-label">Urgence</span><span class="field-colon">:</span><span class="field-value">${guardianPhone}</span></div>` : ''}
+          ${showEmergencyCall ? `<div class="field-row"><span class="field-label">Urgence</span><span class="field-colon">:</span><span class="field-value emergency">${guardianPhone}</span></div>` : ''}
         </div>
       </div>
 
       <!-- ═══ FOOTER (Claude AI style : gradient + clip-path + adresse + signature) ═══ -->
+      <!-- ⭐ 2026-11-27 (retour promoteur) — le mot « Signature » est
+           REMPLACÉ par la signature manuscrite réelle (DocumentSealsService,
+           par niveau : directeur secondaire ≠ directeur maternel/primaire) ;
+           le CACHET est appliqué dynamiquement à gauche de la signature,
+           débordant sur la zone blanche ; le nom du directeur figure dans la
+           bande sous « Directeur(trice) ». -->
+      ${stampDataUrl ? `<img class="stamp-img" src="${stampDataUrl}" alt="Cachet" />` : ''}
+      <!-- Zone signature : HORS de la bande (frère) — le clip-path de .footer
+           ne doit PAS couper la signature qui déborde dans la zone blanche. -->
+      <div class="footer-sign">
+        ${directorSignatureUrl
+          ? `<img class="sign-img" src="${directorSignatureUrl}" alt="Signature" />`
+          : directorName
+          ? `<div class="sign-name">${directorName}</div>`
+          : `<div class="sign-name">&nbsp;</div>`}
+        <div class="sign-label">Directeur(trice)</div>
+        ${directorName ? `<div class="sign-director-name">${directorName}</div>` : ''}
+      </div>
       <div class="footer">
         <div class="footer-address">
-          ${showSchoolAddress && schoolAddress ? schoolAddress : ''}
-          ${showSchoolAddress && schoolAddress && schoolPhone ? '<br>' : ''}
-          ${schoolPhone ? 'Tél : ' + schoolPhone : ''}
-        </div>
-        <div class="footer-sign">
-          <div class="sign-line">Signature</div>
-          <div class="sign-label">Directeur(trice)</div>
+          ${showSchoolAddress && schoolAddress ? `<span class="addr-line">${schoolAddress}</span>` : ''}
+          ${schoolPhone ? `<span class="phone-line">Tél : ${schoolPhone}</span>` : ''}
         </div>
       </div>
     </div>
@@ -1680,8 +1891,12 @@ export class StudentIdCardService {
       <!-- ═══ BACK-HEADER (bande continue) ═══ -->
       <!-- Maternelle : "CONDITIONS D'UTILISATION" + heures de sortie (matin/après-midi) -->
       <!-- Autres niveaux : "CONDITIONS D'UTILISATION" uniquement (dates déplacées au footer) -->
+      <!-- ⭐ 2026-11-27 — N° CARTE dans la bande, AU-DESSUS du titre -->
       <div class="back-header">
-        <div class="terms-title${isMaternelle ? ' maternelle' : ''}">CONDITIONS D'UTILISATION</div>
+        <div class="back-header-left">
+          <div class="card-number-header">N° CARTE : ${displayCardNumber}</div>
+          <div class="terms-title${isMaternelle ? ' maternelle' : ''}">CONDITIONS D'UTILISATION</div>
+        </div>
         ${isMaternelle ? `
         <div class="maternelle-hours">
           ${maternelleSingleExit
@@ -1712,6 +1927,7 @@ export class StudentIdCardService {
             ${schoolEmail ? `<div class="contact-row"><span class="contact-label">Email</span><span class="contact-colon">:</span><span class="contact-value">${schoolEmail}</span></div>` : ''}
             ${schoolWebsite ? `<div class="contact-row"><span class="contact-label">Web</span><span class="contact-colon">:</span><span class="contact-value">${schoolWebsite}</span></div>` : ''}
             ${showSchoolAddress && schoolAddress ? `<div class="contact-row"><span class="contact-label">Adresse</span><span class="contact-colon">:</span><span class="contact-value">${schoolAddress}</span></div>` : ''}
+            ${directorName ? `<div class="contact-row"><span class="contact-label">Direction</span><span class="contact-colon">:</span><span class="contact-value director">${directorName}</span></div>` : ''}
           </div>
         </div>
       </div>
@@ -2021,6 +2237,32 @@ export class StudentIdCardService {
     return card?.id ?? null;
   }
 
+  /**
+   * ⭐ 2026-11-27 — Signature + cachet + nom du directeur pour l'APERÇU de la
+   * carte scolaire (web-app). Même résolution que le PDF : par niveau
+   * scolaire (directeur du secondaire ≠ directeur maternel/primaire, repli
+   * global), non bloquant.
+   */
+  async getDirectorSealsForPreview(tenantId: string, schoolLevelId: string | null): Promise<{
+    holderName: string | null;
+    signatureUrl: string | null;
+    stampUrl: string | null;
+  }> {
+    try {
+      const seals = await this.documentSeals.getDirectorSeals(tenantId, schoolLevelId, 'FR');
+      return {
+        holderName: seals?.holderName ?? null,
+        signatureUrl: seals?.signatureDataUrl ?? null,
+        stampUrl:
+          seals?.institutionalCircularDataUrl ??
+          seals?.nominativeCircularDataUrl ??
+          null,
+      };
+    } catch {
+      return { holderName: null, signatureUrl: null, stampUrl: null };
+    }
+  }
+
   // ==========================================================================
   //  CMS CARTE SCOLAIRE — TEMPLATES DE DESIGN (Task 19-a, Phase 2)
   // ==========================================================================
@@ -2317,5 +2559,77 @@ export class StudentIdCardService {
       capturedAt: new Date().toISOString(),
     };
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ⭐ 2026-11-27 — Petites fonctions couleur pour la palette de marque carte
+// (miroir local de tenant-colors-core / LogoPaletteService — aucun import
+// croisé web-app, tout reste côté API)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function normalizeCardHex(hex: string | null | undefined): string | null {
+  if (!hex || typeof hex !== 'string') return null;
+  let h = hex.trim().replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  return /^[0-9a-fA-F]{6}$/.test(h) ? `#${h.toLowerCase()}` : null;
+}
+
+function parseCardHex(hex: string): [number, number, number] {
+  const n = normalizeCardHex(hex) || '#000000';
+  return [
+    parseInt(n.substring(1, 3), 16) || 0,
+    parseInt(n.substring(3, 5), 16) || 0,
+    parseInt(n.substring(5, 7), 16) || 0,
+  ];
+}
+
+function clamp255(v: number): number {
+  return Math.max(0, Math.min(255, Math.round(v)));
+}
+
+function hexOfCard(r: number, g: number, b: number): string {
+  return '#' + [r, g, b].map(x => clamp255(x).toString(16).padStart(2, '0')).join('');
+}
+
+function cardLuminance(r: number, g: number, b: number): number {
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+/** Assombrit jusqu'à luminance simple ≤ max (garde la teinte — texte blanc lisible). */
+function darkenCardUntil(hex: string, maxLum: number): string {
+  let [r, g, b] = parseCardHex(hex);
+  let guard = 0;
+  while (cardLuminance(r, g, b) > maxLum && guard < 24) {
+    r *= 0.92; g *= 0.92; b *= 0.92;
+    guard++;
+  }
+  return hexOfCard(r, g, b);
+}
+
+function adjustCardHex(hex: string, amount: number): string {
+  const [r, g, b] = parseCardHex(hex);
+  return hexOfCard(r + amount, g + amount, b + amount);
+}
+
+/** Teinte chaude lumineuse dérivée du primary (équivalent accent GOLD Helm). */
+function shiftWarm(hex: string): string {
+  const [r, g, b] = parseCardHex(hex);
+  const max = Math.max(r, g, b) / 255;
+  const min = Math.min(r, g, b) / 255;
+  const l = (max + min) / 2;
+  const s = max === min ? 0 : (max - min) / (1 - Math.abs(2 * l - 1));
+  // Teinte ≈ 42° (ambre), luminance cible 0,78
+  const h = 42;
+  const c = (1 - Math.abs(2 * 0.78 - 1)) * Math.max(s, 0.55);
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = 0.78 - c / 2;
+  let rp = 0, gp = 0, bp = 0;
+  if (h < 60) { rp = c; gp = x; }
+  else if (h < 120) { rp = x; gp = c; }
+  else if (h < 180) { gp = c; bp = x; }
+  else if (h < 240) { gp = x; bp = c; }
+  else if (h < 300) { rp = x; bp = c; }
+  else { rp = c; bp = x; }
+  return hexOfCard((rp + m) * 255, (gp + m) * 255, (bp + m) * 255);
 }
 

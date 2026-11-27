@@ -1,8 +1,8 @@
 /**
- * MODULE 2 — STRUCTURE ACADÉMIQUE (refonte 2026-11-27)
- * L'onglet est désormais dédié à la GESTION DES SALLES (ex-sous-onglet Salle) :
- * tout le reste (Niveaux, Cycles, Classes, Sections, Séries, duplication) a
- * été supprimé à la demande du promoteur — les niveaux restent dans Paramètres.
+ * MODULE 2 — GESTION DE SALLE (refonte 2026-11-27)
+ * Onglet dédié à la gestion professionnelle des salles de l'établissement
+ * (ex « Structure académique ») : inventaire, capacités, équipements,
+ * affectation des classes, emploi du temps des salles et maintenance.
  */
 
 'use client';
@@ -21,9 +21,9 @@ export default function AcademicStructurePage() {
   return (
     <ModuleContainer
       header={{
-        title: 'Structure académique',
+        title: 'Gestion de salle',
         description: academicYear
-          ? `Gestion des salles — année ${academicYear.label}`
+          ? `Salles de l'établissement — année ${academicYear.label}`
           : 'Salles de classe, laboratoires, bibliothèque et espaces de l\'établissement',
         icon: 'bookOpen',
       }}
@@ -43,7 +43,7 @@ export default function AcademicStructurePage() {
         children: !academicYear ? (
           <p className="text-gray-500">Veuillez sélectionner une année scolaire.</p>
         ) : (
-          <Suspense fallback={<p className="text-gray-500">Chargement de la structure…</p>}>
+          <Suspense fallback={<p className="text-gray-500">Chargement des salles…</p>}>
             <AcademicStructureWorkspace />
           </Suspense>
         ),

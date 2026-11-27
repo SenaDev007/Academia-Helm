@@ -176,8 +176,10 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
   },
   {
     id: 'academic-structure',
-    label: 'Structure académique',
-    labelEn: 'Academic Structure',
+    // ⭐ 2026-11-27 (retour promoteur) : l'onglet ne gère plus QUE les salles —
+    // renommé « Gestion de salle » pour refléter son contenu réel.
+    label: 'Gestion de salle',
+    labelEn: 'Room Management',
     path: '/app/pedagogy/academic-structure',
     icon: Layers,
     roles: [

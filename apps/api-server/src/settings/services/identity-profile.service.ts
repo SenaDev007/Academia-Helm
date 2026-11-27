@@ -584,8 +584,11 @@ export class IdentityProfileService {
       currency: profile.currency,
       timezone: profile.timezone,
       logoUrl: profile.logoUrl,
-      stampUrl: null,
-      directorSignatureUrl: null,
+      // ⭐ 2026-11-27 — vraies valeurs (étaient codées null) : cachet +
+      //    signature du directeur du profil d'identité (fallbacks des
+      //    cachets/signatures par niveau de RH > Administration).
+      stampUrl: (profile as any).stampUrl ?? null,
+      directorSignatureUrl: (profile as any).directorSignatureUrl ?? null,
       // ⭐ Champs Maternelle (heures de sortie)
       maternellePickupMorning: profile.maternellePickupMorning ?? null,
       maternellePickupAfternoon: profile.maternellePickupAfternoon ?? null,
@@ -593,6 +596,10 @@ export class IdentityProfileService {
       maternelleSingleExitTime: profile.maternelleSingleExitTime ?? null,
       // ⭐ Champs Carte scolaire — Phase 1 (11 champs)
       cardPrimaryColor: profile.cardPrimaryColor ?? '#0A2A5E',
+      // ⭐ 2026-11-27 — palette de marque automatique (logo/CMS) : true par
+      //    défaut ; false → couleurs manuelles cardPrimaryColor/Secondary.
+      cardUseBrandPalette: (profile as any).cardUseBrandPalette ?? true,
+      cardSecondaryColor: profile.cardSecondaryColor ?? '#1E40AF',
       cardShowQRCode: profile.cardShowQRCode ?? true,
       cardShowPhoto: profile.cardShowPhoto ?? true,
       cardShowGuardian: profile.cardShowGuardian ?? true,

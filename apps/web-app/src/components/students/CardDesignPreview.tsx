@@ -89,9 +89,14 @@ export default function CardDesignPreview({
   // IdCardVisual lit identity.cardPrimaryColor, identity.cardShowPhoto, etc.
   // On fusionne donc les settings édités avec l'identity du tenant pour
   // obtenir un aperçu live sans toucher à l'identity stockée.
+  // ⭐ 2026-11-27 — le studio de design force les couleurs MANUELLES
+  //    (cardUseBrandPalette=false) : l'admin y édite précisément
+  //    cardPrimaryColor — la palette automatique (logo) se pilote depuis
+  //    l'onglet « Paramètres Design » de la liste des cartes.
   const liveIdentity: TenantInfo | null = identity
     ? {
         ...identity,
+        cardUseBrandPalette: false,
         cardPrimaryColor: settings.cardPrimaryColor,
         cardShowQRCode: settings.cardShowQRCode,
         cardShowPhoto: settings.cardShowPhoto,

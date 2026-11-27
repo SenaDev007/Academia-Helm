@@ -115,6 +115,31 @@ export class RoomsPrismaController {
     );
   }
 
+  /**
+   * ⭐ 2026-11-27 — Vue 360° d'une salle (Gestion de salle) : salle +
+   * classes affectées + emploi du temps réel + maintenance. DOIT rester
+   * AVANT les routes paramétrées génériques (aucun conflit ici : :id/detail
+   * est plus spécifique que :id).
+   */
+  @Get(':id/detail')
+  async getRoomDetail(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.roomsService.getRoomDetail(id, tenantId, academicYearId);
+  }
+
+  /** ⭐ 2026-11-27 — Réactive une salle après maintenance (statut ACTIVE +
+   *  clôture des maintenances actives, historique conservé). */
+  @Put(':id/restore')
+  async restoreRoom(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.roomsService.restoreRoom(id, tenantId);
+  }
+
   @Post('maintenances')
   async createMaintenance(
     @TenantId() tenantId: string,

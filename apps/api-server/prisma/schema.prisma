@@ -3602,6 +3602,10 @@ model TenantIdentityProfile {
   maternelleSingleExitTime  String?  @default("15:30")
   cardPrimaryColor          String?  @default("#003087")
   cardSecondaryColor        String?  @default("#007BFF")
+  // ⭐ 2026-11-27 — palette de marque (logo/CMS) appliquée automatiquement à la
+  //    carte scolaire (même chaîne que le site institutionnel). false → les
+  //    couleurs manuelles cardPrimaryColor/cardSecondaryColor sont utilisées.
+  cardUseBrandPalette       Boolean? @default(true)
   cardShowQRCode            Boolean? @default(true)
   cardShowBarcode           Boolean? @default(true)
   cardShowPhoto             Boolean? @default(true)

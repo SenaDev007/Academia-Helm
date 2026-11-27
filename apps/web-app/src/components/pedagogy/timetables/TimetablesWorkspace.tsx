@@ -2787,7 +2787,7 @@ function NewEdtWizard({
                 <div className="bg-white rounded-xl border border-slate-200 p-6 text-center">
                   <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                   <p className="text-sm font-medium text-slate-700">Aucune classe pour ce niveau</p>
-                  <p className="text-xs text-slate-400 mt-1">Créez d'abord les classes du niveau (Pédagogie {'>'} Structure académique).</p>
+                  <p className="text-xs text-slate-400 mt-1">Créez d'abord les classes du niveau (Pédagogie {'>'} Gestion de salle).</p>
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-2">

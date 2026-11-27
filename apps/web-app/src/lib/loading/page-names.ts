@@ -131,7 +131,7 @@ export const PAGE_NAMES: Record<string, string> = {
 
   // ─── App — Pédagogie ───
   '/app/pedagogy': 'Pédagogie',
-  '/app/pedagogy/academic-structure': 'Structure académique',
+  '/app/pedagogy/academic-structure': 'Gestion de salle',
   '/app/pedagogy/class-diaries': 'Cahiers de textes',
   '/app/pedagogy/assignments': 'Devoirs',
   '/app/pedagogy/control': 'Validation Direction',

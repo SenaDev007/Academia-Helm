@@ -129,6 +129,27 @@ export class StudentIdCardController {
   }
 
   /**
+   * ⭐ 2026-11-27 — Signature + cachet + nom du directeur POUR L'APERÇU
+   * (carte scolaire — retour promoteur). Résolution PAR NIVEAU scolaire :
+   * le directeur du secondaire diffère de celui du maternel/primaire.
+   *
+   * GET /students/id-cards/director-seals?schoolLevelId=...
+   * Réponse : { holderName, signatureUrl, stampUrl } (data-URLs ou null).
+   */
+  @Get('director-seals')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'SECRETARY', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
+  async getDirectorSeals(
+    @GetTenant() tenant: any,
+    @Query('schoolLevelId') schoolLevelId?: string,
+  ) {
+    return this.idCardService.getDirectorSealsForPreview(
+      tenant.id,
+      schoolLevelId || null,
+    );
+  }
+
+  /**
    * ⭐ Liste les cartes groupées par niveau scolaire puis par classe.
    * GET /students/id-cards/grouped-by-class?academicYearId=...
    *

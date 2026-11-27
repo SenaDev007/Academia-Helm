@@ -1781,6 +1781,13 @@ async function bootstrap() {
   try {
     const prisma = app.get(PrismaService);
 
+    // 0. tenant_identity_profiles — ⭐ 2026-11-27 carte scolaire : palette de
+    //    marque automatique (logo/CMS). Même DDL que migrations/022 —
+    //    self-healing au déploiement Railway (idempotent).
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "tenant_identity_profiles" ADD COLUMN IF NOT EXISTS "cardUseBrandPalette" BOOLEAN DEFAULT true`,
+    ).catch(() => {});
+
     // 1. employment_contracts — schoolLevelId column (added to schema but may not be in DB)
     await prisma.$executeRawUnsafe(
       `ALTER TABLE "employment_contracts" ADD COLUMN IF NOT EXISTS "schoolLevelId" TEXT`,

@@ -690,8 +690,8 @@ body {
 }
 
 /* AcademiaLoader — inline mode ring animation
-   ⭐ 2026-11-27 — palette de l'ÉCOLE via --ah-gold-*/--ah-blue-* (injectées
-   par AppBrandTheme dans /app) ; fallbacks = hex historiques Helm. */
+   2026-11-27 — palette de l'ÉCOLE via variables --ah-gold et --ah-blue
+   (injectées par AppBrandTheme dans /app) ; fallbacks = hex historiques Helm. */
 .academia-loader-ring-sm {
   position: absolute; inset: -5px;
   border-radius: 50%;
@@ -1472,7 +1472,9 @@ html {
 
 /* ============================================================
    CDC RESPONSIVE — règles globales mobile-first
-/* ⭐ V12 (2026-09-22) — POLICES D'ÉCRITURE SCOLAIRE (auto-hébergées, OFL)
+   ============================================================ */
+
+/* V12 (2026-09-22) — POLICES D'ÉCRITURE SCOLAIRE (auto-hébergées, OFL)
    Playwrite FR Moderne / Playwrite FR Trad : cursives scolaires françaises
    (projet Google Fonts dédié à l'enseignement). Comic Neue : écriture script
    (lettres imprimées). Utilisées par les lignes calligraphiques insérées via

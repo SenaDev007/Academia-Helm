@@ -140,6 +140,10 @@ module.exports = {
           300: 'var(--ah-blue-300, #93c5fd)', // Texte muted sur sidebar
           200: 'var(--ah-blue-200, #bfdbfe)', // Texte très muted
           100: 'var(--ah-blue-100, #dbeafe)', // Texte hover clair
+          // ⭐ 2026-11-27 — blue-50 existait dans le CODE (items actifs des
+          // sidebars Enseignant/Admin : bg-blue-50) mais PAS dans cette
+          // palette → la classe n'était jamais générée (fond invisible).
+          50: 'var(--ah-blue-100, #eff6ff)',
         },
 
         // GOLD PREMIUM — devient la couleur d'ACCENT de l'école (usage ≤ 5%)
@@ -205,6 +209,101 @@ module.exports = {
           200: 'var(--ah-blue-200, #e9d5ff)',
           100: 'var(--ah-blue-100, #f3e8ff)',
           50: 'var(--ah-blue-100, #faf5ff)',
+        },
+
+        /* ⭐ 2026-11-27 (2e vague — « la palette ne s'applique pas aux UI par
+         * rôle : enseignants, secrétaire, secrétaire-comptable, directeur,
+         * parents ») — Les échelles RESTANTES à usage purement DÉCORATIF
+         * suivent désormais elles aussi la couleur PRIMAIRE de l'école :
+         *   • sky  : accent du portail SECRÉTAIRE (sidebar, items actifs)
+         *   • teal : accent du portail SURVEILLANT + chips Helm Connect
+         *   • cyan : chips de modules (planification annuelle…)
+         *   • fuchsia / pink / lime : chips d'icônes et badges décoratifs
+         * Même mécanisme fail-open que blue/indigo : hors /app et pour les
+         * écoles sans palette, le fallback = hex d'origine → rendu inchangé.
+         *
+         * ⚠️ Restent SÉMANTIQUES (volontairement NON mappées) :
+         *   • emerald / green — succès (Payé, Présent, Validé, Actif)
+         *   • amber / yellow  — avertissement (En retard, Arriérés, En attente)
+         *   • rose / red      — danger et actions destructrices
+         *   • orange         — échelles de notes et notations (mention D, risque moyen) */
+        sky: {
+          950: 'var(--ah-blue-900, #082f49)',
+          900: 'var(--ah-blue-900, #0c4a6e)',
+          800: 'var(--ah-blue-800, #075985)',
+          700: 'var(--ah-blue-700, #0369a1)',
+          600: 'var(--ah-blue-600, #0284c7)',
+          500: 'var(--ah-blue-500, #0ea5e9)',
+          400: 'var(--ah-blue-400, #38bdf8)',
+          300: 'var(--ah-blue-300, #7dd3fc)',
+          200: 'var(--ah-blue-200, #bae6fd)',
+          100: 'var(--ah-blue-100, #e0f2fe)',
+          50: 'var(--ah-blue-100, #f0f9ff)',
+        },
+        teal: {
+          950: 'var(--ah-blue-900, #042f2e)',
+          900: 'var(--ah-blue-900, #134e4a)',
+          800: 'var(--ah-blue-800, #115e59)',
+          700: 'var(--ah-blue-700, #0f766e)',
+          600: 'var(--ah-blue-600, #0d9488)',
+          500: 'var(--ah-blue-500, #14b8a6)',
+          400: 'var(--ah-blue-400, #2dd4bf)',
+          300: 'var(--ah-blue-300, #5eead4)',
+          200: 'var(--ah-blue-200, #99f6e4)',
+          100: 'var(--ah-blue-100, #ccfbf1)',
+          50: 'var(--ah-blue-100, #f0fdfa)',
+        },
+        cyan: {
+          950: 'var(--ah-blue-900, #083344)',
+          900: 'var(--ah-blue-900, #164e63)',
+          800: 'var(--ah-blue-800, #155e75)',
+          700: 'var(--ah-blue-700, #0e7490)',
+          600: 'var(--ah-blue-600, #0891b2)',
+          500: 'var(--ah-blue-500, #06b6d4)',
+          400: 'var(--ah-blue-400, #22d3ee)',
+          300: 'var(--ah-blue-300, #67e8f9)',
+          200: 'var(--ah-blue-200, #a5f3fc)',
+          100: 'var(--ah-blue-100, #cffafe)',
+          50: 'var(--ah-blue-100, #ecfeff)',
+        },
+        fuchsia: {
+          950: 'var(--ah-blue-900, #4a044e)',
+          900: 'var(--ah-blue-900, #701a75)',
+          800: 'var(--ah-blue-800, #86198f)',
+          700: 'var(--ah-blue-700, #a21caf)',
+          600: 'var(--ah-blue-600, #c026d3)',
+          500: 'var(--ah-blue-500, #d946ef)',
+          400: 'var(--ah-blue-400, #e879f9)',
+          300: 'var(--ah-blue-300, #f0abfc)',
+          200: 'var(--ah-blue-200, #f5d0fe)',
+          100: 'var(--ah-blue-100, #fae8ff)',
+          50: 'var(--ah-blue-100, #fdf4ff)',
+        },
+        pink: {
+          950: 'var(--ah-blue-900, #500724)',
+          900: 'var(--ah-blue-900, #831843)',
+          800: 'var(--ah-blue-800, #9d174d)',
+          700: 'var(--ah-blue-700, #be185d)',
+          600: 'var(--ah-blue-600, #db2777)',
+          500: 'var(--ah-blue-500, #ec4899)',
+          400: 'var(--ah-blue-400, #f472b6)',
+          300: 'var(--ah-blue-300, #f9a8d4)',
+          200: 'var(--ah-blue-200, #fbcfe8)',
+          100: 'var(--ah-blue-100, #fce7f3)',
+          50: 'var(--ah-blue-100, #fdf2f8)',
+        },
+        lime: {
+          950: 'var(--ah-blue-900, #1a2e05)',
+          900: 'var(--ah-blue-900, #365314)',
+          800: 'var(--ah-blue-800, #3f6212)',
+          700: 'var(--ah-blue-700, #4d7c0f)',
+          600: 'var(--ah-blue-600, #65a30d)',
+          500: 'var(--ah-blue-500, #84cc16)',
+          400: 'var(--ah-blue-400, #a3e635)',
+          300: 'var(--ah-blue-300, #bef264)',
+          200: 'var(--ah-blue-200, #d9f99d)',
+          100: 'var(--ah-blue-100, #ecfccb)',
+          50: 'var(--ah-blue-100, #f7fee7)',
         },
         
         // NEUTRES — Structure & respiration (25% de l'UI)

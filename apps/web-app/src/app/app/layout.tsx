@@ -145,12 +145,29 @@ export default async function AppLayout({
         nextPaymentDueAt: undefined,
       } as Tenant as Tenant;
 
+  // ⭐ 2026-11-27 — ROBUSTESSE DU THÈME DE MARQUE (palette du logo sur TOUTES
+  // les UI par rôle — enseignant, secrétaire, secrétaire-comptable, directeur,
+  // comptable, surveillant, censeur, parent). Le slug peut manquer dans le
+  // payload tenant de la session (login où loadTenantFromApi a échoué, session
+  // ancienne…) → on retombe sur le SOUS-DOMAINE du host : le personnel et les
+  // parents se connectent SUR le sous-domaine de leur école, exactement la
+  // source qu'utilise la page /login (qui, elle, fonctionne). Garde
+  // isReservedSubdomain : www/app/admin/api… ne sont pas des écoles.
+  const brandHost = allHeaders.get('host') || allHeaders.get('x-forwarded-host') || '';
+  const brandHostParts = brandHost.split('.');
+  const brandHostSubdomain =
+    brandHostParts.length >= 3 && !isReservedSubdomain(brandHostParts[0])
+      ? brandHostParts[0]
+      : null;
+  const brandTenantSlug =
+    tenant.slug || tenant.subdomain || brandHostSubdomain || null;
+
   // ⭐ Pour les routes /app/teacher et /app/parent, on rend directement
   // les children SANS le PilotageLayout.
   if (isOnDedicatedPortal) {
     return (
       <ModalProvider>
-        <AppBrandTheme tenantSlug={tenant.slug || tenant.subdomain} />
+        <AppBrandTheme tenantSlug={brandTenantSlug} />
         <AppLayoutClient user={user} tenant={tenant}>
           {children}
         </AppLayoutClient>
@@ -171,7 +188,7 @@ export default async function AppLayout({
   if (adminShell) {
     return (
       <ModalProvider>
-        <AppBrandTheme tenantSlug={tenant.slug || tenant.subdomain} />
+        <AppBrandTheme tenantSlug={brandTenantSlug} />
         <AppLayoutClient user={user} tenant={tenant}>
           <AdminPortalShell portalKey={adminShell.key}>
             {children}
@@ -188,7 +205,7 @@ export default async function AppLayout({
   // ont chacun leur shell dédié (voir getAdminShellForRole).
   return (
     <ModalProvider>
-      <AppBrandTheme tenantSlug={tenant.slug || tenant.subdomain} />
+      <AppBrandTheme tenantSlug={brandTenantSlug} />
       <AppLayoutClient user={user} tenant={tenant}>
         <PilotageLayout user={user} tenant={tenant}>
           {children}

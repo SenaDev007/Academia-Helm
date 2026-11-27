@@ -91,7 +91,22 @@ export const ICON_REGISTRY: Record<AdminPortalIcon, LucideIcon> = {
   CalendarCheck,
 };
 
-// ─── Thèmes par accent (un métier = une couleur) ────────────────────────────
+// ─── Thèmes par accent ──────────────────────────────────────────────────────
+// ⭐ 2026-11-27 — UNIFICATION PALETTE ÉCOLE (demande promoteur : « la palette
+//    du logo ne s'applique pas aux UI par rôle — secrétaire, secrétaire
+//    comptable, directeur et autres »). Avant : un métier = une couleur fixe
+//    (directeur indigo, secrétaire sky, comptable emerald, surveillant teal,
+//    censeur amber, secrétaire-comptable violet) → ces échelles restaient
+//    figées et l'identité de l'école n'apparaissait nulle part dans le shell.
+//    Désormais TOUS les portails admin partagent la couleur PRIMAIRE de
+//    l'école (blue-* → variables --ah-blue-*, injectées par AppBrandTheme) ;
+//    sans palette configurée, rendu Helm inchangé (fallbacks tailwind).
+//    La structure Record<AdminPortalAccent, …> est conservée pour ne pas
+//    toucher au type partagé (admin-portal-map).
+const SCHOOL_ACTIVE = 'bg-blue-50 text-blue-700 border-l-4 border-blue-600';
+const SCHOOL_AVATAR = 'bg-blue-600';
+const SCHOOL_ICON_BG = 'bg-blue-100';
+const SCHOOL_ICON_TEXT = 'text-blue-600';
 
 interface AccentTheme {
   active: string;
@@ -105,40 +120,40 @@ interface AccentTheme {
 
 const ACCENT_THEMES: Record<AdminPortalAccent, AccentTheme> = {
   indigo: {
-    active: 'bg-indigo-50 text-indigo-700 border-l-4 border-indigo-600',
-    avatar: 'bg-indigo-600', avatarText: 'text-white',
-    iconBg: 'bg-indigo-100', iconText: 'text-indigo-600',
-    logoBg: 'bg-indigo-100', spinner: 'text-indigo-600',
+    active: SCHOOL_ACTIVE,
+    avatar: SCHOOL_AVATAR, avatarText: 'text-white',
+    iconBg: SCHOOL_ICON_BG, iconText: SCHOOL_ICON_TEXT,
+    logoBg: SCHOOL_ICON_BG, spinner: SCHOOL_ICON_TEXT,
   },
   sky: {
-    active: 'bg-sky-50 text-sky-700 border-l-4 border-sky-600',
-    avatar: 'bg-sky-600', avatarText: 'text-white',
-    iconBg: 'bg-sky-100', iconText: 'text-sky-600',
-    logoBg: 'bg-sky-100', spinner: 'text-sky-600',
+    active: SCHOOL_ACTIVE,
+    avatar: SCHOOL_AVATAR, avatarText: 'text-white',
+    iconBg: SCHOOL_ICON_BG, iconText: SCHOOL_ICON_TEXT,
+    logoBg: SCHOOL_ICON_BG, spinner: SCHOOL_ICON_TEXT,
   },
   emerald: {
-    active: 'bg-emerald-50 text-emerald-700 border-l-4 border-emerald-600',
-    avatar: 'bg-emerald-600', avatarText: 'text-white',
-    iconBg: 'bg-emerald-100', iconText: 'text-emerald-600',
-    logoBg: 'bg-emerald-100', spinner: 'text-emerald-600',
+    active: SCHOOL_ACTIVE,
+    avatar: SCHOOL_AVATAR, avatarText: 'text-white',
+    iconBg: SCHOOL_ICON_BG, iconText: SCHOOL_ICON_TEXT,
+    logoBg: SCHOOL_ICON_BG, spinner: SCHOOL_ICON_TEXT,
   },
   teal: {
-    active: 'bg-teal-50 text-teal-700 border-l-4 border-teal-600',
-    avatar: 'bg-teal-600', avatarText: 'text-white',
-    iconBg: 'bg-teal-100', iconText: 'text-teal-600',
-    logoBg: 'bg-teal-100', spinner: 'text-teal-600',
+    active: SCHOOL_ACTIVE,
+    avatar: SCHOOL_AVATAR, avatarText: 'text-white',
+    iconBg: SCHOOL_ICON_BG, iconText: SCHOOL_ICON_TEXT,
+    logoBg: SCHOOL_ICON_BG, spinner: SCHOOL_ICON_TEXT,
   },
   amber: {
-    active: 'bg-amber-50 text-amber-700 border-l-4 border-amber-600',
-    avatar: 'bg-amber-600', avatarText: 'text-white',
-    iconBg: 'bg-amber-100', iconText: 'text-amber-600',
-    logoBg: 'bg-amber-100', spinner: 'text-amber-600',
+    active: SCHOOL_ACTIVE,
+    avatar: SCHOOL_AVATAR, avatarText: 'text-white',
+    iconBg: SCHOOL_ICON_BG, iconText: SCHOOL_ICON_TEXT,
+    logoBg: SCHOOL_ICON_BG, spinner: SCHOOL_ICON_TEXT,
   },
   violet: {
-    active: 'bg-violet-50 text-violet-700 border-l-4 border-violet-600',
-    avatar: 'bg-violet-600', avatarText: 'text-white',
-    iconBg: 'bg-violet-100', iconText: 'text-violet-600',
-    logoBg: 'bg-violet-100', spinner: 'text-violet-600',
+    active: SCHOOL_ACTIVE,
+    avatar: SCHOOL_AVATAR, avatarText: 'text-white',
+    iconBg: SCHOOL_ICON_BG, iconText: SCHOOL_ICON_TEXT,
+    logoBg: SCHOOL_ICON_BG, spinner: SCHOOL_ICON_TEXT,
   },
 };
 

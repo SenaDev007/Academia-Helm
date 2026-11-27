@@ -33,15 +33,18 @@ import { ADMIN_PORTALS, type AdminPortalAccent } from '@/lib/auth/admin-portal-m
 // ⭐ P4-final : home bilingue — piste EN → cartes et bannière 100% EN
 import { useL } from '@/lib/i18n/bilingual';
 
-// ─── Dégradés de bannière par accent (un métier = une couleur) ───────────────
-
+// ─── Dégradé de bannière — palette de l'ÉCOLE ───────────────────────────────
+// ⭐ 2026-11-27 — unification : la bannière d'accueil passe de la couleur du
+// métier (sky/emerald/teal/amber/violet figés) au dégradé PRIMAIRE de
+// l'école (blue-700→blue-900, mêmes échelles que la topbar promoteur).
+// Sans palette configurée : rendu Helm historique (fallbacks tailwind).
 const ACCENT_GRADIENTS: Record<AdminPortalAccent, string> = {
-  indigo: 'from-indigo-600 to-indigo-700',
-  sky: 'from-sky-600 to-sky-700',
-  emerald: 'from-emerald-600 to-emerald-700',
-  teal: 'from-teal-600 to-teal-700',
-  amber: 'from-amber-500 to-amber-600',
-  violet: 'from-violet-600 to-violet-700',
+  indigo: 'from-blue-700 to-blue-900',
+  sky: 'from-blue-700 to-blue-900',
+  emerald: 'from-blue-700 to-blue-900',
+  teal: 'from-blue-700 to-blue-900',
+  amber: 'from-blue-700 to-blue-900',
+  violet: 'from-blue-700 to-blue-900',
 };
 
 // ─── Composant ──────────────────────────────────────────────────────────────
@@ -156,12 +159,12 @@ export default function AdminPortalHome({ portalKey }: AdminPortalHomeProps) {
   );
 }
 
-// Chip d'icône des cartes (couleur du métier)
+// Chip d'icône des cartes — couleur de l'ÉCOLE (palette primaire)
 const accentChipClasses: Record<AdminPortalAccent, string> = {
-  indigo: 'bg-indigo-50 text-indigo-600',
-  sky: 'bg-sky-50 text-sky-600',
-  emerald: 'bg-emerald-50 text-emerald-600',
-  teal: 'bg-teal-50 text-teal-600',
-  amber: 'bg-amber-50 text-amber-600',
-  violet: 'bg-violet-50 text-violet-600',
+  indigo: 'bg-blue-50 text-blue-600',
+  sky: 'bg-blue-50 text-blue-600',
+  emerald: 'bg-blue-50 text-blue-600',
+  teal: 'bg-blue-50 text-blue-600',
+  amber: 'bg-blue-50 text-blue-600',
+  violet: 'bg-blue-50 text-blue-600',
 };

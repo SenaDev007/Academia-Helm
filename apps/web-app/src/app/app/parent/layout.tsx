@@ -106,7 +106,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
   if (!academicYear?.id) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
       </div>
     );
   }
@@ -121,7 +121,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
     //    QUE dans <main> (overflow-y-auto) — la sidebar (fixed) reste ancrée
     //    à gauche en permanence, la page ne défile plus « à l'infini ».
     //    Même comportement que l'UI promoteur (PilotageLayout).
-    <div className="app-shell-vh overflow-hidden bg-emerald-50/30">
+    <div className="app-shell-vh overflow-hidden bg-blue-50/30">
       {/* ⭐ Overlay mobile */}
       {mobileSidebarOpen && (
         <div
@@ -142,8 +142,8 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
           {school?.logoUrl ? (
             <img src={school.logoUrl} alt={school.schoolName} className="h-10 w-10 rounded-lg object-cover" />
           ) : (
-            <div className="h-10 w-10 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
-              <Building2 className="h-5 w-5 text-emerald-600" />
+            <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+              <Building2 className="h-5 w-5 text-blue-600" />
             </div>
           )}
           <div className="min-w-0 flex-1">
@@ -175,8 +175,8 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
                 className="h-8 w-8 rounded-full object-cover flex-shrink-0 border border-slate-200"
               />
             ) : (
-              <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                <Heart className="h-4 w-4 text-emerald-600" />
+              <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <Heart className="h-4 w-4 text-blue-600" />
               </div>
             )}
             <div className="min-w-0">
@@ -224,7 +224,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
                   isActive
-                    ? "bg-emerald-50 text-emerald-700 border-l-4 border-emerald-600"
+                    ? "bg-blue-50 text-blue-700 border-l-4 border-blue-600"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-4 border-transparent"
                 )}
               >

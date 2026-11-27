@@ -62,14 +62,18 @@ export default function TeacherDashboardPage() {
   const totalGirls = classes.reduce((sum, c) => sum + (c.girls || 0), 0);
 
   // ⭐ Libellés bilingues — modules du dashboard enseignant
+  // ⭐ 2026-11-27 — UNIFICATION PALETTE ÉCOLE : la grille arc-en-ciel
+  //    (purple/cyan/amber/rose/pink/teal figés) devient le duo professionnel
+  //    PRIMAIRE (blue) / ACCENT (gold) de l'école — même identité que le site
+  //    institutionnel et l'UI promoteur. Sans palette : fallbacks Helm.
   const modules = [
-    { href: "/app/teacher/timetable", label: L("Emploi du Temps", "Timetable"), icon: CalendarDays, desc: L("Consulter votre emploi du temps", "View your timetable"), color: "bg-purple-50 text-purple-700 border-purple-200" },
-    { href: "/app/teacher/annual-planning", label: L("Planification annuelle", "Annual Planning"), icon: ClipboardList, desc: L("Planification pédagogique officielle de chaque niveau (CI à CM2 + Maternelle)", "Official pedagogical planning for each level (CI to CM2 + Maternelle)"), color: "bg-cyan-50 text-cyan-700 border-cyan-200" },
+    { href: "/app/teacher/timetable", label: L("Emploi du Temps", "Timetable"), icon: CalendarDays, desc: L("Consulter votre emploi du temps", "View your timetable"), color: "bg-blue-50 text-blue-700 border-blue-200" },
+    { href: "/app/teacher/annual-planning", label: L("Planification annuelle", "Annual Planning"), icon: ClipboardList, desc: L("Planification pédagogique officielle de chaque niveau (CI à CM2 + Maternelle)", "Official pedagogical planning for each level (CI to CM2 + Maternelle)"), color: "bg-gold-500/10 text-gold-600 border-gold-500/20" },
     { href: "/app/teacher/pedagogy", label: L("Espace Pédagogique", "Pedagogy Space"), icon: BookOpen, desc: L("Cahier journal, fiches pédagogiques, registre d'appel, cahier de texte, devoirs", "Daily log, lesson sheets, attendance register, textbook, homework"), color: "bg-blue-50 text-blue-700 border-blue-200" },
-    { href: "/app/teacher/tasks", label: L("Travaux & Suivi", "Tasks & Tracking"), icon: ClipboardList, desc: L("Tâches assignées, suivi pédagogique", "Assigned tasks, pedagogical follow-up"), color: "bg-amber-50 text-amber-700 border-amber-200" },
-    { href: "/app/teacher/exams", label: L("Examens & Notes", "Exams & Grades"), icon: FileEdit, desc: L("Mes évaluations, saisie des notes, bulletins", "My assessments, grade entry, report cards"), color: "bg-rose-50 text-rose-700 border-rose-200" },
-    { href: "/app/teacher/educast", label: "EduCast", icon: Video, desc: L("Vidéos pédagogiques, podcasts", "Educational videos, podcasts"), color: "bg-pink-50 text-pink-700 border-pink-200" },
-    { href: "/app/teacher/communication", label: "Helm Connect", icon: MessageSquare, desc: L("Communiquez. Collaborez. Restez connectés.", "Communicate. Collaborate. Stay connected."), color: "bg-teal-50 text-teal-700 border-teal-200" },
+    { href: "/app/teacher/tasks", label: L("Travaux & Suivi", "Tasks & Tracking"), icon: ClipboardList, desc: L("Tâches assignées, suivi pédagogique", "Assigned tasks, pedagogical follow-up"), color: "bg-gold-500/10 text-gold-600 border-gold-500/20" },
+    { href: "/app/teacher/exams", label: L("Examens & Notes", "Exams & Grades"), icon: FileEdit, desc: L("Mes évaluations, saisie des notes, bulletins", "My assessments, grade entry, report cards"), color: "bg-blue-50 text-blue-700 border-blue-200" },
+    { href: "/app/teacher/educast", label: "EduCast", icon: Video, desc: L("Vidéos pédagogiques, podcasts", "Educational videos, podcasts"), color: "bg-gold-500/10 text-gold-600 border-gold-500/20" },
+    { href: "/app/teacher/communication", label: "Helm Connect", icon: MessageSquare, desc: L("Communiquez. Collaborez. Restez connectés.", "Communicate. Collaborate. Stay connected."), color: "bg-blue-50 text-blue-700 border-blue-200" },
   ];
 
   return (
@@ -118,24 +122,24 @@ export default function TeacherDashboardPage() {
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <div className="flex items-center gap-2 mb-1">
-            <Users className="h-5 w-5 text-cyan-600" />
+            <Users className="h-5 w-5 text-blue-600" />
             <span className="text-xs font-semibold text-slate-500 uppercase">{L("Garçons", "Boys")}</span>
           </div>
-          <p className="text-2xl font-bold text-cyan-600">{loading ? "…" : totalBoys}</p>
+          <p className="text-2xl font-bold text-blue-700">{loading ? "…" : totalBoys}</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <div className="flex items-center gap-2 mb-1">
-            <Users className="h-5 w-5 text-pink-600" />
+            <Users className="h-5 w-5 text-blue-600" />
             <span className="text-xs font-semibold text-slate-500 uppercase">{L("Filles", "Girls")}</span>
           </div>
-          <p className="text-2xl font-bold text-pink-600">{loading ? "…" : totalGirls}</p>
+          <p className="text-2xl font-bold text-blue-700">{loading ? "…" : totalGirls}</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <div className="flex items-center gap-2 mb-1">
-            <Users className="h-5 w-5 text-emerald-600" />
+            <Users className="h-5 w-5 text-blue-600" />
             <span className="text-xs font-semibold text-slate-500 uppercase">{L("Total élèves", "Total students")}</span>
           </div>
-          <p className="text-2xl font-bold text-emerald-600">{loading ? "…" : totalStudents}</p>
+          <p className="text-2xl font-bold text-blue-700">{loading ? "…" : totalStudents}</p>
         </div>
       </div>
 

@@ -15,6 +15,12 @@
  * blue screen with no animation on initial page load.
  *
  * Palette : Royal Blue (#1A237E), Blue (#3F51B5), Gold (#f5b335)
+ *
+ * ⭐ 2026-11-27 — PALETTE ÉCOLE : les couleurs de l'écran de chargement
+ * suivent désormais la palette du logo de l'école via les variables
+ * --ah-blue-* / --ah-gold-* (injectées par AppBrandTheme dans /app).
+ * Fallbacks = hex historiques Helm → rendu strictement inchangé pour les
+ * écoles sans palette et hors /app (fail-open, aucun flash).
  */
 
 import { usePathname } from 'next/navigation';
@@ -65,7 +71,7 @@ export default function AcademiaLoader({ inline = false, message, progress, step
   const realProgress = typeof progress === 'number' ? progress : 0;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#1A237E]">
+    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[var(--ah-blue-900,#1A237E)]">
       {/* Particules éducatives flottantes — toujours visibles, derrière le contenu */}
       <FloatingEduParticles count={30} opacityMultiplier={2.0} />
 
@@ -96,7 +102,7 @@ export default function AcademiaLoader({ inline = false, message, progress, step
       <div className="mt-7 text-center academia-loader-text relative" style={{ zIndex: 10 }}>
         <h1 className="text-2xl font-bold text-white tracking-tight">
           {BRAND.name.split(' ')[0]}
-          <span className="text-[#f5b335] ml-1.5">{BRAND.name.split(' ')[1]}</span>
+          <span className="text-[var(--ah-gold-500,#f5b335)] ml-1.5">{BRAND.name.split(' ')[1]}</span>
         </h1>
         <p className="text-[10px] text-blue-200/45 tracking-[0.25em] uppercase font-medium mt-0.5">
           {BRAND.subtitle}
@@ -123,22 +129,22 @@ export default function AcademiaLoader({ inline = false, message, progress, step
               className="h-full rounded-full transition-all duration-300 ease-out"
               style={{
                 width: `${realProgress}%`,
-                background: 'linear-gradient(90deg, #3F51B5, #f5b335)',
+                background: 'linear-gradient(90deg, var(--ah-blue-600,#3F51B5), var(--ah-gold-500,#f5b335))',
               }}
             />
           </div>
           <div className="flex justify-between mt-2">
             <span className="text-[9px] text-blue-200/35 uppercase tracking-wider font-medium">Progression</span>
-            <span className="text-[11px] text-[#f5b335] font-bold tabular-nums">{Math.round(realProgress)}%</span>
+            <span className="text-[11px] text-[var(--ah-gold-500,#f5b335)] font-bold tabular-nums">{Math.round(realProgress)}%</span>
           </div>
         </div>
       )}
 
       {/* Dots animés */}
       <div className="flex items-center space-x-2.5 mt-6 relative" style={{ zIndex: 10 }}>
-        <div className="h-1.5 w-1.5 rounded-full bg-[#3F51B5]/70 academia-loader-dot" style={{ animationDelay: '0ms' }} />
-        <div className="h-2 w-2 rounded-full bg-[#3F51B5] academia-loader-dot" style={{ animationDelay: '120ms' }} />
-        <div className="h-1.5 w-1.5 rounded-full bg-[#f5b335] academia-loader-dot" style={{ animationDelay: '240ms' }} />
+        <div className="h-1.5 w-1.5 rounded-full bg-[var(--ah-blue-600,#3F51B5)] academia-loader-dot" style={{ animationDelay: '0ms' }} />
+        <div className="h-2 w-2 rounded-full bg-[var(--ah-blue-600,#3F51B5)] academia-loader-dot" style={{ animationDelay: '120ms' }} />
+        <div className="h-1.5 w-1.5 rounded-full bg-[var(--ah-gold-500,#f5b335)] academia-loader-dot" style={{ animationDelay: '240ms' }} />
       </div>
     </div>
   );

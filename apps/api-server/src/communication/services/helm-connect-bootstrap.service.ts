@@ -1,30 +1,29 @@
 /**
  * ============================================================================
- * HELM CONNECT BOOTSTRAP SERVICE — Automatisation continue (V6, spec §4/§6)
+ * HELM CONNECT BOOTSTRAP SERVICE — ⭐ 2026-11-27 : PURGE UNIQUEMENT
  * ============================================================================
  *
- * « Les différents canaux et groupes doivent être créés de façon automatique
- *  et dynamique pour les écoles. »
+ * Retour promoteur (Helm Connect « à la WhatsApp / Telegram ») :
+ *   « On va supprimer toutes ces créations automatiques de groupes et de
+ *    canaux, et remettre à jour carrément pour que ça soit exactement
+ *    fonctionnel comme WhatsApp ou Telegram, simplement. Le promoteur ou
+ *    celui qui est délégué sera libre de créer lui-même le canal, le
+ *    groupe. »
  *
- * Ce service rend la création VRAIMENT automatique et dynamique :
+ * Ce service ne CRÉE donc PLUS RIEN. Au démarrage de l'API (après un
+ * délai), périodiquement (toutes les 6 heures) et à l'activation d'un
+ * nouvel établissement (onboarding), il garantit pour chaque tenant :
+ *   - la PURGE DÉFINITIVE des canaux auto-créés (createdBy='system' dans
+ *     chat_channels — Direction, Vie scolaire, Finance, Transport…) ;
+ *   - la PURGE DÉFINITIVE des communautés auto-créées (conversations
+ *     createdBy='system' — classes, « Parents – {niveau} », « Enseignants »,
+ *     « Administration », conseils de classe/pédagogique, pistes FR/EN…).
  *
- *   1. Au démarrage de l'API (après un délai pour ne pas bloquer le boot) ;
- *   2. Périodiquement (toutes les 6 heures) ;
- *   3. À l'activation d'un nouvel établissement (onboarding — fire & forget) ;
+ * Les DMs automatiques (parent↔enseignant, enseignant↔colègue) ne sont
+ * plus générés : chacun démarre ses discussions manuellement, comme sur
+ * WhatsApp.
  *
- * … il garantit, pour chaque tenant actif :
- *   - ⭐ 2026-11-26 (retour promoteur) — la PURGE DÉFINITIVE des canaux
- *     officiels auto-créés (Direction, Vie scolaire, Finance, Transport…) :
- *     l'école crée désormais elle-même ses propres canaux et y intègre qui
- *     elle veut. Plus AUCUN canal n'est créé automatiquement ;
- *   - la création/synchronisation des COMMUNAUTÉS AUTOMATIQUES de l'année
- *     scolaire active : classes, matières, « Parents – {niveau} »,
- *     « Enseignants de {matière} », Enseignants, Parents, Administration,
- *     Conseil pédagogique — avec retrait/ajout dynamique des membres
- *     (un enseignant qui quitte une classe est retiré du groupe).
- *
- * Chaque tenant est traité de façon isolée : une erreur n'interrompt pas
- * les autres. Tout est idempotent.
+ * Tout est idempotent : une base déjà propre ne déclenche aucune écriture.
  * ============================================================================
  */
 
@@ -33,98 +32,65 @@ import { Interval } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma.service';
 import { AutoChannelService } from './auto-channel.service';
 import { AutoGroupService } from './auto-group.service';
-// ⭐ 2026-10-15 — Canaux par piste FR/EN (administration, pédagogique, conseil par niveau)
-import { AutoChannelByTrackService } from './auto-channel-by-track.service';
-// ⭐ 2026-10-15 — DMs automatiques (parent↔enseignant, enseignant↔collègue, promoteur↔tous)
-import { AutoDmService } from './auto-dm.service';
 
-/** Délai avant la première sync (laisse l'API démarrer + Neon s'éveiller). */
+/** Délai avant la première purge (laisse l'API démarrer + Neon s'éveiller). */
 const INITIAL_DELAY_MS = 90_000;
-/** Période de re-sync (6 heures). */
+/** Période de re-purge (6 heures) — rattrape tout résidu, idempotent. */
 const RESYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 @Injectable()
 export class HelmConnectBootstrapService implements OnModuleInit {
   private readonly logger = new Logger(HelmConnectBootstrapService.name);
-  private firstRunTriggered = false;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly autoChannelService: AutoChannelService,
     private readonly autoGroupService: AutoGroupService,
-    // ⭐ 2026-10-15 — Canaux par piste FR/EN (administration, pédagogique, conseil par niveau)
-    private readonly autoChannelByTrackService: AutoChannelByTrackService,
-    // ⭐ 2026-10-15 — DMs automatiques (parent↔enseignant, enseignant↔collègue, promoteur↔tous)
-    private readonly autoDmService: AutoDmService,
   ) {}
 
-  /** Première sync différée — ne bloque PAS le boot de l'API. */
+  /** Première purge différée — ne bloque PAS le boot de l'API. */
   onModuleInit(): void {
     setTimeout(() => {
       this.syncAllTenants().catch(e =>
-        this.logger.warn(`Première sync Helm Connect échouée: ${e.message}`),
+        this.logger.warn(`Première purge Helm Connect échouée: ${e.message}`),
       );
     }, INITIAL_DELAY_MS);
   }
 
-  /** Re-sync périodique — rattrape les nouveaux utilisateurs/groupes dynamiques. */
+  /** Re-purge périodique — idempotent, aucune écriture sur une base propre. */
   @Interval(RESYNC_INTERVAL_MS)
   periodicResync(): void {
     this.syncAllTenants().catch(e =>
-      this.logger.warn(`Re-sync périodique Helm Connect échouée: ${e.message}`),
+      this.logger.warn(`Re-purge périodique Helm Connect échouée: ${e.message}`),
     );
   }
 
   /**
-   * Sync COMPLETE d'un seul tenant (appelé aussi par l'onboarding et
+   * Purge COMPLETE d'un seul tenant (appelée aussi par l'onboarding et
    * POST /chat/auto-channels/sync). Retourne un résumé consolidé.
    */
   async syncTenant(tenantId: string): Promise<{
     tenantId: string;
     channels: { created: number; existing: number; subscribed: number; retired: number };
-    groups: { created: number; updated: number; skipped: number; purged: number; total: number } | { message: string };
+    groups: { created: number; updated: number; skipped: number; purged: number; total: number };
   }> {
-    // 1. ⭐ 2026-11-26 — Purge définitive des canaux officiels auto-créés
-    //    (Direction, Vie scolaire, Finance…) : l'école crée ses propres canaux.
+    // 1. Purge définitive des canaux officiels auto-créés (Direction, Vie
+    //    scolaire, Finance…) : l'école crée ses propres canaux.
     const channels = await this.autoChannelService.ensureDefaultChannels(tenantId);
 
-    // 2. Communautés automatiques de l'année scolaire active (peut être
-    //    absent → message explicite, aucune erreur)
-    const academicYear = await this.prisma.academicYear.findFirst({
-      where: { tenantId, isActive: true },
-      orderBy: { startDate: 'desc' },
-      select: { id: true, name: true },
-    });
-    let groups: any;
-    let trackGroups: any;
-    let autoDms: any;
-    if (!academicYear) {
-      groups = { message: 'Aucune année scolaire active — les communautés seront créées dès l\u2019activation d\u2019une année.' };
-      trackGroups = { message: 'Idem — canaux par piste en attente d\u2019une année active.' };
-      autoDms = { message: 'Idem — DMs automatiques en attente d\u2019une année active.' };
-    } else {
-      groups = await this.autoGroupService.syncAutoGroups(tenantId, academicYear.id);
-      // ⭐ 2026-10-15 — Canaux par piste FR/EN (administration, pédagogique, conseil par niveau)
-      try {
-        trackGroups = await this.autoChannelByTrackService.syncTrackAutoGroups(tenantId, academicYear.id);
-      } catch (e: any) {
-        this.logger.warn(`syncTrackAutoGroups échoué pour ${tenantId}: ${e.message}`);
-        trackGroups = { message: `Canaux par piste: ${e.message}` };
-      }
-      // ⭐ 2026-10-15 — DMs automatiques (parent↔enseignant, enseignant↔collègue, promoteur↔tous)
-      try {
-        autoDms = await this.autoDmService.syncAutoDms(tenantId, academicYear.id);
-      } catch (e: any) {
-        this.logger.warn(`syncAutoDms échoué pour ${tenantId}: ${e.message}`);
-        autoDms = { message: `DMs automatiques: ${e.message}` };
-      }
-    }
+    // 2. Purge définitive des communautés auto-créées (classes, rôles,
+    //    niveaux, conseils, pistes FR/EN) : l'école crée ses propres groupes.
+    const { purged } = await this.autoGroupService.retireSystemGroups(tenantId);
 
-    return { tenantId, channels, groups, trackGroups, autoDms };
+    return {
+      tenantId,
+      channels,
+      groups: { created: 0, updated: 0, skipped: 0, purged, total: 0 },
+    };
   }
 
   /**
-   * Sync de tous les tenants actifs — isolation par tenant.
+   * Purge de tous les tenants actifs — isolation par tenant.
    */
   async syncAllTenants(): Promise<{ processed: number; failed: number }> {
     let failed = 0;
@@ -138,19 +104,17 @@ export class HelmConnectBootstrapService implements OnModuleInit {
       return { processed: 0, failed: 0 };
     }
 
-    this.logger.log(`syncAllTenants: ${tenants.length} tenant(s) actif(s) à synchroniser`);
     for (const tenant of tenants) {
       try {
         const result = await this.syncTenant(tenant.id);
-        this.logger.log(
-          `Helm Connect sync « ${tenant.name} »: canaux +${result.channels.created}/=${result.channels.existing} (abos +${result.channels.subscribed}), ` +
-          (result.groups && (result.groups as any).total !== undefined
-            ? `groupes +${(result.groups as any).created}/=${(result.groups as any).updated}`
-            : (result.groups as any).message),
-        );
+        if (result.channels.retired > 0 || result.groups.purged > 0) {
+          this.logger.log(
+            `Helm Connect purge « ${tenant.name} »: ${result.channels.retired} canal(aux) système et ${result.groups.purged} communauté(s) auto-créée(s) retirés — l'école crée désormais elle-même ses groupes et canaux`,
+          );
+        }
       } catch (e: any) {
         failed++;
-        this.logger.warn(`Helm Connect sync échouée pour « ${tenant.name} » (${tenant.id}): ${e.message}`);
+        this.logger.warn(`Helm Connect purge échouée pour « ${tenant.name} » (${tenant.id}): ${e.message}`);
       }
     }
     return { processed: tenants.length, failed };

@@ -11,6 +11,8 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AccessRequestsService } from '../access-requests/access-requests.service';
 import { isSchoolTenantType } from '../common/constants/school-tenant-types';
+// ⭐ 2026-11-27 — Suivi réel des appareils (Paramètres → Appareils autorisés)
+import { DeviceTrackingService } from './services/device-tracking.service';
 
 export type SessionPersistMeta = {
   ipAddress?: string;
@@ -51,6 +53,8 @@ export class AuthService {
     private configService: ConfigService,
     private emailService: EmailService,
     private accessRequestsService: AccessRequestsService,
+    // ⭐ 2026-11-27 — Suivi réel des appareils (Paramètres → Appareils autorisés)
+    private deviceTrackingService: DeviceTrackingService,
   ) {}
 
   async register(registerDto: RegisterDto, meta?: SessionPersistMeta) {
@@ -84,15 +88,23 @@ export class AuthService {
 
   /**
    * Enregistre la session côté PostgreSQL (table sessions), alignée sur le refresh token JWT.
+   *
+   * ⭐ 2026-11-27 — SUIVI RÉEL DES APPAREILS (Paramètres → Appareils
+   *    autorisés) : chaque connexion réussie (login, register, 2FA,
+   *    Google) crée/mise à jour la ligne user_devices de l'appareil
+   *    (nom lisible déduit de l'UA type Facebook, IP, dernier vu) et
+   *    écrit l'entrée d'audit LOGIN. Best-effort : ne casse jamais le
+   *    flux d'authentification.
    */
   private async persistWebSession(
     userId: string,
     refreshToken: string,
     meta?: SessionPersistMeta,
+    auditAction: 'LOGIN' | 'REGISTER' | 'LOGIN_2FA' | 'GOOGLE_LOGIN' = 'LOGIN',
   ): Promise<{ id: string } | null> {
     try {
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      return await this.prisma.session.create({
+      const sessionRecord = await this.prisma.session.create({
         data: {
           userId,
           token: refreshToken,
@@ -101,6 +113,38 @@ export class AuthService {
           userAgent: meta?.userAgent ?? null,
         },
       });
+
+      // ⭐ Appareil + audit LOGIN (best-effort, isolé du flux principal)
+      try {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { tenantId: true },
+        });
+        const device = await this.deviceTrackingService.createOrGetDevice(
+          userId,
+          user?.tenantId ?? 'unknown',
+          {
+            userAgent: meta?.userAgent,
+            ipAddress: meta?.ipAddress,
+            deviceName: undefined,
+            deviceType: this.deviceTrackingService.parseUserAgent(meta?.userAgent).deviceType,
+          },
+        );
+        await this.deviceTrackingService.writeAudit({
+          userId,
+          tenantId: user?.tenantId ?? null,
+          deviceId: device.deviceId,
+          action: auditAction,
+          status: 'SUCCESS',
+          ipAddress: meta?.ipAddress ?? null,
+          userAgent: meta?.userAgent ?? null,
+          metadata: { webSessionId: sessionRecord.id, nativeApp: !!meta?.nativeApp },
+        });
+      } catch (devErr: any) {
+        this.logger.warn(`Device tracking at login failed: ${devErr?.message ?? devErr}`);
+      }
+
+      return sessionRecord;
     } catch (err: any) {
       this.logger.warn(`persistWebSession failed: ${err?.message ?? err}`);
       return null;
@@ -446,6 +490,21 @@ export class AuthService {
           'Service temporairement indisponible. Veuillez réessayer plus tard.'
         );
       }
+      // ⭐ 2026-11-27 — Audit LOGIN_FAILED (Paramètres → Appareils autorisés
+      //    → Historique de connexion) : identifiants invalides, portail
+      //    interdit, tenant inactif… Best-effort, n'altère pas l'erreur.
+      if (error instanceof UnauthorizedException || error instanceof ForbiddenException) {
+        try {
+          await this.deviceTrackingService.writeAudit({
+            action: 'LOGIN_FAILED',
+            status: 'FAILED',
+            reason: error.message?.substring(0, 250) || 'Échec de connexion',
+            ipAddress: meta?.ipAddress ?? null,
+            userAgent: meta?.userAgent ?? null,
+            metadata: { identifier: (loginDto as any)?.email || 'inconnu', portalType: (loginDto as any)?.portal_type || null },
+          });
+        } catch { /* best-effort */ }
+      }
       // Si c'est déjà une exception NestJS, la propager
       if (error instanceof UnauthorizedException || error instanceof ForbiddenException) {
         throw error;
@@ -538,7 +597,7 @@ export class AuthService {
     }
   }
 
-  async logout(token: string) {
+  async logout(token: string, meta?: SessionPersistMeta) {
     if (!token) return;
     try {
       const payload = this.jwtService.verify(token, { ignoreExpiration: true });
@@ -551,6 +610,35 @@ export class AuthService {
             data: { token, expiresAt },
           });
         }
+        // ⭐ 2026-11-27 — Audit LOGOUT (Historique de connexion) + mise à
+        //    jour de l'appareil. Best-effort.
+        try {
+          const userId = payload.sub || payload.userId || null;
+          let deviceId: string | null = null;
+          if (userId) {
+            const user = await this.prisma.user.findUnique({
+              where: { id: userId },
+              select: { tenantId: true },
+            });
+            if (user?.tenantId) {
+              const device = await this.deviceTrackingService.createOrGetDevice(userId, user.tenantId, {
+                userAgent: meta?.userAgent,
+                ipAddress: meta?.ipAddress,
+                deviceName: undefined,
+                deviceType: this.deviceTrackingService.parseUserAgent(meta?.userAgent).deviceType,
+              });
+              deviceId = device.deviceId;
+            }
+          }
+          await this.deviceTrackingService.writeAudit({
+            userId,
+            deviceId,
+            action: 'LOGOUT',
+            status: 'SUCCESS',
+            ipAddress: meta?.ipAddress ?? null,
+            userAgent: meta?.userAgent ?? null,
+          });
+        } catch { /* best-effort */ }
       }
     } catch (err: any) {
       this.logger.warn(`Failed to revoke token during logout: ${err.message}`);

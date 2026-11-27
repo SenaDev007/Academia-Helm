@@ -76,7 +76,11 @@ export class AuthController {
       }
     }
     if (token) {
-      await this.authService.logout(token);
+      // ⭐ 2026-11-27 — meta IP/user-agent pour l'audit LOGOUT (Appareils autorisés)
+      await this.authService.logout(token, {
+        ipAddress: req.ip || req.socket?.remoteAddress,
+        userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
+      });
     }
     return { message: 'Logged out successfully' };
   }

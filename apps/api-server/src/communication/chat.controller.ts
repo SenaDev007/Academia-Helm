@@ -48,6 +48,9 @@ import { AutoGroupService } from './services/auto-group.service';
 // ⭐ V6 (spec §4/§6) — Canaux officiels auto + bootstrap (sync complète canaux+groupes)
 import { HelmConnectBootstrapService } from './services/helm-connect-bootstrap.service';
 import { AutoChannelService } from './services/auto-channel.service';
+// ⭐ 2026-11-27 — Audiences de création manuelle (parents d'une classe, tous
+//    les parents, enseignants d'un niveau…) pour groupes et canaux manuels
+import { AudienceService } from './services/audience.service';
 // ⭐ V3-11: PrismaService — for direct academicYear lookup in auto-groups endpoints
 import { PrismaService } from '../database/prisma.service';
 // ⭐ LiveKit SFU — mints access tokens for voice/stage/live channels
@@ -107,7 +110,7 @@ export class ChatController {
     private readonly summaryService: ChatSummaryService,
     // ⭐ V3-2: Whisper-powered audio transcriptions
     private readonly transcriptionService: ChatTranscriptionService,
-    // ⭐ V3-11: Auto-groups (Communautés) auto-creation per academic year
+    // ⭐ V3-11: Auto-groups — purge seule (création automatique supprimée le 2026-11-27)
     private readonly autoGroupService: AutoGroupService,
     // ⭐ V3-11: PrismaService — for academicYear lookup in auto-groups endpoints
     private readonly prisma: PrismaService,
@@ -116,6 +119,9 @@ export class ChatController {
     // ⭐ V6 (spec §4/§6) — canaux officiels auto + bootstrap
     private readonly helmBootstrap: HelmConnectBootstrapService,
     private readonly autoChannelService: AutoChannelService,
+    // ⭐ 2026-11-27 — Audiences de création manuelle (parents d'une classe,
+    //    tous les parents, enseignants d'un niveau…)
+    private readonly audienceService: AudienceService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -243,10 +249,46 @@ export class ChatController {
   @Post('conversations/group')
   async createGroupConversation(
     @TenantId() tenantId: string,
-    @Body() body: { creatorId: string; name: string; description?: string; participantIds: string[]; avatarUrl?: string },
+    @Body() body: {
+      creatorId: string;
+      name: string;
+      description?: string;
+      participantIds: string[];
+      avatarUrl?: string;
+      // ⭐ 2026-11-27 — catégorie pour la section Communautés (parents /
+      //    enseignants / classe / personnel / autre) + audience d'origine
+      metadata?: { category?: string; audienceType?: string; classId?: string; levelId?: string; levelCategory?: string };
+    },
   ) {
     if (!body.creatorId) throw new BadRequestException('creatorId is required');
     return this.chatService.createGroupConversation(tenantId, body.creatorId, body);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  ⭐ 2026-11-27 — AUDIENCES DE CRÉATION MANUELLE (« à la WhatsApp »)
+  //    Le promoteur (ou son délégué) crée lui-même ses groupes et canaux
+  //    et choisit QUI y intégrer :
+  //    GET  /chat/audiences         → catalogue (classes + effectifs,
+  //                                  niveaux, compteurs globaux)
+  //    POST /chat/audiences/resolve → résout une audience en userIds
+  // ═══════════════════════════════════════════════════════════════
+  @Get('audiences')
+  async listAudiences(@TenantId() tenantId: string) {
+    return this.audienceService.listAudiences(tenantId);
+  }
+
+  @Post('audiences/resolve')
+  async resolveAudience(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      type: string;
+      classId?: string;
+      levelId?: string;
+      levelCategory?: 'MATERNELLE' | 'PRIMAIRE' | 'SECONDAIRE';
+    },
+  ) {
+    if (!body?.type) throw new BadRequestException('type is required');
+    return this.audienceService.resolveAudience(tenantId, body as any);
   }
 
   // ═════════════════════════════════════════════════════════════════
@@ -676,10 +718,20 @@ export class ChatController {
   @Post('channels')
   async createChannel(
     @TenantId() tenantId: string,
-    @Body() body: { creatorId: string; name: string; description?: string },
+    @Body() body: {
+      creatorId: string;
+      name: string;
+      description?: string;
+      // ⭐ 2026-11-27 — abonnés initiaux (audience résolue côté client)
+      subscriberIds?: string[];
+    },
   ) {
     if (!body.creatorId || !body.name) throw new BadRequestException('creatorId et name requis');
-    return this.chatService.createChannel(tenantId, body.creatorId, { name: body.name, description: body.description });
+    return this.chatService.createChannel(tenantId, body.creatorId, {
+      name: body.name,
+      description: body.description,
+      subscriberIds: body.subscriberIds,
+    });
   }
 
   @Get('channels')

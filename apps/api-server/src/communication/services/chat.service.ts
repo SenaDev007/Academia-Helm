@@ -54,6 +54,8 @@ export interface ChatConversation {
   lastMessageCallType?: string | null;
   lastMessageCallStatus?: string | null;
   lastMessageSentByMe?: boolean | null;
+  // ⭐ 2026-11-27 — catégorie Communautés + niveau scolaire (création manuelle)
+  metadata?: Record<string, any> | null;
   participants: ChatParticipant[];
 }
 
@@ -243,7 +245,7 @@ export class ChatService implements OnModuleInit {
     //    Previously used ur."role" from user_roles JOIN, but that table has roleId (FK to roles table),
     //    not a "role" text column. So we use u."role" directly.
     const allParticipants: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
-      SELECT p.*, u."firstName", u."lastName", u."email", u."role" AS "role_label"
+      SELECT p.*, u."firstName", u."lastName", u."email", u."role" AS "role_label", u."avatarUrl" AS "userAvatarUrl"
       FROM chat_participants p
       JOIN "users" u ON u.id = p."userId"
       WHERE p."conversationId" = ANY($1::text[]) AND p."leftAt" IS NULL
@@ -303,6 +305,10 @@ export class ChatService implements OnModuleInit {
       lastMessageCallType: c.lastMessageCallType || null,
       lastMessageCallStatus: c.lastMessageCallStatus || null,
       lastMessageSentByMe: c.lastMessageSenderActualId ? c.lastMessageSenderActualId === userId : null,
+      // ⭐ 2026-11-27 — metadata (JSONB : catégorie Communautés posée à la
+      //    création manuelle : class/parents/teachers/staff + levelCategory).
+      //    Le driver pg renvoie le JSONB déjà parsé en objet.
+      metadata: (c as any).metadata ?? null,
       participants: (participantsByConv.get(c.id) || []).map((p: any) => {
         const children = childrenByParent.get(p.userId);
         return {
@@ -314,15 +320,44 @@ export class ChatService implements OnModuleInit {
           firstName: p.firstName,
           lastName: p.lastName,
           email: p.email,
-          // ⭐ FIX: users table has no avatarUrl — return null for now (V2 will
-          //    fetch from staff_photos or tenant_media)
-          avatarUrl: null,
+          // ⭐ 2026-11-27 — users.avatarUrl EXISTE (migration 20260824020000) :
+          //    l'ancien null forcé empêchait les photos de profil de
+          //    s'afficher dans la liste des conversations.
+          avatarUrl: (p as any).userAvatarUrl ?? null,
           role_label: p.role_label,
           roleLabel: roleLabelFor(p.role_label, children),
           childrenNames: children,
         };
       }),
     }));
+  }
+
+  /**
+   * ⭐ 2026-11-27 — Aperçu PROPRE pour les listes (sidebar conversations +
+   *    canaux). Le contenu des messages est du HTML (RichTextEditor) : sans
+   *    ce nettoyage, la sidebar affichait littéralement «&nbsp;» et des
+   *    fragments «<div>» (retour promoteur). Décode les entités HTML
+   *    courantes, retire les balises, colle les espaces, tronque.
+   */
+  private buildPlainTextPreview(content: string | null | undefined, maxLen = 60): string {
+    if (!content) return '';
+    return content
+      .replace(/<br\s*\/?>/gi, ' ')
+      .replace(/<\/(div|p|li|h[1-6]|ul|ol|table|tr)>/gi, ' ')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#0?39;/gi, "'")
+      .replace(/&apos;/gi, "'")
+      .replace(/&#(\d+);/g, (_, dec) => {
+        try { return String.fromCodePoint(parseInt(dec, 10)); } catch { return ''; }
+      })
+      .replace(/\s+/g, ' ')
+      .trim()
+      .substring(0, maxLen);
   }
 
   /**
@@ -514,7 +549,14 @@ export class ChatService implements OnModuleInit {
   async createGroupConversation(
     tenantId: string,
     creatorId: string,
-    data: { name: string; description?: string; participantIds: string[]; avatarUrl?: string },
+    data: {
+      name: string;
+      description?: string;
+      participantIds: string[];
+      avatarUrl?: string;
+      // ⭐ 2026-11-27 — catégorie pour la section Communautés + audience d'origine
+      metadata?: { category?: string; audienceType?: string; classId?: string; levelId?: string; levelCategory?: string };
+    },
   ): Promise<ChatConversation> {
     if (!data.name || data.name.trim().length === 0) {
       throw new BadRequestException('Group name is required');
@@ -525,9 +567,10 @@ export class ChatService implements OnModuleInit {
 
     const convId = randomUUID();
     await this.prisma.$executeRawUnsafe(`
-      INSERT INTO "chat_conversations" ("id", "tenantId", "type", "name", "description", "avatarUrl", "createdBy", "createdAt", "updatedAt")
-      VALUES ($1, $2, 'GROUP', $3, $4, $5, $6, NOW(), NOW())
-    `, convId, tenantId, data.name, data.description || null, data.avatarUrl || null, creatorId);
+      INSERT INTO "chat_conversations" ("id", "tenantId", "type", "name", "description", "avatarUrl", "createdBy", "metadata", "createdAt", "updatedAt")
+      VALUES ($1, $2, 'GROUP', $3, $4, $5, $6, $7::jsonb, NOW(), NOW())
+    `, convId, tenantId, data.name, data.description || null, data.avatarUrl || null, creatorId,
+      data.metadata && Object.keys(data.metadata).length > 0 ? JSON.stringify(data.metadata) : null);
 
     // Ajouter le créateur comme ADMIN
     const allParticipants = [creatorId, ...data.participantIds.filter(id => id !== creatorId)];
@@ -929,8 +972,11 @@ export class ChatService implements OnModuleInit {
       VALUES ($1, $2, $3, 'TEXT', $4, $5, $6, NOW())
     `, msgId, conversationId, senderId, data.content.trim(), data.replyToId || null, mentionsJson);
 
-    // Mettre à jour la conversation (lastMessageAt + preview)
-    const preview = data.content.length > 60 ? data.content.substring(0, 60) + '…' : data.content;
+    // Mettre à jour la conversation (lastMessageAt + preview) — ⭐ 2026-11-27 :
+    //    aperçu en TEXTE PLAT (le contenu est du HTML du RichTextEditor —
+    //    l'ancien aperçu brut affichait littéralement «&nbsp;» et «<div>»
+    //    dans la sidebar, cf. retour promoteur).
+    const preview = this.buildPlainTextPreview(data.content) || 'Message';
     await this.prisma.$executeRawUnsafe(`
       UPDATE "chat_conversations"
       SET "lastMessageAt" = NOW(),
@@ -1392,7 +1438,7 @@ export class ChatService implements OnModuleInit {
       SET "lastMessageAt" = NOW(), "lastMessageSenderId" = $1,
           "lastMessagePreview" = $2, "updatedAt" = NOW()
       WHERE id = $3
-    `, userId, m.content ? m.content.substring(0, 100) : (m.attachmentName || 'Pièce jointe'), targetConversationId);
+    `, userId, m.content ? (this.buildPlainTextPreview(m.content, 100) || 'Message') : (m.attachmentName || 'Pièce jointe'), targetConversationId);
 
     return {
       id: newId,
@@ -1806,7 +1852,8 @@ export class ChatService implements OnModuleInit {
              t."name" AS "tenantName", u."tenantId",
              (u."tenantId" = $1) AS "isSameTenant",
              NULLIF(TRIM(tch."firstName"), '') AS "teacherFirstName",
-             NULLIF(TRIM(tch."lastName"), '') AS "teacherLastName"
+             NULLIF(TRIM(tch."lastName"), '') AS "teacherLastName",
+             u."avatarUrl" AS "userAvatarUrl"
       FROM "users" u
       LEFT JOIN "tenants" t ON t.id = u."tenantId"
       LEFT JOIN LATERAL (
@@ -1986,8 +2033,10 @@ export class ChatService implements OnModuleInit {
         firstName: r.firstName || r.teacherFirstName || '',
         lastName: r.lastName || r.teacherLastName || '',
         email: r.email,
-        // ⭐ FIX: users table has no avatarUrl — null for now (V2 will use staff_photos)
-        avatarUrl: null,
+        // ⭐ 2026-11-27 — users.avatarUrl existe (migration 20260824020000) :
+        //    les photos de profil s'affichent désormais dans les résultats
+        //    de recherche (nouvelle discussion, ajout de membres…).
+        avatarUrl: (r as any).userAvatarUrl ?? null,
         role: r.role || 'PARENT',
         roleLabel: roleLabelFor(r.role || 'PARENT', children),
         tenantName: r.tenantName,
@@ -2279,11 +2328,29 @@ export class ChatService implements OnModuleInit {
   //  CANAUX (Telegram-style broadcast channels)
   // ═════════════════════════════════════════════════════════════════
 
-  async createChannel(tenantId: string, creatorId: string, data: { name: string; description?: string }) {
+  async createChannel(tenantId: string, creatorId: string, data: { name: string; description?: string; subscriberIds?: string[] }) {
     const { randomUUID } = require('crypto');
     const id = randomUUID();
     await this.prisma.$executeRawUnsafe(`INSERT INTO "chat_channels" ("id", "tenantId", "name", "description", "createdBy", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`, id, tenantId, data.name, data.description || null, creatorId);
     await this.prisma.$executeRawUnsafe(`INSERT INTO "chat_channel_subscribers" ("id", "channelId", "userId", "subscribedAt") VALUES ($1, $2, $3, NOW())`, randomUUID(), id, creatorId);
+    // ⭐ 2026-11-27 — abonnés initiaux (audience résolue côté client : tous
+    //    les parents, parents d'une classe, enseignants d'un niveau…).
+    //    Validation : comptes actifs du MÊME tenant uniquement.
+    if (Array.isArray(data.subscriberIds) && data.subscriberIds.length > 0) {
+      const valid: Array<{ id: string }> = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "users"
+         WHERE "tenantId" = $1 AND "status" = 'active' AND "id" = ANY($2::text[])
+           AND "id" <> $3`,
+        tenantId, Array.from(new Set(data.subscriberIds)), creatorId,
+      );
+      for (const v of valid) {
+        await this.prisma.$executeRawUnsafe(
+          `INSERT INTO "chat_channel_subscribers" ("id", "channelId", "userId", "subscribedAt") VALUES ($1, $2, $3, NOW())
+           ON CONFLICT ("channelId", "userId") DO NOTHING`,
+          randomUUID(), id, v.id,
+        );
+      }
+    }
     // ⭐ V6.1 (fix broadcast P2010) — chaque canal possède une conversation
     //    miroir de type CHANNEL (id = id du canal) qui porte ses messages.
     //    Avant : les messages étaient insérés avec conversationId='channel:<id>'
@@ -2370,8 +2437,9 @@ export class ChatService implements OnModuleInit {
     // 3. Insérer le message avec le VRAI conversationId
     const msgId = randomUUID();
     await this.prisma.$executeRawUnsafe(`INSERT INTO "chat_messages" ("id", "conversationId", "senderId", "type", "content", "createdAt") VALUES ($1, $2, $3, 'TEXT', $4, NOW())`, msgId, channelId, senderId, content);
-    // 4. Preview + horodatage (canal ET conversation miroir)
-    const preview = content.length > 60 ? content.substring(0, 60) + '…' : content;
+    // 4. Preview + horodatage (canal ET conversation miroir) — ⭐ 2026-11-27 :
+    //    aperçu en TEXTE PLAT (fin des «&nbsp;» dans la liste des canaux)
+    const preview = this.buildPlainTextPreview(content) || 'Message';
     await this.prisma.$executeRawUnsafe(`UPDATE "chat_channels" SET "lastMessageAt" = NOW(), "lastMessagePreview" = $2, "updatedAt" = NOW() WHERE "id" = $1`, channelId, preview);
     await this.prisma.$executeRawUnsafe(`UPDATE "chat_conversations" SET "lastMessageAt" = NOW(), "lastMessagePreview" = $2, "lastMessageSenderId" = $3, "updatedAt" = NOW() WHERE "id" = $1`, channelId, preview, senderId);
     // 5. Broadcast temps réel aux abonnés (message:new sur la room du canal

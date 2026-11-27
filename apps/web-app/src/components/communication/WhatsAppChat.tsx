@@ -1594,101 +1594,46 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [annoncesLoading, setAnnoncesLoading] = useState(false);
   const [annoncesLoaded, setAnnoncesLoaded] = useState(false);
 
-  // ⭐ V3-11: Communautés auto-group sync state
-  const [communautesSyncing, setCommunautesSyncing] = useState(false);
-  const [communautesSyncMessage, setCommunautesSyncMessage] = useState<string | null>(null);
-  // ⭐ V6 (spec — Communautés) : métadonnées des auto-groups (groupType/roleType
-  //    par conversation) pour les sous-catégories Classes | Matières |
-  //    Enseignants | Parents | Administration | Autres
-  //    ⭐ 2026-11-26 (retour promoteur) — + levelCategory/levelName pour les
-  //    groupes de CLASSE : les classes sont regroupées par NIVEAU SCOLAIRE
-  //    (maternelle / primaire / secondaire) dans Konnect.
-  const [autoGroupMeta, setAutoGroupMeta] = useState<
-    Record<string, { groupType: string; roleType?: string; levelCategory?: string; levelName?: string }>
-  >({});
+  // ⭐ 2026-11-27 (retour promoteur « à la WhatsApp/Telegram ») : PLUS
+  //    AUCUN auto-sync — les communautés sont créées MANUELLEMENT par le
+  //    promoteur (ou son délégué) via « + Nouvelle communauté », avec
+  //    sélection d'audiences (parents d'une classe, tous les parents,
+  //    enseignants d'un niveau…). La catégorie et le niveau scolaire sont
+  //    portés par le metadata de la conversation (posé à la création).
   const [communauteFilter, setCommunauteFilter] = useState<string>('all');
 
-  // ⭐ V6 — charge les métadonnées auto-groups (avec les nouveaux types
-  //    LEVEL « Parents – niveau », TEACHER_SUBJECT « Enseignants de matière »,
-  //    COUNCIL « Conseil pédagogique »)
-  useEffect(() => {
-    if (activeHelmSection !== 'communautes') return;
-    let cancelled = false;
-    fetch('/api/chat/auto-groups', { credentials: 'include' })
-      .then(res => res.ok ? res.json() : [])
-      .then((rows: any[]) => {
-        if (cancelled) return;
-        const map: Record<string, { groupType: string; roleType?: string; levelCategory?: string; levelName?: string }> = {};
-        for (const r of (Array.isArray(rows) ? rows : [])) {
-          if (r.conversationId) {
-            map[r.conversationId] = {
-              groupType: r.groupType,
-              roleType: r.roleType,
-              // ⭐ 2026-11-26 — niveau scolaire de la classe (maternelle/primaire/secondaire)
-              levelCategory: r.levelCategory || undefined,
-              levelName: r.levelName || undefined,
-            };
-          }
-        }
-        setAutoGroupMeta(map);
-      })
-      .catch(() => { /* silencieux */ });
-    return () => { cancelled = true; };
-  }, [activeHelmSection, communautesSyncing]);
-
-  /** ⭐ V6 — catégorie d'affichage d'une conversation GROUP (spec Communautés).
-   *    ⭐ 2026-10-15 — Extension : lit aussi metadata.category (défini par
-   *    AutoChannelByTrackService) pour les nouveaux canaux par piste FR/EN
-   *    (administration-fr, administration-en, pedagogique-fr, pedagogique-en,
-   *    conseil-general, conseil-classe).
+  /** ⭐ 2026-11-27 — catégorie d'affichage d'une communauté MANUELLE.
+   *    Lit conv.metadata (posé à la création par NewGroupModal) :
+   *    category = class | parents | teachers | staff | administration | other,
+   *    + levelCategory (MATERNELLE/PRIMAIRE/SECONDAIRE) pour les classes.
+   *    conv.metadata peut être un objet (Prisma parse le JSONB) ou une
+   *    string (raw SQL) — on gère les deux cas.
    */
   const getCommunauteCategory = (conv: any): string => {
-    // ⭐ 2026-10-15 — D'abord lire metadata.category (priorité haute)
-    //    pour les nouveaux canaux par piste créés par AutoChannelByTrackService.
-    //    conv.metadata peut être un objet (si Prisma parse le JSONB) ou une
-    //    string (si raw SQL). On gère les deux cas.
     try {
       const rawMeta = (conv as any).metadata;
       const metaObj = typeof rawMeta === 'string' ? JSON.parse(rawMeta) : rawMeta;
-      if (metaObj?.category) {
-        switch (metaObj.category) {
-          case 'administration':       return 'administration-fr'; // ou -en selon trackCode
-          case 'pedagogique':          return 'pedagogique-fr';    // ou -en
-          case 'conseil-general':      return 'conseil-general';
-          case 'conseil-classe':       return 'conseil-classe';
-          default: break; // fallback vers la logique existante ci-dessous
-        }
-        // Affinage par trackCode dans le metadata
-        if (metaObj.category === 'administration') return metaObj.trackCode === 'EN' ? 'administration-en' : 'administration-fr';
-        if (metaObj.category === 'pedagogique') return metaObj.trackCode === 'EN' ? 'pedagogique-en' : 'pedagogique-fr';
+      switch (metaObj?.category) {
+        case 'class':         return 'classes';
+        case 'parents':       return 'parents';
+        case 'teachers':      return 'enseignants';
+        case 'staff':         return 'personnel';
+        case 'administration': return 'administration';
+        default:              return 'autres';
       }
-    } catch { /* ignore parse error */ }
+    } catch {
+      return 'autres';
+    }
+  };
 
-    // Logique existante (auto-groups classiques via autoGroupMeta)
-    const meta = autoGroupMeta[conv.id];
-    if (!meta) return 'autres';
-    switch (meta.groupType) {
-      case 'CLASS': return 'classes';
-      case 'SUBJECT': return 'matieres';
-      case 'TEACHER_SUBJECT': return 'enseignants';
-      case 'LEVEL': return 'parents';
-      case 'COUNCIL': return 'administration';
-      case 'ROLE':
-      case 'STAFF':
-        if (meta.roleType === 'TEACHERS') return 'enseignants';
-        if (meta.roleType === 'PARENTS') return 'parents';
-        if (meta.roleType === 'PEDAGOGICAL_COUNCIL') return 'administration';
-        return 'administration'; // ADMINISTRATION / ALL_STAFF
-      // ⭐ 2026-10-15 — Nouveaux types par piste (AutoChannelByTrackService)
-      case 'ADMIN_TRACK':
-        return meta.academicTrackId ? 'administration-en' : 'administration-fr';
-      case 'PEDAGOGIC_TRACK':
-        return meta.academicTrackId ? 'pedagogique-en' : 'pedagogique-fr';
-      case 'GENERAL_COUNCIL':
-        return 'conseil-general';
-      case 'COUNCIL_BY_TRACK_LEVEL':
-        return 'conseil-classe';
-      default: return 'autres';
+  /** ⭐ 2026-11-27 — niveau scolaire d'une communauté de classe (metadata.levelCategory). */
+  const getCommunauteLevelCategory = (conv: any): string => {
+    try {
+      const rawMeta = (conv as any).metadata;
+      const metaObj = typeof rawMeta === 'string' ? JSON.parse(rawMeta) : rawMeta;
+      return metaObj?.levelCategory || 'AUTRE';
+    } catch {
+      return 'AUTRE';
     }
   };
 
@@ -2020,43 +1965,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     return () => { socket.off('channel:message', listener); };
   }, [socket, currentUserId, channels]);
 
-  // ⭐ Task 77 — AUTO-SYNC DES CANAUX OFFICIELS : à la première ouverture
-  //    de la section Canaux (une fois par session), on appelle
-  //    POST /chat/auto-channels/sync qui garantit les canaux officiels LIÉS
-  //    AUX MODULES ACTIVÉS (Direction, Vie scolaire, Finance si actif,
-  //    Transport seulement quand le module sera livré) + l'abonnement
-  //    automatique de l'utilisateur + le retrait des canaux obsolètes vides.
-  //    Côté serveur, la même sync tourne au démarrage puis toutes les 6 h.
-  const [canauxSyncing, setCanauxSyncing] = useState(false);
-  const [canauxSyncMessage, setCanauxSyncMessage] = useState<string | null>(null);
-  const syncAutoChannels = useCallback(async () => {
-    setCanauxSyncing(true);
-    try {
-      const res = await fetch('/api/chat/auto-channels/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}), // ⭐ Task 77 — POST sans body → 400 BFF
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setCanauxSyncMessage(data?.message || 'Canaux officiels synchronisés.');
-        await loadChannels();
-      } else {
-        setCanauxSyncMessage('Synchronisation impossible — réessayez plus tard.');
-      }
-    } catch {
-      setCanauxSyncMessage('Erreur réseau — réessayez plus tard.');
-    } finally {
-      setCanauxSyncing(false);
-    }
-  }, [loadChannels]);
-
-  // Auto-sync à la première ouverture de la section Canaux (une fois par session)
-  useEffect(() => {
-    if (activeHelmSection !== 'canaux' || canauxSyncing || canauxSyncMessage) return;
-    syncAutoChannels();
-  }, [activeHelmSection]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ⭐ 2026-11-27 (retour promoteur « à la WhatsApp/Telegram ») : l'auto-sync
+  //    des canaux officiels est SUPPRIMÉ — plus AUCUN canal n'est créé
+  //    automatiquement. Le backend purge les éventuels canaux système
+  //    résiduels au démarrage puis toutes les 6 h (HelmConnectBootstrapService,
+  //    purge seule). L'école crée ses canaux via « + Nouveau canal ».
 
   // ⭐ V6 (parité Yeshua — Direct du canal / Go Live) : directs en cours,
   //    indexés par canal (GET /chat/live-streams, polling 15 s).
@@ -3259,42 +3172,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       .finally(() => setAnnoncesLoading(false));
   }, [activeHelmSection, currentUserId, annoncesLoaded]);
 
-  // ⭐ V3-11: Sync auto-groups (Communautés) when the user opens the Communautés section.
-  //   This calls the backend's AutoGroupService.syncAutoGroups() to create
-  //   CLASS/SUBJECT/ROLE/STAFF groups for the current academic year (archiving
-  //   the previous year's groups). The backend dedupes — safe to call every time.
-  const syncAutoGroups = useCallback(async () => {
-    if (communautesSyncing) return;
-    setCommunautesSyncing(true);
-    setCommunautesSyncMessage(null);
-    try {
-      const res = await fetch('/api/chat/auto-groups/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}), // ⭐ Task 77 — POST sans body → 400 BFF
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setCommunautesSyncMessage(data?.message || 'Communautés synchronisées pour l\'année scolaire.');
-        // Refresh conversations to show the newly created groups
-        loadConversations();
-      } else {
-        setCommunautesSyncMessage('Synchronisation échouée — réessayez plus tard.');
-      }
-    } catch (e) {
-      setCommunautesSyncMessage('Erreur réseau — réessayez plus tard.');
-    } finally {
-      setCommunautesSyncing(false);
-    }
-  }, [communautesSyncing, loadConversations]);
-
-  useEffect(() => {
-    // Auto-sync when the user first opens the Communautés section (once per session)
-    if (activeHelmSection === 'communautes' && !communautesSyncing && !communautesSyncMessage) {
-      syncAutoGroups();
-    }
-  }, [activeHelmSection]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ⭐ 2026-11-27 (retour promoteur « à la WhatsApp/Telegram ») : l'auto-sync
+  //    des communautés est SUPPRIMÉE — plus AUCUN groupe n'est créé
+  //    automatiquement (classes, rôles, niveaux, conseils…). Le backend
+  //    purge les communautés système résiduelles au démarrage puis toutes
+  //    les 6 h. L'école crée ses groupes via « + Nouvelle communauté » avec
+  //    sélection d'audiences (parents d'une classe, tous les parents,
+  //    enseignants d'un niveau…).
 
   // ⭐ PRESENCE HEARTBEAT : met à jour lastActiveAt toutes les 30s
   useEffect(() => {
@@ -5882,7 +5766,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   ? 'text-slate-700 font-medium'
                   : 'text-slate-500'
               )}>
-                {isEncrypted(conv.lastMessagePreview || '') ? '🔒 Message chiffré' : (conv.lastMessagePreview || '—')}
+                {/* ⭐ 2026-11-27 — aperçu en TEXTE PLAT : le contenu est du
+                    HTML (RichTextEditor) — sans stripHtml, la sidebar
+                    affichait littéralement «&nbsp;» (retour promoteur). */}
+                {isEncrypted(conv.lastMessagePreview || '') ? '🔒 Message chiffré' : (stripHtml(conv.lastMessagePreview || '') || '—')}
               </span>
             )}
           </div>
@@ -5994,10 +5881,18 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         <div className="w-8 h-px bg-[#1C6FE8]/40 my-1" />
         <button
           onClick={() => setShowProfile(true)}
-          className="w-10 h-10 rounded-full bg-[#1C6FE8] flex items-center justify-center text-white text-xs font-bold border-2 border-[#FFE08A]/40 hover:border-[#FFE08A] transition-colors"
+          className={cn(
+            'w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold border-2 border-[#FFE08A]/40 hover:border-[#FFE08A] transition-colors overflow-hidden',
+            myAvatarUrl ? 'bg-white' : 'bg-[#1C6FE8]'
+          )}
           title="Mon profil"
         >
-          {(() => {
+          {/* ⭐ 2026-11-27 — la PHOTO DE PROFIL s'affiche enfin dans le rail
+              Helm Connect (avant : initiales seulement, même après upload —
+              la photo n'était visible que dans le header de l'app). */}
+          {myAvatarUrl ? (
+            <img src={myAvatarUrl} alt="Mon profil" className="w-full h-full object-cover" />
+          ) : (() => {
             const me = conversations.flatMap(c => c.participants).find(p => p.userId === currentUserId);
             return me ? getInitials(`${me.firstName || ''} ${me.lastName || ''}`) : '?';
           })()}
@@ -6396,25 +6291,17 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   const sidebarQ = sidebarSearch.trim().toLowerCase();
                   const groupConvs = visibleConversations.filter(c => c.type === 'GROUP')
                     .filter(c => !sidebarQ || (c.name || '').toLowerCase().includes(sidebarQ));
-                  // ⭐ V6 (spec — Communautés) : sous-catégories Classes |
-                  //    Matières | Enseignants | Parents | Administration | Autres
-                  //    ⭐ 2026-10-15 — Extension : ajout des nouvelles catégories
-                  //    par piste FR/EN et conseil des classes (définies par
-                  //    AutoChannelByTrackService via metadata.category).
+                  // ⭐ 2026-11-27 (retour promoteur « à la WhatsApp/Telegram ») :
+                  //    sous-catégories des communautés MANUELLES — la catégorie
+                  //    est posée à la création (metadata.category) : classe,
+                  //    parents, enseignants, personnel, administration, autres.
                   const COMMUNAUTE_CATS = [
                     { id: 'all', label: 'Tout' },
                     { id: 'classes', label: 'Classes' },
-                    { id: 'matieres', label: 'Matières' },
-                    { id: 'enseignants', label: 'Enseignants' },
                     { id: 'parents', label: 'Parents' },
+                    { id: 'enseignants', label: 'Enseignants' },
+                    { id: 'personnel', label: 'Personnel' },
                     { id: 'administration', label: 'Administration' },
-                    // ⭐ 2026-10-15 — Nouvelles catégories par piste FR/EN
-                    { id: 'administration-fr', label: 'Administration (FR)' },
-                    { id: 'administration-en', label: 'Administration (EN)' },
-                    { id: 'pedagogique-fr', label: 'Pédagogique (FR)' },
-                    { id: 'pedagogique-en', label: 'Pédagogique (EN)' },
-                    { id: 'conseil-general', label: 'Conseil des classes' },
-                    { id: 'conseil-classe', label: 'Conseils par niveau' },
                     { id: 'autres', label: 'Autres' },
                   ] as const;
                   const catCount = (cat: string) =>
@@ -6424,16 +6311,15 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                     : groupConvs.filter(c => getCommunauteCategory(c) === communauteFilter);
                   // ⭐ 2026-11-26 (retour promoteur) — CLASSES PAR NIVEAU SCOLAIRE :
                   //    « lorsqu'on rentre dans le niveau maternel, on retrouve les
-                  //    classes de la maternelle » — les classes affichées sont
-                  //    EXACTEMENT celles créées dans les paramètres (source de
-                  //    vérité : table classes, synchronisées à chaque sync).
+                  //    classes de la maternelle » — le niveau vient du metadata
+                  //    posé à la création (groupes de classe manuels).
                   const LEVEL_BUCKETS = [
                     { id: 'MATERNELLE', label: 'Niveau Maternelle', cls: 'bg-amber-50 text-amber-800 border-amber-300' },
                     { id: 'PRIMAIRE', label: 'Niveau Primaire', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300' },
                     { id: 'SECONDAIRE', label: 'Niveau Secondaire', cls: 'bg-blue-50 text-[#1A2BA6] border-blue-300' },
                     { id: 'AUTRE', label: 'Autres classes', cls: 'bg-slate-100 text-slate-600 border-slate-300' },
                   ];
-                  const convLevelCategory = (conv: any): string => autoGroupMeta[conv.id]?.levelCategory || 'AUTRE';
+                  const convLevelCategory = (conv: any): string => getCommunauteLevelCategory(conv);
                   const renderClassListByLevel = (convs: any[]) =>
                     LEVEL_BUCKETS
                       .map(b => ({ ...b, items: convs.filter(c => convLevelCategory(c) === b.id) }))
@@ -6452,21 +6338,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         <Users className="w-12 h-12 text-slate-300 mb-2" />
                         <p className="text-sm font-medium text-slate-700">Aucune communauté</p>
                         <p className="text-xs text-slate-500 mt-1 mb-3">
-                          Les groupes automatiques (Classes, Matières, Rôles, Personnel) seront créés pour l'année scolaire en cours.
+                          Créez vos propres groupes et intégrez qui vous voulez : parents d'une classe, tous les parents, enseignants d'un niveau…
                         </p>
-                        {communautesSyncMessage && (
-                          <p className="text-[11px] text-slate-600 mb-3 italic">{communautesSyncMessage}</p>
-                        )}
                         {!readOnly && (
                           <div className="flex gap-2">
-                            <button
-                              onClick={syncAutoGroups}
-                              disabled={communautesSyncing}
-                              className="px-3 py-1.5 bg-[#10B981] text-white text-xs font-semibold rounded-lg hover:bg-[#059669] disabled:opacity-50 flex items-center gap-1.5"
-                            >
-                              {communautesSyncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                              Synchroniser
-                            </button>
                             <button
                               onClick={() => setShowNewGroup(true)}
                               className="px-3 py-1.5 bg-[#1677FF] text-white text-xs font-semibold rounded-lg hover:bg-[#0958D9]"
@@ -6483,8 +6358,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
                         <Users className="w-3 h-3" /> Communautés ({groupConvs.length})
                       </div>
-                      {/* ⭐ V6 (spec — Communautés) : SOUS-CATÉGORIES
-                          Classes | Matières | Enseignants | Parents | Administration */}
+                      {/* ⭐ 2026-11-27 — SOUS-CATÉGORIES des communautés manuelles */}
                       <div className="flex gap-1 px-3 py-2 border-b border-slate-100 overflow-x-auto no-scrollbar bg-white">
                         {COMMUNAUTE_CATS.map(cat => (
                           <button
@@ -6503,30 +6377,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                           </button>
                         ))}
                       </div>
-                      {/* ⭐ V3-11: Sync status banner (shown during/after auto-group sync) */}
-                      {(communautesSyncing || communautesSyncMessage) && (
-                        <div className={cn(
-                          'px-3 py-2 text-[11px] flex items-center gap-2 border-b',
-                          communautesSyncing ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        )}>
-                          {communautesSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                          <span className="flex-1 truncate">
-                            {communautesSyncing ? 'Synchronisation des communautés pour l\'année scolaire…' : communautesSyncMessage}
-                          </span>
-                          {!communautesSyncing && (
-                            <button onClick={syncAutoGroups} className="text-blue-600 hover:underline font-semibold">
-                              Re-sync
-                            </button>
-                          )}
-                        </div>
-                      )}
                       {/* ⭐ V6 — liste (filtrée par sous-catégorie) + regroupements visuels */}
                       {communauteFilter === 'all' ? (
                         COMMUNAUTE_CATS.filter(c => c.id !== 'all' && catCount(c.id) > 0).map(cat => (
                           <div key={cat.id}>
                             <div className="px-3 py-1.5 bg-blue-50/60 text-[10px] font-bold text-[#0958D9] uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
                               {cat.id === 'classes' ? <GraduationCap className="w-3 h-3" />
-                                : cat.id === 'matieres' ? <BookOpen className="w-3 h-3" />
                                 : cat.id === 'enseignants' ? <UserCheck className="w-3 h-3" />
                                 : cat.id === 'parents' ? <Heart className="w-3 h-3" />
                                 : cat.id === 'administration' ? <Building2 className="w-3 h-3" />
@@ -6548,7 +6404,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         <div className="flex flex-col items-center justify-center py-12 text-center px-4">
                           <Users className="w-10 h-10 text-slate-300 mb-2" />
                           <p className="text-sm font-medium text-slate-700">Aucune communauté dans cette catégorie</p>
-                          <p className="text-xs text-slate-500 mt-1">Synchronisez ou changez de catégorie.</p>
+                          <p className="text-xs text-slate-500 mt-1">Créez-en une avec « + Nouvelle communauté ».</p>
                         </div>
                       )}
                     </>
@@ -6580,23 +6436,6 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
                         <Megaphone className="w-3 h-3" /> Canaux ({listChannels.length})
                       </div>
-                      {/* ⭐ V6 (spec §6) — bandeau de sync des canaux officiels */}
-                      {(canauxSyncing || canauxSyncMessage) && (
-                        <div className={cn(
-                          'px-3 py-2 text-[11px] flex items-center gap-2 border-b',
-                          canauxSyncing ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        )}>
-                          {canauxSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                          <span className="flex-1 truncate">
-                            {canauxSyncing ? 'Synchronisation des canaux officiels…' : canauxSyncMessage}
-                          </span>
-                          {!canauxSyncing && (
-                            <button onClick={syncAutoChannels} className="text-blue-600 hover:underline font-semibold">
-                              Re-sync
-                            </button>
-                          )}
-                        </div>
-                      )}
                       {listChannels.map((ch: any) => (
                         <button
                           key={ch.id}
@@ -6630,7 +6469,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               )}
                             </div>
                             <span className="text-xs text-slate-500 truncate block">
-                              {ch.lastMessagePreview || `${ch.subscriberCount || 0} abonné(s)`}
+                              {/* ⭐ 2026-11-27 — aperçu en texte plat (fin des «&nbsp;») */}
+                              {stripHtml(ch.lastMessagePreview || '') || `${ch.subscriberCount || 0} abonné(s)`}
                             </span>
                           </div>
                         </button>
@@ -6722,7 +6562,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                                 )}
                               </div>
                               <span className="text-xs text-slate-500 truncate block">
-                                {ch.lastMessagePreview || `${ch.subscriberCount || 0} abonné(s)`}
+                                {/* ⭐ 2026-11-27 — aperçu en texte plat (fin des «&nbsp;») */}
+                              {stripHtml(ch.lastMessagePreview || '') || `${ch.subscriberCount || 0} abonné(s)`}
                               </span>
                             </div>
                           </button>
@@ -6838,19 +6679,28 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div className={cn(
-              'w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 relative',
-              getAvatarColor(getConversationDisplay(activeConv, currentUserId).name)
-            )}>
-              {getInitials(getConversationDisplay(activeConv, currentUserId).name)}
-              {/* ⭐ Online dot (DIRECT only) */}
-              {activeConv.type === 'DIRECT' && (() => {
-                const other = activeConv.participants.find(p => p.userId !== currentUserId);
-                return other && onlineUsers.has(other.userId) ? (
-                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-[#0958D9]" />
-                ) : null;
-              })()}
-            </div>
+            {(() => {
+              const headerDisplay = getConversationDisplay(activeConv, currentUserId);
+              return (
+                <div className={cn(
+                  'w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 relative overflow-hidden',
+                  headerDisplay.avatarUrl ? 'bg-slate-200' : getAvatarColor(headerDisplay.name)
+                )}>
+                  {/* ⭐ 2026-11-27 — photo de profil dans l'en-tête de
+                      conversation (avant : initiales seulement). */}
+                  {headerDisplay.avatarUrl
+                    ? <img src={headerDisplay.avatarUrl} alt="" className="w-full h-full object-cover" />
+                    : getInitials(headerDisplay.name)}
+                  {/* ⭐ Online dot (DIRECT only) */}
+                  {activeConv.type === 'DIRECT' && (() => {
+                    const other = activeConv.participants.find(p => p.userId !== currentUserId);
+                    return other && onlineUsers.has(other.userId) ? (
+                      <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-[#0958D9]" />
+                    ) : null;
+                  })()}
+                </div>
+              );
+            })()}
             <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { const other = activeConv.participants.find(p => p.userId !== currentUserId); if (other) handleOpenProfile(other.userId, `${other.firstName || ''} ${other.lastName || ''}`.trim()); }}>
               <h3 className="text-sm font-bold truncate hover:underline">
                 {getConversationDisplay(activeConv, currentUserId).name}
@@ -8195,10 +8045,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               )}
                             >
                               <div className={cn(
-                                'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0',
-                                getAvatarColor(`${p.firstName || ''} ${p.lastName || ''}`)
+                                'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden',
+                                (p as any).avatarUrl ? 'bg-slate-200' : getAvatarColor(`${p.firstName || ''} ${p.lastName || ''}`)
                               )}>
-                                {getInitials(`${p.firstName || ''} ${p.lastName || ''}`)}
+                                {(p as any).avatarUrl
+                                  ? <img src={(p as any).avatarUrl} alt="" className="w-full h-full object-cover" />
+                                  : getInitials(`${p.firstName || ''} ${p.lastName || ''}`)}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-semibold text-slate-900 truncate">
@@ -9855,7 +9707,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
             <div className="p-6 text-center border-b border-slate-100">
-              <div className={cn('w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center text-white text-2xl font-bold', getAvatarColor(profileUser.name))}>{getInitials(profileUser.name)}</div>
+              <div className={cn('w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center text-white text-2xl font-bold overflow-hidden', profileData?.avatarUrl ? 'bg-slate-200' : getAvatarColor(profileUser.name))}>
+                {profileData?.avatarUrl
+                  ? <img src={profileData.avatarUrl} alt="" className="w-full h-full object-cover" />
+                  : getInitials(profileUser.name)}
+              </div>
               <h3 className="text-lg font-bold text-slate-900 flex items-center justify-center gap-1.5">
                 {/* ⭐ 2026-10-14 — Country flag (porté de Yeshua Connect) — affiche le
                     drapeau du pays du membre à côté de son nom. profileData.country
@@ -10217,10 +10073,12 @@ function NewChatModal({
                 className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 text-left border-b border-slate-50"
               >
                 <div className={cn(
-                  'w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0',
-                  getAvatarColor(`${user.firstName || ''} ${user.lastName || ''}`)
+                  'w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 overflow-hidden',
+                  user.avatarUrl ? 'bg-slate-200' : getAvatarColor(`${user.firstName || ''} ${user.lastName || ''}`)
                 )}>
-                  {getInitials(`${user.firstName || ''} ${user.lastName || ''}`)}
+                  {user.avatarUrl
+                    ? <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                    : getInitials(`${user.firstName || ''} ${user.lastName || ''}`)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold text-slate-900 truncate">
@@ -10283,12 +10141,50 @@ function NewGroupModal({
   onClose: () => void;
   onGroupCreated: (convId: string) => void;
 }) {
+  // ⭐ 2026-11-27 (retour promoteur « à la WhatsApp/Telegram ») : la création
+  //    de groupe pose maintenant les BONNES QUESTIONS — qui intégrer ?
+  //    - Parents d'élèves : tout l'établissement, ou par classe, ou par niveau ;
+  //    - Enseignants : tout l'établissement, ou par niveau (maternel /
+  //      primaire / secondaire) ;
+  //    - Classe : parents + enseignants d'une classe précise ;
+  //    - Personnel administratif / Administration ;
+  //    - Sélection manuelle (recherche individuelle, comme avant).
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ChatUser[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
+
+  // Audiences
+  type AudienceChip = {
+    key: string;
+    label: string;
+    category: 'class' | 'parents' | 'teachers' | 'staff' | 'administration' | 'other';
+    selector: { type: string; classId?: string; levelId?: string; levelCategory?: string };
+    levelCategory?: string;
+    userIds: string[];
+  };
+  const [audiences, setAudiences] = useState<AudienceChip[]>([]);
+  const [audienceCatalog, setAudienceCatalog] = useState<{
+    classes: any[];
+    levels: any[];
+    counts: { allParents: number; allTeachers: number; staff: number; teachersByCategory: Record<string, number> };
+  } | null>(null);
+  const [audienceTab, setAudienceTab] = useState<'audiences' | 'manuel'>('audiences');
+  const [resolving, setResolving] = useState<string | null>(null);
+
+  // Chargement du catalogue d'audiences (classes + effectifs, niveaux, compteurs)
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/chat/audiences', { credentials: 'include' })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (!cancelled && data) setAudienceCatalog(data);
+      })
+      .catch(() => { /* silencieux */ });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -10316,12 +10212,57 @@ function NewGroupModal({
     });
   };
 
+  /** Ajoute une audience résolue (chip + userIds en cache). */
+  const addAudience = async (
+    chip: Omit<AudienceChip, 'userIds'>,
+  ) => {
+    if (audiences.some(a => a.key === chip.key)) return;
+    setResolving(chip.key);
+    try {
+      const res = await fetch('/api/chat/audiences/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(chip.selector),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Résolution impossible');
+      const data = await res.json();
+      setAudiences(prev => [...prev, { ...chip, userIds: data.userIds || [] }]);
+    } catch (e: any) {
+      toast.error(e.message || 'Impossible de résoudre cette audience');
+    } finally {
+      setResolving(null);
+    }
+  };
+
+  const removeAudience = (key: string) => {
+    setAudiences(prev => prev.filter(a => a.key !== key));
+  };
+
+  /** Tous les participants (audiences + sélection manuelle), dédupliqués, hors créateur. */
+  const allParticipantIds = Array.from(new Set([
+    ...audiences.flatMap(a => a.userIds),
+    ...Array.from(selected),
+  ])).filter(id => id !== currentUserId);
+
+  /** Métadonnées posées sur la conversation (catégorie Communautés + niveau). */
+  const groupMetadata = (() => {
+    if (audiences.length === 0) return { category: 'other' };
+    const first = audiences[0];
+    const levelCategory = audiences.find(a => a.levelCategory)?.levelCategory;
+    const base: any = { category: first.category, audienceType: first.selector.type };
+    if (first.selector.classId) base.classId = first.selector.classId;
+    if (first.selector.levelId) base.levelId = first.selector.levelId;
+    if (levelCategory) base.levelCategory = levelCategory;
+    return base;
+  })();
+
   const createGroup = async () => {
     if (!name.trim()) {
       toast.error('Le nom du groupe est requis');
       return;
     }
-    if (selected.size === 0) {
+    if (allParticipantIds.length === 0) {
       toast.error('Sélectionnez au moins 1 participant');
       return;
     }
@@ -10334,14 +10275,15 @@ function NewGroupModal({
           creatorId: currentUserId,
           name: name.trim(),
           description: description.trim() || undefined,
-          participantIds: Array.from(selected),
+          participantIds: allParticipantIds,
+          metadata: groupMetadata,
         }),
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to create group');
       const conv = await res.json();
       onGroupCreated(conv.id);
-      toast.success('Groupe créé');
+      toast.success(`Groupe créé (${allParticipantIds.length + 1} membres)`);
     } catch (e: any) {
       toast.error('Échec: ' + e.message);
     } finally {
@@ -10349,9 +10291,15 @@ function NewGroupModal({
     }
   };
 
+  const cat = audienceCatalog?.counts;
+  const classes = audienceCatalog?.classes || [];
+  const levels = audienceCatalog?.levels || [];
+  const levelLabel = (lc: string) =>
+    lc === 'MATERNELLE' ? 'Maternel' : lc === 'PRIMAIRE' ? 'Primaire' : lc === 'SECONDAIRE' ? 'Secondaire' : lc;
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col">
         <div className="p-4 border-b border-slate-100 flex items-center justify-between">
           <h3 className="text-base font-bold text-slate-900">Nouveau groupe</h3>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg">
@@ -10365,6 +10313,7 @@ function NewGroupModal({
             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
             value={name}
             onChange={e => setName(e.target.value)}
+            autoFocus
           />
           <input
             type="text"
@@ -10374,58 +10323,266 @@ function NewGroupModal({
             onChange={e => setDescription(e.target.value)}
           />
         </div>
-        <div className="p-4 border-b border-slate-100">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Rechercher des utilisateurs à ajouter..."
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-            />
-          </div>
-          {selected.size > 0 && (
-            <div className="mt-2 text-xs text-[#0958D9] font-semibold">
-              {selected.size} participant(s) sélectionné(s)
+
+        {/* Onglets : Audiences (sélection rapide) / Recherche manuelle */}
+        <div className="flex border-b border-slate-100">
+          <button
+            onClick={() => setAudienceTab('audiences')}
+            className={cn(
+              'flex-1 px-3 py-2 text-xs font-bold transition',
+              audienceTab === 'audiences' ? 'text-[#0958D9] border-b-2 border-[#1677FF]' : 'text-slate-500 hover:text-slate-700'
+            )}
+          >
+            Sélection rapide
+          </button>
+          <button
+            onClick={() => setAudienceTab('manuel')}
+            className={cn(
+              'flex-1 px-3 py-2 text-xs font-bold transition',
+              audienceTab === 'manuel' ? 'text-[#0958D9] border-b-2 border-[#1677FF]' : 'text-slate-500 hover:text-slate-700'
+            )}
+          >
+            Recherche manuelle
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {audienceTab === 'audiences' ? (
+            <div className="p-3 space-y-4">
+              {/* PARENTS D'ÉLÈVES */}
+              <div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                  <Heart className="w-3 h-3" /> Parents d'élèves
+                </p>
+                <div className="space-y-1.5">
+                  <button
+                    onClick={() => addAudience({
+                      key: 'ALL_PARENTS',
+                      label: `Tous les parents de l'établissement${cat ? ` (${cat.allParents})` : ''}`,
+                      category: 'parents',
+                      selector: { type: 'ALL_PARENTS' },
+                    })}
+                    disabled={resolving === 'ALL_PARENTS' || audiences.some(a => a.key === 'ALL_PARENTS')}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-left text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-40"
+                  >
+                    <span>Tous les parents de l'établissement</span>
+                    <span className="flex items-center gap-1.5 text-[10px] text-emerald-600">
+                      {cat ? `${cat.allParents}` : ''} <Plus className="w-3.5 h-3.5" />
+                    </span>
+                  </button>
+                  <p className="text-[10px] text-slate-400 pl-1">…ou par niveau scolaire :</p>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {levels.map((lv: any) => (
+                      <button
+                        key={lv.id}
+                        onClick={() => addAudience({
+                          key: `LEVEL_PARENTS:${lv.id}`,
+                          label: `Parents — ${lv.name}${lv.parentCount ? ` (${lv.parentCount})` : ''}`,
+                          category: 'parents',
+                          selector: { type: 'LEVEL_PARENTS', levelId: lv.id },
+                        })}
+                        disabled={resolving === `LEVEL_PARENTS:${lv.id}` || audiences.some(a => a.key === `LEVEL_PARENTS:${lv.id}`)}
+                        className="flex items-center justify-between gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-left text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                      >
+                        <span>Parents — {lv.name} <span className="text-slate-400">({lv.classCount} classe(s))</span></span>
+                        <Plus className="w-3.5 h-3.5 text-slate-400" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* ENSEIGNANTS */}
+              <div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                  <UserCheck className="w-3 h-3" /> Enseignants
+                </p>
+                <div className="space-y-1.5">
+                  <button
+                    onClick={() => addAudience({
+                      key: 'ALL_TEACHERS',
+                      label: `Tous les enseignants${cat ? ` (${cat.allTeachers})` : ''}`,
+                      category: 'teachers',
+                      selector: { type: 'ALL_TEACHERS' },
+                    })}
+                    disabled={resolving === 'ALL_TEACHERS' || audiences.some(a => a.key === 'ALL_TEACHERS')}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-left text-xs font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-40"
+                  >
+                    <span>Tous les enseignants de l'établissement</span>
+                    <span className="flex items-center gap-1.5 text-[10px] text-blue-600">
+                      {cat ? `${cat.allTeachers}` : ''} <Plus className="w-3.5 h-3.5" />
+                    </span>
+                  </button>
+                  <p className="text-[10px] text-slate-400 pl-1">…ou par niveau d'enseignement :</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'] as const).map(lc => (
+                      <button
+                        key={lc}
+                        onClick={() => addAudience({
+                          key: `TEACHERS_BY_CATEGORY:${lc}`,
+                          label: `Enseignants du niveau ${levelLabel(lc)}`,
+                          category: 'teachers',
+                          selector: { type: 'TEACHERS_BY_CATEGORY', levelCategory: lc },
+                          levelCategory: lc,
+                        })}
+                        disabled={resolving === `TEACHERS_BY_CATEGORY:${lc}` || audiences.some(a => a.key === `TEACHERS_BY_CATEGORY:${lc}`)}
+                        className="px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                      >
+                        {levelLabel(lc)}
+                        {cat?.teachersByCategory ? <span className="block text-[9px] text-slate-400 font-normal">{cat.teachersByCategory[lc] || 0} enseignant(s)</span> : null}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* CLASSES (parents + enseignants) */}
+              {classes.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                    <GraduationCap className="w-3 h-3" /> Par classe (parents + enseignants)
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {classes.map((cl: any) => (
+                      <button
+                        key={cl.id}
+                        onClick={() => addAudience({
+                          key: `CLASS_ALL:${cl.id}`,
+                          label: `${cl.name}${cl.levelName ? ` — ${cl.levelName}` : ''}`,
+                          category: 'class',
+                          selector: { type: 'CLASS_ALL', classId: cl.id },
+                          levelCategory: cl.levelCategory,
+                        })}
+                        disabled={resolving === `CLASS_ALL:${cl.id}` || audiences.some(a => a.key === `CLASS_ALL:${cl.id}`)}
+                        className="px-2 py-2 bg-amber-50 border border-amber-200 rounded-lg text-left text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-40"
+                      >
+                        {cl.name}
+                        <span className="block text-[9px] text-amber-600 font-normal">
+                          {cl.parentCount || 0} parent(s) · {cl.teacherCount || 0} enseignant(s)
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* PERSONNEL / ADMINISTRATION */}
+              <div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                  <Building2 className="w-3 h-3" /> Personnel & administration
+                </p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={() => addAudience({
+                      key: 'ALL_STAFF',
+                      label: 'Personnel administratif',
+                      category: 'staff',
+                      selector: { type: 'ALL_STAFF' },
+                    })}
+                    disabled={resolving === 'ALL_STAFF' || audiences.some(a => a.key === 'ALL_STAFF')}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-left text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                  >
+                    Personnel administratif
+                    {cat ? <span className="block text-[9px] text-slate-400">{cat.staff} membre(s)</span> : null}
+                  </button>
+                  <button
+                    onClick={() => addAudience({
+                      key: 'ADMINISTRATION',
+                      label: 'Administration de l\u2019établissement',
+                      category: 'administration',
+                      selector: { type: 'ADMINISTRATION' },
+                    })}
+                    disabled={resolving === 'ADMINISTRATION' || audiences.some(a => a.key === 'ADMINISTRATION')}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-left text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                  >
+                    Direction & administration
+                  </button>
+                </div>
+              </div>
+
+              {resolving && (
+                <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Résolution des membres…
+                </p>
+              )}
+            </div>
+          ) : (
+            <div>
+              <div className="p-4 border-b border-slate-100">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Rechercher des utilisateurs à ajouter..."
+                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+              {results.map(user => {
+                const isSelected = selected.has(user.userId);
+                return (
+                  <button
+                    key={user.userId}
+                    onClick={() => toggleSelect(user.userId)}
+                    className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 text-left border-b border-slate-50"
+                  >
+                    <div className={cn(
+                      'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0',
+                      isSelected ? 'bg-[#1677FF] border-[#1677FF] text-white' : 'border-slate-300'
+                    )}>
+                      {isSelected && <Check className="w-3 h-3" />}
+                    </div>
+                    <div className={cn(
+                      'w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 overflow-hidden',
+                      user.avatarUrl ? 'bg-slate-200' : getAvatarColor(`${user.firstName || ''} ${user.lastName || ''}`)
+                    )}>
+                      {user.avatarUrl
+                        ? <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                        : getInitials(`${user.firstName || ''} ${user.lastName || ''}`)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-slate-900 truncate">
+                        {user.firstName} {user.lastName}
+                      </div>
+                      <div className="text-xs text-slate-500 truncate">{user.email}</div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto">
-          {results.map(user => {
-            const isSelected = selected.has(user.userId);
-            return (
-              <button
-                key={user.userId}
-                onClick={() => toggleSelect(user.userId)}
-                className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 text-left border-b border-slate-50"
-              >
-                <div className={cn(
-                  'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0',
-                  isSelected ? 'bg-[#1677FF] border-[#1677FF] text-white' : 'border-slate-300'
-                )}>
-                  {isSelected && <Check className="w-3 h-3" />}
-                </div>
-                <div className={cn(
-                  'w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0',
-                  getAvatarColor(`${user.firstName || ''} ${user.lastName || ''}`)
-                )}>
-                  {getInitials(`${user.firstName || ''} ${user.lastName || ''}`)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-slate-900 truncate">
-                    {user.firstName} {user.lastName}
-                  </div>
-                  <div className="text-xs text-slate-500 truncate">{user.email}</div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
+
+        {/* Chips des audiences ajoutées + compte total */}
+        {(audiences.length > 0 || selected.size > 0) && (
+          <div className="px-4 py-2 border-t border-slate-100 bg-slate-50/60">
+            <div className="flex flex-wrap gap-1.5 mb-1.5">
+              {audiences.map(a => (
+                <span key={a.key} className="inline-flex items-center gap-1 px-2 py-1 bg-[#1677FF] text-white text-[10px] font-semibold rounded-full">
+                  {a.label} · {a.userIds.length}
+                  <button onClick={() => removeAudience(a.key)} className="hover:bg-[#0958D9] rounded-full p-0.5">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+              {selected.size > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 bg-slate-200 text-slate-700 text-[10px] font-semibold rounded-full">
+                  Sélection manuelle · {selected.size}
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-[#0958D9] font-bold">
+              {allParticipantIds.length} membre(s) seront ajoutés au groupe
+            </p>
+          </div>
+        )}
+
         <div className="p-4 border-t border-slate-100">
           <button
             onClick={createGroup}
-            disabled={creating || !name.trim() || selected.size === 0}
+            disabled={creating || !name.trim() || allParticipantIds.length === 0}
             className="w-full px-4 py-2.5 bg-[#1677FF] text-white text-sm font-bold rounded-lg hover:bg-[#0958D9] disabled:opacity-30"
           >
             {creating ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Créer le groupe'}
@@ -11077,9 +11234,65 @@ function NewChannelModal({
   onClose: () => void;
   onChannelCreated: () => void;
 }) {
+  // ⭐ 2026-11-27 (retour promoteur « à la WhatsApp/Telegram ») : à la création
+  //    d'un canal, l'école choisit QUI est abonné d'emblée — tous les parents,
+  //    les parents d'une classe ou d'un niveau, les enseignants (tout
+  //    l'établissement ou par niveau), le personnel… comme pour les groupes.
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [creating, setCreating] = useState(false);
+
+  type AudienceChip = {
+    key: string;
+    label: string;
+    selector: { type: string; classId?: string; levelId?: string; levelCategory?: string };
+    userIds: string[];
+  };
+  const [audiences, setAudiences] = useState<AudienceChip[]>([]);
+  const [audienceCatalog, setAudienceCatalog] = useState<{
+    classes: any[];
+    levels: any[];
+    counts: { allParents: number; allTeachers: number; staff: number; teachersByCategory: Record<string, number> };
+  } | null>(null);
+  const [resolving, setResolving] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/chat/audiences', { credentials: 'include' })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (!cancelled && data) setAudienceCatalog(data);
+      })
+      .catch(() => { /* silencieux */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const addAudience = async (chip: Omit<AudienceChip, 'userIds'>) => {
+    if (audiences.some(a => a.key === chip.key)) return;
+    setResolving(chip.key);
+    try {
+      const res = await fetch('/api/chat/audiences/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(chip.selector),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Résolution impossible');
+      const data = await res.json();
+      setAudiences(prev => [...prev, { ...chip, userIds: data.userIds || [] }]);
+    } catch (e: any) {
+      toast.error(e.message || 'Impossible de résoudre cette audience');
+    } finally {
+      setResolving(null);
+    }
+  };
+
+  const removeAudience = (key: string) => {
+    setAudiences(prev => prev.filter(a => a.key !== key));
+  };
+
+  const subscriberIds = Array.from(new Set(audiences.flatMap(a => a.userIds)))
+    .filter(id => id !== currentUserId);
 
   const handleCreate = async () => {
     if (!name.trim()) { toast.error('Nom du canal requis'); return; }
@@ -11088,11 +11301,18 @@ function NewChannelModal({
       const res = await fetch('/api/chat/channels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ creatorId: currentUserId, name: name.trim(), description: description.trim() || undefined }),
+        body: JSON.stringify({
+          creatorId: currentUserId,
+          name: name.trim(),
+          description: description.trim() || undefined,
+          subscriberIds: subscriberIds.length > 0 ? subscriberIds : undefined,
+        }),
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Échec création canal');
-      toast.success('Canal créé');
+      toast.success(subscriberIds.length > 0
+        ? `Canal créé (${subscriberIds.length + 1} abonné(s))`
+        : 'Canal créé');
       onChannelCreated();
     } catch (e: any) {
       toast.error('Échec: ' + e.message);
@@ -11101,9 +11321,18 @@ function NewChannelModal({
     }
   };
 
+  const cat = audienceCatalog?.counts;
+  const classes = audienceCatalog?.classes || [];
+  const levels = audienceCatalog?.levels || [];
+  const levelLabel = (lc: string) =>
+    lc === 'MATERNELLE' ? 'Maternel' : lc === 'PRIMAIRE' ? 'Primaire' : lc === 'SECONDAIRE' ? 'Secondaire' : lc;
+
+  const chipBtn = (active: boolean) =>
+    `w-full flex items-center justify-between gap-2 px-3 py-2 border rounded-lg text-left text-xs disabled:opacity-40 ${active ? 'bg-blue-100 border-blue-300 text-blue-900' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'}`;
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col">
         <div className="p-4 border-b border-slate-100 flex items-center justify-between">
           <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
             <Megaphone className="w-4 h-4 text-blue-600" />
@@ -11113,7 +11342,7 @@ function NewChannelModal({
             <X className="w-4 h-4 text-slate-500" />
           </button>
         </div>
-        <div className="p-4 space-y-3">
+        <div className="p-4 space-y-3 border-b border-slate-100">
           <p className="text-xs text-slate-500">
             Un canal permet de diffuser des messages à tous les abonnés (broadcast unidirectionnel).
           </p>
@@ -11133,6 +11362,123 @@ function NewChannelModal({
             onChange={e => setDescription(e.target.value)}
           />
         </div>
+
+        {/* ⭐ 2026-11-27 — abonnés initiaux par audience */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-4">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+            Abonnés initiaux (optionnel)
+          </p>
+
+          <div className="space-y-1.5">
+            <button
+              onClick={() => addAudience({ key: 'ALL_PARENTS', label: 'Tous les parents', selector: { type: 'ALL_PARENTS' } })}
+              disabled={resolving === 'ALL_PARENTS' || audiences.some(a => a.key === 'ALL_PARENTS')}
+              className={chipBtn(audiences.some(a => a.key === 'ALL_PARENTS'))}
+            >
+              <span>Tous les parents de l'établissement</span>
+              <span className="flex items-center gap-1.5 text-[10px] text-slate-400">{cat ? `${cat.allParents}` : ''} <Plus className="w-3.5 h-3.5" /></span>
+            </button>
+            {levels.map((lv: any) => (
+              <button
+                key={lv.id}
+                onClick={() => addAudience({
+                  key: `LEVEL_PARENTS:${lv.id}`,
+                  label: `Parents — ${lv.name}`,
+                  selector: { type: 'LEVEL_PARENTS', levelId: lv.id },
+                })}
+                disabled={resolving === `LEVEL_PARENTS:${lv.id}` || audiences.some(a => a.key === `LEVEL_PARENTS:${lv.id}`)}
+                className={chipBtn(audiences.some(a => a.key === `LEVEL_PARENTS:${lv.id}`))}
+              >
+                <span>Parents — {lv.name} <span className="text-slate-400">({lv.classCount} classe(s))</span></span>
+                <Plus className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+            ))}
+          </div>
+
+          <div className="space-y-1.5">
+            <button
+              onClick={() => addAudience({ key: 'ALL_TEACHERS', label: 'Tous les enseignants', selector: { type: 'ALL_TEACHERS' } })}
+              disabled={resolving === 'ALL_TEACHERS' || audiences.some(a => a.key === 'ALL_TEACHERS')}
+              className={chipBtn(audiences.some(a => a.key === 'ALL_TEACHERS'))}
+            >
+              <span>Tous les enseignants</span>
+              <span className="flex items-center gap-1.5 text-[10px] text-slate-400">{cat ? `${cat.allTeachers}` : ''} <Plus className="w-3.5 h-3.5" /></span>
+            </button>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'] as const).map(lc => (
+                <button
+                  key={lc}
+                  onClick={() => addAudience({
+                    key: `TEACHERS_BY_CATEGORY:${lc}`,
+                    label: `Enseignants du niveau ${levelLabel(lc)}`,
+                    selector: { type: 'TEACHERS_BY_CATEGORY', levelCategory: lc },
+                  })}
+                  disabled={resolving === `TEACHERS_BY_CATEGORY:${lc}` || audiences.some(a => a.key === `TEACHERS_BY_CATEGORY:${lc}`)}
+                  className={chipBtn(audiences.some(a => a.key === `TEACHERS_BY_CATEGORY:${lc}`))}
+                >
+                  <span>Enseignants {levelLabel(lc)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {classes.length > 0 && (
+            <div>
+              <p className="text-[10px] text-slate-400 mb-1.5">Par classe (parents de la classe) :</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {classes.map((cl: any) => (
+                  <button
+                    key={cl.id}
+                    onClick={() => addAudience({
+                      key: `CLASS_PARENTS:${cl.id}`,
+                      label: `${cl.name}${cl.levelName ? ` — ${cl.levelName}` : ''}`,
+                      selector: { type: 'CLASS_PARENTS', classId: cl.id },
+                    })}
+                    disabled={resolving === `CLASS_PARENTS:${cl.id}` || audiences.some(a => a.key === `CLASS_PARENTS:${cl.id}`)}
+                    className={chipBtn(audiences.some(a => a.key === `CLASS_PARENTS:${cl.id}`))}
+                  >
+                    <span>{cl.name}</span>
+                    <span className="text-[9px] text-slate-400">{cl.parentCount || 0} parent(s)</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={() => addAudience({ key: 'ALL_STAFF', label: 'Personnel administratif', selector: { type: 'ALL_STAFF' } })}
+            disabled={resolving === 'ALL_STAFF' || audiences.some(a => a.key === 'ALL_STAFF')}
+            className={chipBtn(audiences.some(a => a.key === 'ALL_STAFF'))}
+          >
+            <span>Personnel administratif</span>
+            <span className="text-[10px] text-slate-400">{cat ? `${cat.staff}` : ''}</span>
+          </button>
+
+          {resolving && (
+            <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+              <Loader2 className="w-3 h-3 animate-spin" /> Résolution des abonnés…
+            </p>
+          )}
+        </div>
+
+        {audiences.length > 0 && (
+          <div className="px-4 py-2 border-t border-slate-100 bg-slate-50/60">
+            <div className="flex flex-wrap gap-1.5 mb-1">
+              {audiences.map(a => (
+                <span key={a.key} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600 text-white text-[10px] font-semibold rounded-full">
+                  {a.label} · {a.userIds.length}
+                  <button onClick={() => removeAudience(a.key)} className="hover:bg-blue-700 rounded-full p-0.5">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <p className="text-[11px] text-[#0958D9] font-bold">
+              {subscriberIds.length} abonné(s) seront ajoutés au canal
+            </p>
+          </div>
+        )}
+
         <div className="p-4 border-t border-slate-100 flex gap-2">
           <button onClick={onClose} className="flex-1 px-4 py-2 bg-slate-100 text-slate-700 text-sm font-bold rounded-lg hover:bg-slate-200">
             Annuler

@@ -33,6 +33,9 @@ import { ScheduledEmailDispatcherService } from './services/scheduled-email-disp
 // ⭐ V6 (spec §4/§6) — Canaux officiels automatiques + bootstrap périodique
 import { AutoChannelService } from './services/auto-channel.service';
 import { HelmConnectBootstrapService } from './services/helm-connect-bootstrap.service';
+// ⭐ 2026-11-27 — Audiences de création manuelle (parents d'une classe, tous
+//    les parents, enseignants d'un niveau…) pour groupes et canaux manuels
+import { AudienceService } from './services/audience.service';
 import { CommunicationV2Controller } from './communication-v2.controller';
 import { CommunicationPrismaController } from './communication-prisma.controller';
 import { CommunicationPrismaService } from './communication-prisma.service';
@@ -82,10 +85,6 @@ import { CallProviderChainService } from './services/call-provider-chain.service
 //    via /chat/calls/webrtc pour s'échanger offer/answer/ice entre les 2 navigateurs.
 import { P2PWebrtcController } from './p2p-webrtc.controller';
 import { P2PWebrtcSignalService } from './services/p2p-webrtc-signal.service';
-// ⭐ 2026-10-15 — Canaux par piste FR/EN (administration, pédagogique, conseil par niveau)
-import { AutoChannelByTrackService } from './services/auto-channel-by-track.service';
-// ⭐ 2026-10-15 — DMs automatiques (parent↔enseignant, enseignant↔collègue, promoteur↔tous)
-import { AutoDmService } from './services/auto-dm.service';
 // ⭐ V4 — Fichiers transverses (sections Fichiers/Vocaux/Appels)
 import { FilesCenterService } from './services/files-center.service';
 // ⭐ V5 (chantier 1) — Blocage d'utilisateurs (parité Yeshua blocks)
@@ -189,8 +188,10 @@ import { ChatAtlasService } from './services/chat-atlas.service';
     ChatSummaryService,
     // ⭐ V3-2 — Whisper-powered audio transcriptions
     ChatTranscriptionService,
-    // ⭐ V3-11 — Auto-groups (Communautés) auto-creation per academic year
+    // ⭐ V3-11 — Auto-groups : purge seule (création automatique supprimée le 2026-11-27)
     AutoGroupService,
+    // ⭐ 2026-11-27 — Audiences de création manuelle des groupes/canaux
+    AudienceService,
     // ⭐ LiveKit SFU — Discord-style voice/stage/live channels (token minting)
     LiveKitTokenService,
     // ⭐ V4 — Chaîne média des appels (LiveKit → Agora → Daily, santé partagée,
@@ -199,10 +200,6 @@ import { ChatAtlasService } from './services/chat-atlas.service';
     CallSignalService,
     // ⭐ 2026-10-14 — P2P WebRTC fallback 1-à-1 (porté de Yeshua Connect)
     P2PWebrtcSignalService,
-    // ⭐ 2026-10-15 — Canaux par piste FR/EN (administration, pédagogique, conseil par niveau)
-    AutoChannelByTrackService,
-    // ⭐ 2026-10-15 — DMs automatiques (parent↔enseignant, enseignant↔collègue, promoteur↔tous)
-    AutoDmService,
     FilesCenterService,
     // ⭐ V5 — Blocage d'utilisateurs + matrice de contact + antivirus + ATLAS chat
     ChatBlockService,

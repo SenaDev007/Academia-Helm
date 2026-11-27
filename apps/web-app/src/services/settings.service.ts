@@ -1050,26 +1050,11 @@ export async function resetSchoolCalendarConfig(tenantId?: string | null) {
 }
 
 // ============================================================================
-// HISTORIQUE
+// HISTORIQUE — ⭐ 2026-11-27 : getSettingsHistory SUPPRIMÉ (onglet Historique
+// retiré définitivement des Paramètres, retour promoteur). Le backend continue
+// d'écrire SettingsHistory à chaque changement (piste d'audit), seul l'accès
+// lecture UI a été retiré.
 // ============================================================================
-
-export async function getSettingsHistory(options?: {
-  category?: string;
-  key?: string;
-  startDate?: string;
-  endDate?: string;
-  limit?: number;
-}, tenantId?: string | null) {
-  const params = new URLSearchParams();
-  if (options?.category) params.append('category', options.category);
-  if (options?.key) params.append('key', options.key);
-  if (options?.startDate) params.append('startDate', options.startDate);
-  if (options?.endDate) params.append('endDate', options.endDate);
-  if (options?.limit) params.append('limit', options.limit.toString());
-  if (tenantId) params.append('tenant_id', tenantId);
-
-  return fetchWithAuth(`${BASE_URL}/history?${params.toString()}`);
-}
 
 // ============================================================================
 // RÔLES & PERMISSIONS (RBAC multi-tenant)
@@ -1235,11 +1220,9 @@ export async function getFeaturesBillingImpact(tenantId?: string | null) {
 }
 
 // ─── Devices / Appareils autorisés ───
-
-export async function getDevices(tenantId?: string | null) {
-  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
-  return fetchWithAuth(`/api/sync/devices${qs}`);
-}
+// ⭐ 2026-11-27 — getDevices (/api/sync/devices) SUPPRIMÉ : le SyncController
+//    n'a jamais exposé d'endpoint « devices » → 404 systématique. Les données
+//    réelles viennent de getConnectedDevices (route BFF enfin créée).
 
 export async function revokeDevice(deviceId: string) {
   return fetchWithAuth(`/api/auth/devices/${deviceId}`, {

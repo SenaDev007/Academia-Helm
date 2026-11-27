@@ -1704,10 +1704,11 @@ export class OnboardingService {
   // Note: generateSlug supprimé - utilise SubdomainService.generateAndValidate()
 
   /**
-   * ⭐ V6 (spec §4/§6) — Provisionne Helm Connect pour un nouveau tenant :
-   *    crée les 6 canaux officiels de diffusion + abonne tous les comptes
-   *    existants (dont le promoteur fraîchement créé), et tente la création
-   *    des communautés automatiques si une année scolaire est déjà active.
+   * ⭐ V6 (spec §4/§6) — Provisionne Helm Connect pour un nouveau tenant.
+   *    ⭐ 2026-11-27 (retour promoteur « à la WhatsApp/Telegram ») : PLUS
+   *    AUCUNE création automatique — l'appel garantit juste une base propre
+   *    (purge des éventuels canaux/communautés système résiduels) ; le
+   *    promoteur crée ensuite lui-même ses groupes et ses canaux.
    *    Fire-and-forget : aucune erreur ne remonte à l'activation.
    */
   private provisionHelmConnectAsync(tenants: { id: string; subdomain: string | null; name: string }[]): void {
@@ -1719,12 +1720,12 @@ export class OnboardingService {
     Promise.all(
       tenants.map(async (tenant) => {
         try {
-          const result = await bootstrap.syncTenant(tenant.id);
+          await bootstrap.syncTenant(tenant.id);
           this.logger.log(
-            `✅ Helm Connect provisionné pour « ${tenant.name} » : ${result.channels.created} canal(aux) officiel(s) créé(s), ${result.channels.subscribed} abonnement(s)`,
+            `✅ Helm Connect prêt pour « ${tenant.name} » (base propre — le promoteur crée ses propres groupes et canaux)`,
           );
         } catch (e: any) {
-          this.logger.warn(`⚠️  Helm Connect provisionnement échoué pour « ${tenant.name} »: ${e.message} — la sync périodique rattrapera`);
+          this.logger.warn(`⚠️  Helm Connect provisionnement échoué pour « ${tenant.name} »: ${e.message} — la purge périodique rattrapera`);
         }
       }),
     ).catch(() => { /* déjà géré par tenant */ });

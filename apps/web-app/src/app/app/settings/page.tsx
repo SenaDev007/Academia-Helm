@@ -138,9 +138,9 @@ function generateSamplePassword(form: any): string {
 }
 
 type TabId = 'identity' | 'group' | 'academic-year' | 'school-calendar' | 'structure' | 'admin-structure' | 'departments' | 'bilingual' | 'features' |
-             'roles' | 'email' | 'billing' | 'security' | 'seals' | 'appareils' | 'history'
-             // Removed tabs (kept in type for URL compat): communication, payments, orion, atlas, offline
-             | 'communication' | 'payments' | 'orion' | 'atlas' | 'offline';
+             'roles' | 'email' | 'billing' | 'security' | 'seals' | 'appareils'
+             // Removed tabs (kept in type for URL compat): communication, payments, orion, atlas, offline, history
+             | 'communication' | 'payments' | 'orion' | 'atlas' | 'offline' | 'history';
 
 /**
  * Badge visuel pour le type d'appareil (mobile / tablet / desktop / unknown)
@@ -201,11 +201,12 @@ function ActionBadge({ action }: { action: string }) {
 
 const SETTINGS_TAB_IDS: TabId[] = [
   'identity', 'group', 'academic-year', 'structure', 'departments', 'bilingual', 'features',
-  'roles', 'email', 'billing', 'security', 'appareils', 'history',
+  'roles', 'email', 'billing', 'security', 'appareils',
   // school-calendar, admin-structure et seals conservés dans le type pour compat URL
   // mais retirés de l'affichage (fusionnés dans academic-year, departments)
   'school-calendar', 'admin-structure', 'seals',
   // Retirés de l'affichage mais conservés pour compat URL ancienne
+  // (history supprimé définitivement le 2026-11-27 — retour promoteur)
   'communication', 'payments', 'orion', 'atlas', 'offline',
 ];
 
@@ -299,6 +300,9 @@ export default function SettingsPage() {
     orion: 'security',
     atlas: 'security',
     offline: 'security',
+    // ⭐ 2026-11-27 — onglet Historique supprimé définitivement (retour
+    //    promoteur) : les anciennes URL ?tab=history sont redirigées
+    history: 'security',
   };
   useEffect(() => {
     if (!tabFromUrl) return;
@@ -344,9 +348,8 @@ export default function SettingsPage() {
   const [loginHistoryTotalPages, setLoginHistoryTotalPages] = useState(1);
   const [loginHistoryTotal, setLoginHistoryTotal] = useState(0);
   const [loginHistoryFilter, setLoginHistoryFilter] = useState<{ action?: string; status?: string }>({});
-  const [history, setHistory] = useState<any[]>([]);
-  const [historyCategoryFilter, setHistoryCategoryFilter] = useState<string | null>(null);
-  const [historySearchFilter, setHistorySearchFilter] = useState<string | null>(null);
+  // ⭐ 2026-11-27 — onglet « Historique » (des modifications) SUPPRIMÉ
+  //    définitivement (retour promoteur). Les états history* ont été retirés.
   const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [activeAcademicYear, setActiveAcademicYear] = useState<any>(null);
   const [academicYearAction, setAcademicYearAction] = useState<'activate' | 'close' | 'generate' | null>(null);
@@ -692,7 +695,6 @@ export default function SettingsPage() {
         orion,
         atlas,
         offline,
-        historyData,
         academicYearsResult,
         structure,
         bilingual,
@@ -748,7 +750,6 @@ export default function SettingsPage() {
       setAtlasForm(atlas || {});
       setOfflineSyncSettings(offline);
       setOfflineForm(offline || {});
-      setHistory(Array.isArray(historyData) ? historyData : []);
       const years = (academicYearsResult?.years ?? []) as any[];
       const activeYear = (academicYearsResult?.activeYear ?? null) as any;
       const yearList = years || [];
@@ -921,21 +922,12 @@ export default function SettingsPage() {
   }, [isPlatformOwner, activeTab]);
 
   useEffect(() => {
+    // ⭐ 2026-11-27 — l'appel mort à GET /api/sync/devices (404 côté API —
+    //    SyncController n'a jamais exposé d'endpoint devices) est SUPPRIMÉ.
+    //    Les données réelles viennent du sous-onglet « Appareils connectés »
+    //    ci-dessous (GET /api/auth/devices/connected — route BFF enfin créée).
     if (activeTab !== 'appareils') return;
-    let cancelled = false;
-    setDevicesLoading(true);
-    settingsService.getDevices(effectiveTenantId)
-      .then((data) => {
-        if (!cancelled) {
-          // fetchWithAuth returns parsed JSON, not a Response object
-          const devices = data?.devices ?? (Array.isArray(data) ? data : []);
-          setDevicesList(devices);
-        }
-      })
-      .catch(() => { if (!cancelled) setDevicesList([]); })
-      .finally(() => { if (!cancelled) setDevicesLoading(false); });
-    return () => { cancelled = true; };
-  }, [activeTab, effectiveTenantId]);
+  }, [activeTab]);
 
   // ⭐ Lazy-load des appareils connectés récents quand l'utilisateur ouvre
   // le sous-onglet "Appareils connectés" (filtre par période).
@@ -2769,7 +2761,7 @@ export default function SettingsPage() {
     // ⭐ Onglet Cachets supprimé — fusionné dans "Administration et Cachets"
     // { id: 'seals' as TabId, label: 'Cachets', icon: Stamp },
     { id: 'appareils' as TabId, label: 'Appareils autorisés', icon: Smartphone },
-    { id: 'history' as TabId, label: 'Historique', icon: History },
+    // (⭐ 2026-11-27 — onglet « Historique » supprimé définitivement, retour promoteur)
   ];
 
   const renderTabContent = () => {
@@ -6710,102 +6702,6 @@ export default function SettingsPage() {
             </div>
           </div>
         );
-
-      case 'history':
-        return (
-          <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Historique des modifications</h3>
-              <div className="flex flex-wrap gap-3 mb-4">
-                <select
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                  value={historyCategoryFilter ?? ''}
-                  onChange={(e) => setHistoryCategoryFilter(e.target.value || null)}
-                >
-                  <option value="">Toutes les catégories</option>
-                  <option value="identity">Identité</option>
-                  <option value="academic">Année scolaire</option>
-                  <option value="structure">Structure</option>
-                  <option value="bilingual">Bilingue</option>
-                  <option value="features">Modules</option>
-                  <option value="security">Sécurité</option>
-                  <option value="communication">Communication</option>
-                  <option value="orion">ORION</option>
-                  <option value="atlas">ATLAS</option>
-                  <option value="offline">Offline</option>
-                  <option value="billing">Facturation</option>
-                  <option value="roles">Rôles</option>
-                </select>
-                <input
-                  type="text"
-                  placeholder="Rechercher par clé..."
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={historySearchFilter ?? ''}
-                  onChange={(e) => setHistorySearchFilter(e.target.value || null)}
-                />
-              </div>
-              {history.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p>Aucune modification enregistrée.</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {history
-                    .filter((item) => {
-                      if (historyCategoryFilter && item.category !== historyCategoryFilter) return false;
-                      if (historySearchFilter && !item.key?.toLowerCase().includes(historySearchFilter.toLowerCase())) return false;
-                      return true;
-                    })
-                    .map((item) => (
-                    <div
-                      key={item.id}
-                      className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h4 className="font-semibold text-gray-800">{item.key}</h4>
-                            {item.category && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                {item.category}
-                              </span>
-                            )}
-                          </div>
-                          {(item.oldValue !== undefined || item.newValue !== undefined) && (
-                            <div className="mt-2 text-sm grid grid-cols-1 md:grid-cols-2 gap-2">
-                              {item.oldValue !== undefined && (
-                                <div className="p-2 bg-red-50 border border-red-200 rounded">
-                                  <span className="text-xs font-medium text-red-700">Ancienne valeur</span>
-                                  <p className="text-gray-700 mt-0.5">
-                                    {typeof item.oldValue === 'object' ? JSON.stringify(item.oldValue, null, 2) : String(item.oldValue)}
-                                  </p>
-                                </div>
-                              )}
-                              {item.newValue !== undefined && (
-                                <div className="p-2 bg-green-50 border border-green-200 rounded">
-                                  <span className="text-xs font-medium text-green-700">Nouvelle valeur</span>
-                                  <p className="text-gray-700 mt-0.5">
-                                    {typeof item.newValue === 'object' ? JSON.stringify(item.newValue, null, 2) : String(item.newValue)}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          <p className="text-xs text-gray-500 mt-2">
-                            {new Date(item.changedAt).toLocaleString('fr-FR')}
-                            {item.user && ` par ${item.user.firstName} ${item.user.lastName}`}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-
       // ⭐ MULTI-ÉCOLES — activation d'une école annexe depuis les paramètres
       //    (promoteurs uniquement — payant par école, contrat conforme au Word)
       case 'group':

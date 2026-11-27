@@ -1400,7 +1400,8 @@ export function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContex
     urls.push(`/api/chat/v2/notifications/muted-conversations${qs({ userId })}`);
     urls.push(`/api/chat/profile/${userId}`);
   }
-  urls.push('/api/chat/auto-groups');
+  // ⭐ 2026-11-27 — /api/chat/auto-groups retiré du precache : plus aucune
+  //    communauté automatique (retour promoteur — l'école crée ses groupes).
   if (isStaff && tenantId) {
     urls.push(`/api/communication/email-logs-stats${qs({ tenantId })}`);
     urls.push(`/api/communication/email-logs${qs({ tenantId, page: 1, pageSize: 25 })}`);
@@ -1485,7 +1486,8 @@ export function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContex
     urls.push(`/api/settings/orion${qs({ tenant_id: tenantId })}`);
     urls.push(`/api/settings/atlas${qs({ tenant_id: tenantId })}`);
     urls.push(`/api/settings/offline-sync${qs({ tenant_id: tenantId })}`);
-    urls.push(`/api/settings/history${qs({ tenant_id: tenantId, limit: 50 })}`);
+    // ⭐ 2026-11-27 — /api/settings/history retiré du precache : onglet
+    //    Historique supprimé définitivement des Paramètres (retour promoteur).
     urls.push(`/api/settings/pedagogical-structure${qs({ tenant_id: tenantId })}`);
     urls.push(`/api/settings/bilingual/check-migration${qs({ tenant_id: tenantId })}`);
     urls.push(`/api/settings/bilingual/billing-impact${qs({ tenant_id: tenantId })}`);

@@ -16,7 +16,6 @@ export interface SettingsBootstrapPayload {
   orion: unknown;
   atlas: unknown;
   offline: unknown;
-  historyData: unknown;
   academicYearsResult: { years: unknown[]; activeYear: unknown | null };
   structure: unknown;
   bilingual: unknown;
@@ -92,7 +91,6 @@ export async function fetchSettingsBootstrap(
     orion,
     atlas,
     offline,
-    historyData,
     academicYearsResult,
     structure,
     bilingual,
@@ -114,7 +112,9 @@ export async function fetchSettingsBootstrap(
     settingsService.getOrionSettings(tenantId).catch(() => null),
     settingsService.getAtlasSettings(tenantId).catch(() => null),
     settingsService.getOfflineSyncSettings(tenantId).catch(() => null),
-    settingsService.getSettingsHistory({ limit: 50 }, tenantId).catch(() => []),
+    // ⭐ 2026-11-27 — getSettingsHistory retiré (onglet Historique supprimé
+    //    définitivement, retour promoteur) : une requête économisée par
+    //    chargement de la page Paramètres.
     tenantId
       ? Promise.all([
           settingsService.getAcademicYears(tenantId).catch(() => []),
@@ -149,7 +149,6 @@ export async function fetchSettingsBootstrap(
     orion,
     atlas,
     offline,
-    historyData,
     academicYearsResult,
     structure,
     bilingual,

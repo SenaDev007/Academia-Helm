@@ -1,5 +1,8 @@
 /**
- * MODULE 2 — Structure académique (Niveaux → Cycles → Classes → Sections → Séries → Salles)
+ * MODULE 2 — STRUCTURE ACADÉMIQUE (refonte 2026-11-27)
+ * L'onglet est désormais dédié à la GESTION DES SALLES (ex-sous-onglet Salle) :
+ * tout le reste (Niveaux, Cycles, Classes, Sections, Séries, duplication) a
+ * été supprimé à la demande du promoteur — les niveaux restent dans Paramètres.
  */
 
 'use client';
@@ -20,8 +23,8 @@ export default function AcademicStructurePage() {
       header={{
         title: 'Structure académique',
         description: academicYear
-          ? `Organisation pédagogique — année ${academicYear.label}`
-          : 'Niveaux, cycles, classes, sections, séries et salles',
+          ? `Gestion des salles — année ${academicYear.label}`
+          : 'Salles de classe, laboratoires, bibliothèque et espaces de l\'établissement',
         icon: 'bookOpen',
       }}
       subModules={{

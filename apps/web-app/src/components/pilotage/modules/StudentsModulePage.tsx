@@ -34,11 +34,12 @@ import {
   Fingerprint,
   IdCard,
   Globe,
-  Activity,
   HeartPulse,
-  Archive,
   MessageSquare,
   GraduationCap,
+  // ⭐ 2026-11-27 (demande promoteur) — onglets « Historique Scolaire » et
+  //    « ORION, Stats & Audit » supprimés définitivement du module Élève et
+  //    scolarité : Archive et Activity ne sont plus utilisés.
   // BadgeCheck supprimé — onglet Conformité retiré
 } from 'lucide-react';
 import {
@@ -61,19 +62,19 @@ import AdmissionsContent from '@/components/students/AdmissionsContent';
 import StudentIdCardsSection from '@/components/students/StudentIdCardsSection';
 import StudentsModuleDashboard from '@/components/students/StudentsModuleDashboard';
 import StudentIdentityContent from '@/components/students/StudentIdentityContent';
-import StudentHistoryContent from '@/components/students/StudentHistoryContent';
 import StudentInteropContent from '@/components/students/StudentInteropContent';
 import StudentFamiliesContent from '@/components/students/StudentFamiliesContent';
 import StudentAssignmentsContent from '@/components/students/StudentAssignmentsContent';
 import StudentMovementsContent from '@/components/students/StudentMovementsContent';
 import StudentAffectationsMouvementsContent from '@/components/students/StudentAffectationsMouvementsContent';
-import StudentAnalyticsContent from '@/components/students/StudentAnalyticsContent';
+// ⭐ 2026-11-27 — StudentHistoryContent, StudentAnalyticsContent et
+//    StudentAuditContent supprimés définitivement (onglets « Historique
+//    Scolaire » et « ORION, Stats & Audit » retirés du module).
 // ⭐ StudentComplianceContent et StudentSettingsContent supprimés — onglets retirés du module
-import StudentAuditContent from '@/components/students/StudentAuditContent';
 import StudentTransferContent from '@/components/students/StudentTransferContent';
 import CertificateScolariteContent from '@/components/students/CertificateScolariteContent';
 import StudentClassListsContent from '@/components/students/StudentClassListsContent';
-import { ArrowRightLeft, BarChart3, Award } from 'lucide-react';
+import { ArrowRightLeft, Award } from 'lucide-react';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
 import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
@@ -185,7 +186,10 @@ export default function StudentsModulePage() {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get('tab');
-      if (tab) return tab;
+      // ⭐ 2026-11-27 — « history » et « analytics » ont été supprimés du
+      //    module : une URL/bookmark/notification obsolète retombe sur le
+      //    dashboard au lieu d'afficher un onglet fantôme.
+      if (tab && !['history', 'analytics'].includes(tab)) return tab;
     }
     return 'dashboard';
   });
@@ -525,9 +529,10 @@ export default function StudentsModulePage() {
             { id: 'families', label: L("Familles", "Families"), icon: <User className="w-4 h-4" /> },
             { id: 'transfers', label: L("Transferts & Mobilité", "Transfers & Mobility"), icon: <ArrowRightLeft className="w-4 h-4" /> },
             { id: 'certificates', label: L("Certificats de Scolarité", "School Certificates"), icon: <Award className="w-4 h-4" /> },
-            { id: 'history', label: L("Historique Scolaire", "Academic History"), icon: <Archive className="w-4 h-4" /> },
             { id: 'educmaster', label: "Educmaster", icon: <Globe className="w-4 h-4" /> },
-            { id: 'analytics', label: L("ORION, Stats & Audit", "ORION, Stats & Audit"), icon: <Activity className="w-4 h-4" /> },
+            // ⭐ 2026-11-27 (demande promoteur) — onglets « Historique Scolaire »
+            //    et « ORION, Stats & Audit » (Orients, stats et ODI) supprimés
+            //    DÉFINITIVEMENT du module Élève et scolarité.
           ],
         }}
         content={
@@ -577,26 +582,10 @@ export default function StudentsModulePage() {
                 layout: 'default',
                 children: <StudentMovementsContent />,
               }
-            : activeSubModuleId === 'history'
-            ? {
-                layout: 'default',
-                children: <StudentHistoryContent />,
-              }
             : activeSubModuleId === 'educmaster'
             ? {
                 layout: 'default',
                 children: <StudentInteropContent />,
-              }
-            : activeSubModuleId === 'analytics'
-            ? {
-                layout: 'default',
-                // ⭐ Fusion ORION & Stats + Audit & Conformité en un seul onglet
-                children: (
-                  <div className="space-y-4">
-                    <StudentAnalyticsContent />
-                    <StudentAuditContent />
-                  </div>
-                ),
               }
             : activeSubModuleId === 'transfers'
             ? {

@@ -55,7 +55,9 @@ const SUB_MODULES = [
   //    (Cartes Scolaires : carte, QR, certificats).
   { id: 'cards', label: 'Documents & Conformité', labelEn: 'Documents & Compliance', description: 'Carte scolaire, QR, certificats, conformité', descriptionEn: 'School ID card, QR, certificates, compliance', icon: CreditCard, color: 'violet' },
   { id: 'educmaster', label: 'Interopérabilité nationale', labelEn: 'National interoperability', description: 'Export EDUCMASTER, format officiel, logs', descriptionEn: 'EDUCMASTER export, official format, logs', icon: Share2, color: 'amber' },
-  { id: 'analytics', label: 'Analyse ORION & Stats', labelEn: 'ORION Analytics & Stats', description: 'Statistiques avancées, détection d\'anomalies', descriptionEn: 'Advanced statistics, anomaly detection', icon: BookOpen, color: 'emerald' },
+  // ⭐ 2026-11-27 (demande promoteur) — carte « Analyse ORION & Stats »
+  //    supprimée : l'onglet correspondant a été retiré définitivement du
+  //    module Élève et scolarité.
 ];
 
 const COLOR_MAP: Record<string, string> = {

@@ -229,8 +229,8 @@ export default function StudentTransferContent() {
         toast({
           title: '✅ Élève inscrit',
           description: physicalClassId
-            ? 'L\'élève est inscrit dans votre établissement et affecté à la classe choisie. Un matricule local vient d\'être généré automatiquement.'
-            : 'L\'élève est inscrit dans votre établissement (matricule local généré). S\'il n\'a pas été affecté automatiquement à une classe physique, retrouvez-le dans l\'onglet « Affectations & Mouvements ».',
+            ? 'L\'élève est inscrit dans votre établissement et affecté à la classe choisie. Un matricule local vient d\'être généré automatiquement, et son compte financier a été initialisé selon votre grille tarifaire.'
+            : 'L\'élève est inscrit dans votre établissement (matricule local généré, compte financier initialisé selon votre grille tarifaire). S\'il n\'a pas été affecté automatiquement à une classe physique, retrouvez-le dans l\'onglet « Affectations & Mouvements ».',
           variant: 'success',
         });
       }
@@ -667,6 +667,7 @@ export default function StudentTransferContent() {
                       <li>L'élève est intégré à votre base de données avec son dossier complet</li>
                       <li>Un <strong>matricule local</strong> de votre établissement est généré automatiquement</li>
                       <li>Son <strong>matricule global Academia Helm</strong> est conservé</li>
+                      <li>Son <strong>compte financier</strong> est initialisé selon <strong>votre grille tarifaire</strong> (classe, niveau et frais de réinscription de votre établissement)</li>
                       <li>L'école d'origine est notifiée ; l'élève y est archivé comme « transféré »</li>
                     </ul>
                   </div>

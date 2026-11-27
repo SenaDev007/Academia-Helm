@@ -283,6 +283,10 @@ export function PedagogyModuleDashboard() {
         <>
           {/* ═══ KPIs Row 1 — Structure & Infrastructure ═══ */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* ⭐ 2026-11-27 — l'onglet Structure académique ne gère plus que
+                les SALLES : la carte « Niveaux scolaires » reste informative
+                (les niveaux se règlent dans Paramètres → Structure) mais ne
+                pointe plus vers cet onglet. */}
             <KpiCard
               title="Niveaux scolaires"
               value={levelsCount}
@@ -290,7 +294,6 @@ export function PedagogyModuleDashboard() {
               icon={Layers}
               color="blue"
               index={0}
-              href="/app/pedagogy/academic-structure"
             />
             <KpiCard
               title="Emplois du temps"

@@ -1,6 +1,6 @@
 {
   "name": "academia-hub-api",
-  "version": "1.0.0",
+  "version": "1.0.58",
   "description": "Academia Helm - Backend API Server (NestJS)",
   "author": "YEHI OR Tech <yehiortech@gmail.com>",
   "private": true,

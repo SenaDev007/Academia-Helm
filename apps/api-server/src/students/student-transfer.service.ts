@@ -29,6 +29,10 @@ import { SmsService } from '../communication/services/sms.service';
 import { WhatsAppService } from '../communication/services/whatsapp.service';
 import { ParentUserProvisioningService } from './services/parent-user-provisioning.service';
 import { MatriculeService } from './services/matricule.service';
+// ⭐ 2026-11-27 (demande promoteur) — le compte financier de l'élève accueilli
+//    doit être mis à jour selon les STANDARDS et la CONFIGURATION de l'école
+//    de destination (mêmes règles que l'inscription/réinscription classique).
+import { StudentAccountService } from '../finance/student-account.service';
 
 @Injectable()
 export class StudentTransferService {
@@ -41,6 +45,7 @@ export class StudentTransferService {
     private readonly whatsappService: WhatsAppService,
     private readonly parentProvisioningService: ParentUserProvisioningService,
     private readonly matriculeService: MatriculeService,
+    private readonly studentAccountService: StudentAccountService,
   ) {}
 
   /**
@@ -717,6 +722,42 @@ export class StudentTransferService {
       },
     });
 
+    // ⭐ 8bis. (2026-11-27 — demande promoteur) INITIALISER LE COMPTE FINANCIER
+    //    selon les STANDARDS et la CONFIGURATION de l'école de DESTINATION.
+    //    StudentAccountService.getOrCreate applique exactement les mêmes règles
+    //    qu'à l'inscription/réinscription classique côté école d'accueil :
+    //      - FeeStructures actives de la destination pour l'année d'accueil,
+    //        priorité Classe physique > Classe officielle demandée > Niveau > Global
+    //      - Type d'inscription TRANSFER → l'élève paie les frais de
+    //        REINSCRIPTION de la destination (jamais INSCRIPTION ni les deux)
+    //      - Frais généraux obligatoires de la destination (les optionnels
+    //        restent à la carte dans le module Finance)
+    //      - Régime tarifaire / overrides éventuellement déjà saisis côté accueil
+    //    L'élève repart donc d'un compte financier NEUTRE vis-à-vis de son
+    //    ancienne école : sa situation financière est intégralement reconstruite
+    //    sur la grille tarifaire de la destination (totalDue/balance/breakdowns).
+    let destinationAccountTotalDue = 0;
+    try {
+      const { account: destinationAccount } = await this.studentAccountService.getOrCreate(
+        request.targetSchoolId,
+        newStudent.id,
+        destinationYearId,
+      );
+      destinationAccountTotalDue = Number(destinationAccount?.totalDue ?? 0);
+      this.logger.log(
+        `Transfert : compte financier initialisé selon les standards de ${request.targetSchool.name} ` +
+        `(total dû : ${destinationAccountTotalDue} F, ${destinationAccount?.breakdowns?.length ?? 0} ligne(s) de frais).`,
+      );
+    } catch (accountErr: any) {
+      // Non bloquant pour la migration du dossier — le compte sera créé au
+      // premier encaissement/recalcul côté destination, mais on le signale
+      // clairement pour un suivi manuel dans le module Finance.
+      this.logger.warn(
+        `Transfert : compte financier de l'élève ${newStudent.matricule} non initialisé automatiquement ` +
+        `(à recréer via Finance > Comptes élèves) : ${accountErr?.message || accountErr}`,
+      );
+    }
+
     // ⭐ 9. Marquer le transfert comme complété (avec les deux matricules locaux)
     const res = await this.prisma.studentTransferRequest.update({
       where: { id: transferId },
@@ -735,12 +776,23 @@ export class StudentTransferService {
     await this.notifySchool(
       request.sourceSchoolId,
       'Transfert complété',
-      `Le transfert de ${sourceStudent.firstName} ${sourceStudent.lastName} vers ${request.targetSchool.name} est maintenant complet. L'élève est inscrit dans son nouvel établissement avec le matricule local ${localMatricule}.`,
+      `Le transfert de ${sourceStudent.firstName} ${sourceStudent.lastName} vers ${request.targetSchool.name} est maintenant complet. L'élève est inscrit dans son nouvel établissement avec le matricule local ${localMatricule}.` +
+      (destinationAccountTotalDue > 0
+        ? ` Son compte financier a été initialisé selon la grille tarifaire de l'école d'accueil (total dû : ${destinationAccountTotalDue.toLocaleString('fr-FR')} F).`
+        : ' Son compte financier a été ouvert selon les standards de l\'école d\'accueil (aucun frais configuré pour le moment).'),
       { transferId, type: 'TRANSFER_COMPLETED' }
     );
 
-    // ⭐ 11. Notifier les parents
-    await this.notifyParents(sourceStudent.id, transferId, 'COMPLETED');
+    // ⭐ 11. Notifier les parents — avec la situation financière reconstruite
+    //     selon la grille de l'école d'accueil (demande promoteur 2026-11-27)
+    await this.notifyParents(
+      sourceStudent.id,
+      transferId,
+      'COMPLETED',
+      destinationAccountTotalDue > 0
+        ? `Les frais de scolarité applicables sont désormais ceux du nouvel établissement.`
+        : undefined,
+    );
 
     this.logger.log(`🎉 Transfert complété : ${sourceStudent.firstName} ${sourceStudent.lastName} → ${request.targetSchool.name} (ID: ${transferId}, matricule local: ${localMatricule})`);
     return res;
@@ -1063,7 +1115,7 @@ export class StudentTransferService {
    * Envoie 3 notifications en parallèle : Email + WhatsApp + SMS.
    * Chaque canal est indépendant — si l'un échoue, les autres sont quand même envoyés.
    */
-  private async notifyParents(studentId: string, transferId: string, status: string) {
+  private async notifyParents(studentId: string, transferId: string, status: string, extraContext?: string) {
     try {
       const guardians = await this.prisma.studentGuardian.findMany({
         where: { studentId, isPrimary: true },
@@ -1081,7 +1133,7 @@ export class StudentTransferService {
         'ACCEPTED_BY_DESTINATION': `La demande de transfert de ${studentName} a été acceptée par l'établissement destination.`,
         'REJECTED_BY_DESTINATION': `La demande de transfert de ${studentName} a été rejetée par l'établissement destination.`,
         'APPROVED_BY_SOURCE': `La sortie de ${studentName} a été confirmée par l'établissement source.`,
-        'COMPLETED': `Le transfert de ${studentName} est complet. L'élève est maintenant inscrit dans son nouvel établissement.`,
+        'COMPLETED': `Le transfert de ${studentName} est complet. L'élève est maintenant inscrit dans son nouvel établissement.` + (extraContext ? ` ${extraContext}` : ''),
       };
 
       const fullMessage = statusMessages[status] || `Le statut du transfert de ${studentName} a changé.`;

@@ -36,6 +36,11 @@ interface PilotageLayoutProps {
 import OfflineIndicator from '@/components/offline/OfflineIndicator';
 import OfflineGuard from '@/components/offline/OfflineGuard';
 import ReviewAutoPopup from '@/components/reviews/ReviewAutoPopup';
+// ⭐ 2026-11-27 (demande promoteur) — version + copyright DYNAMIQUES :
+//    la version vient de /health de l'API (cache 1 h, fallback version
+//    bundlée) et l'année du copyright est calculée à l'exécution.
+import { useAppVersion } from '@/hooks/use-app-version';
+import { getCopyrightRange } from '@/lib/app-version';
 
 export default function PilotageLayout({ user, tenant, children }: PilotageLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true); // lg: expanded/collapsed
@@ -43,6 +48,10 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
   const { currentLevel } = useSchoolLevel();
   const pathname = usePathname();
   // ⭐ PERF : pageMotion (framer) remplacé par la classe CSS .page-transition-in
+
+  // ⭐ Version applicative dynamique (footer) : bundlée au 1er rendu puis
+  //    révalidée depuis /health de l'API (version réellement déployée).
+  const appVersion = useAppVersion();
 
   // ⭐ 2026-09-18 (shell à hauteur fixe) — le scroll vit dans <main> : au
   //    changement de route, on remet la zone de contenu en haut (comportement
@@ -162,9 +171,18 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
                   <span className="text-[11px] font-bold text-gold-600">Helm</span>
                 </div>
                 <span className="text-gray-300">|</span>
-                <span className="text-[10px] text-gray-400 font-medium">v1.0.0</span>
+                {/* ⭐ 2026-11-27 — version DYNAMIQUE (API /health + cache, plus de
+                    « v1.0.0 » codé en dur qui affichait une version fantôme) */}
+                <span
+                  className="text-[10px] text-gray-400 font-medium"
+                  title={appVersion.commit ? `Build ${appVersion.commit}` : 'Version déployée (source : API Academia Helm)'}
+                >
+                  v{appVersion.version}
+                </span>
                 <span className="text-gray-300 hidden sm:inline">|</span>
-                <span className="text-[10px] text-gray-400 hidden sm:inline">&copy; 2021-2026 YEHI OR Tech</span>
+                {/* ⭐ 2026-11-27 — copyright AUTOMATIQUE : l'année est calculée
+                    à l'exécution (plus de « 2021-2026 » figé dans le code) */}
+                <span className="text-[10px] text-gray-400 hidden sm:inline">© {getCopyrightRange()} YEHI OR Tech</span>
               </div>
 
               {/* Right: Status indicators */}

@@ -12,6 +12,10 @@ import { PlayStoreButton } from "@/components/ui/play-store-button";
 import { TextHoverEffect, FooterBackgroundGradient } from "@/components/ui/hover-footer";
 import LogoCircle from "@/components/ui/LogoCircle";
 import { cn } from "@/lib/utils";
+// ⭐ 2026-11-27 (demande promoteur) — version + copyright DYNAMIQUES sur le
+//    site public : la version vient de /health de l'API (cache 1 h, fallback
+//    version bundlée) et l'année du copyright est calculée à l'exécution.
+import { useAppVersion } from "@/hooks/use-app-version";
 
 /**
  * Footer Premium Academia Helm
@@ -142,7 +146,11 @@ const contactInfo = [
 ];
 
 export function Footer2() {
+  // ⭐ Année du copyright AUTOMATIQUE (recalculée à chaque rendu).
   const currentYear = new Date().getFullYear();
+  // ⭐ Version applicative DYNAMIQUE : bundlée au 1er rendu puis révalidée
+  //    depuis /health de l'API — plus aucune version figée dans le code.
+  const appVersion = useAppVersion();
 
   return (
     <footer className="relative overflow-hidden bg-[#0b2f73] border-t border-[#144798]">
@@ -251,6 +259,14 @@ export function Footer2() {
             <p className="text-xs text-white/50">
               © {currentYear} Academia<span className="text-amber-300">Helm</span>. Tous droits réservés.
             </p>
+            {/* ⭐ 2026-11-27 — version DYNAMIQUE de la plateforme (même source
+                que le footer de l'application : /health de l'API) */}
+            <span
+              className="text-[11px] text-white/40 font-medium tabular-nums"
+              title={appVersion.commit ? `Build ${appVersion.commit}` : "Version déployée de la plateforme"}
+            >
+              v{appVersion.version}
+            </span>
           </div>
 
           <div className="flex items-center gap-3 text-xs text-white/40">

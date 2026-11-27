@@ -70,6 +70,10 @@ interface GoogleOauthStatePayload {
   redirectUri: string;
   /** ⭐ 2026-11-26 — ligne de réglages visée (double identité par niveau). */
   levelCategory?: 'MATERNAL_PRIMARY' | 'SECONDARY';
+  /** ⭐ 2026-11-27 — origine du front d'où le flux est parti (sessions
+   * host-only par sous-domaine : le callback doit y ramener l'utilisateur
+   * sinon il est éjecté vers /login). */
+  frontendOrigin?: string;
 }
 
 /** Marge de rafraîchissement des access tokens (avant expiration réelle). */
@@ -148,8 +152,17 @@ export class GoogleOauthService {
     return `${base}/api/school-email/google/callback`;
   }
 
-  /** Page de l'onglet E-mail vers laquelle renvoyer le directeur après callback. */
-  frontendSettingsUrl(): string {
+  /** Page de l'onglet E-mail vers laquelle renvoyer le directeur après callback.
+   * ⭐ 2026-11-27 — origin EXPLICITE en priorité : les sessions étant host-only
+   * par sous-domaine (lib/auth/session.ts), ramener un directeur qui travaille
+   * sur ecole.academiahelm.com vers le domaine nu (FRONTEND_URL) le déconnectait
+   * (redirection vers /login — bug promoteur). On revient désormais sur
+   * L'ORIGINE D'OÙ LE FLUX EST PARTI. */
+  frontendSettingsUrl(origin?: string): string {
+    const explicit = (origin || '').trim().replace(/\/+$/, '');
+    if (/^https?:\/\/[a-zA-Z0-9.\-:]+$/.test(explicit)) {
+      return `${explicit}/app/settings?tab=email`;
+    }
     const base = (
       this.config.get<string>('FRONTEND_URL') ||
       this.config.get<string>('APP_PUBLIC_URL') ||
@@ -169,6 +182,8 @@ export class GoogleOauthService {
       replyTo?: string;
       /** ⭐ 2026-11-26 — connexion du NIVEAU visé (double identité). */
       levelCategory?: 'MATERNAL_PRIMARY' | 'SECONDARY';
+      /** ⭐ 2026-11-27 — origine du front appelant (retour après consentement). */
+      frontendOrigin?: string;
     },
     origin?: string,
   ): Promise<{ authUrl: string; redirectUri: string }> {
@@ -193,6 +208,7 @@ export class GoogleOauthService {
       replyTo: params.replyTo?.trim().toLowerCase() || undefined,
       redirectUri: uri,
       levelCategory: params.levelCategory || 'MATERNAL_PRIMARY',
+      frontendOrigin: params.frontendOrigin?.trim().replace(/\/+$/, '') || undefined,
     };
     await this.cache.set(`school-email:google-state:${state}`, payload, OAUTH_STATE_TTL_MS);
 
@@ -224,7 +240,7 @@ export class GoogleOauthService {
     state?: string;
     error?: string;
     error_description?: string;
-  }): Promise<{ tenantId: string; googleEmail: string }> {
+  }): Promise<{ tenantId: string; googleEmail: string; frontendOrigin?: string }> {
     // Refus explicite du directeur sur l'écran de consentement.
     if (query.error) {
       throw new BadRequestException(
@@ -279,7 +295,7 @@ export class GoogleOauthService {
     this.logger.log(
       `Connexion Google OAuth2 établie (tenant ${payload.tenantId}, compte ${googleEmail}, user ${payload.userId})`,
     );
-    return { tenantId: payload.tenantId, googleEmail };
+    return { tenantId: payload.tenantId, googleEmail, frontendOrigin: payload.frontendOrigin };
   }
 
   /** POST /token — grant_type=authorization_code + code_verifier (PKCE). */

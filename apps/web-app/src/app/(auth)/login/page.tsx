@@ -17,6 +17,7 @@ import LoginPage from '@/components/auth/LoginPage';
 import { BRAND } from '@/lib/brand';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
 import { extractBrandingFromTenant, type SchoolBrandingData } from '@/lib/tenant/branding';
+import { resolveAppBrandColors } from '@/lib/tenant/app-brand-theme';
 import { getApiBaseUrl, getAppBaseUrl } from '@/lib/utils/urls';
 import { generateSEOMetadata, detectRequestHostname } from '@/lib/seo';
 
@@ -33,7 +34,8 @@ export async function generateMetadata(): Promise<Metadata> {
   });
 }
 
-export interface SchoolBranding extends SchoolBrandingData {}
+/** Branding transmis au composant client LoginPage (typed alias). */
+export type SchoolBranding = SchoolBrandingData;
 
 export default async function Page() {
   let schoolBranding: SchoolBranding | null = null;
@@ -46,50 +48,72 @@ export default async function Page() {
     if (parts.length >= 3 && !isReservedSubdomain(parts[0])) {
       const subdomain = parts[0];
 
-      try {
-        const appBaseUrl = getAppBaseUrl();
-        const isLocal = appBaseUrl.includes('localhost') || appBaseUrl.includes('127.0.0.1');
-
-        if (isLocal) {
-          // En local : BFF via 127.0.0.1 (self-request local = rapide)
-          const response = await fetch(
-            `http://127.0.0.1:${process.env.PORT || 3001}/api/public/schools/by-subdomain/${subdomain}`,
-            { cache: 'no-store' },
-          );
-          if (response.ok) schoolBranding = await response.json();
-        } else {
-          // En production : Appel direct au backend NestJS
-          // (évite le self-request Vercel qui provoque des cold starts)
-          // ⚠️ Timeout court (3s) pour ne pas bloquer le rendu de la page
-          // si le backend est en cold start. Le branding sera récupéré
-          // côté client via useSchoolBranding si le server échoue.
-          const apiBaseUrl = getApiBaseUrl();
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 3000);
-
+      // ⭐ 2026-11-27 — Palette de marque de l'école (themeId > customColors >
+      // logoPalette du logo) résolue EN PARALLÈLE du branding : la page de
+      // connexion /login s'aligne sur la palette du logo de l'école, comme
+      // le site institutionnel et l'application /app (demande promoteur).
+      // Fail-open : null → le client tente via la BFF, sinon rendu Helm.
+      const [brandingResult, brandResult] = await Promise.all([
+        (async () => {
           try {
-            const response = await fetch(
-              `${apiBaseUrl}/tenants/by-subdomain/${encodeURIComponent(subdomain)}`,
-              {
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' },
-                cache: 'no-store',
-                signal: controller.signal,
-              },
-            );
-            clearTimeout(timeoutId);
+            const appBaseUrl = getAppBaseUrl();
+            const isLocal = appBaseUrl.includes('localhost') || appBaseUrl.includes('127.0.0.1');
 
-            if (response.ok) {
-              const data = await response.json();
-              schoolBranding = extractBrandingFromTenant(data, subdomain);
+            if (isLocal) {
+              // En local : BFF via 127.0.0.1 (self-request local = rapide)
+              const response = await fetch(
+                `http://127.0.0.1:${process.env.PORT || 3001}/api/public/schools/by-subdomain/${subdomain}`,
+                { cache: 'no-store' },
+              );
+              if (response.ok) return (await response.json()) as SchoolBrandingData;
+              return null;
+            }
+            // En production : Appel direct au backend NestJS
+            // (évite le self-request Vercel qui provoque des cold starts)
+            // ⚠️ Timeout court (3s) pour ne pas bloquer le rendu de la page
+            // si le backend est en cold start. Le branding sera récupéré
+            // côté client via useSchoolBranding si le server échoue.
+            const apiBaseUrl = getApiBaseUrl();
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+            try {
+              const response = await fetch(
+                `${apiBaseUrl}/tenants/by-subdomain/${encodeURIComponent(subdomain)}`,
+                {
+                  method: 'GET',
+                  headers: { 'Content-Type': 'application/json' },
+                  cache: 'no-store',
+                  signal: controller.signal,
+                },
+              );
+              clearTimeout(timeoutId);
+
+              if (response.ok) {
+                const data = await response.json();
+                return extractBrandingFromTenant(data, subdomain);
+              }
+              return null;
+            } catch {
+              // Timeout ou erreur réseau — le client tentera via useSchoolBranding
+              clearTimeout(timeoutId);
+              return null;
             }
           } catch {
-            // Timeout ou erreur réseau — le client tentera via useSchoolBranding
-            clearTimeout(timeoutId);
+            // API indisponible — le client tentera aussi via useSchoolBranding
+            return null;
           }
+        })(),
+        resolveAppBrandColors(subdomain).catch(() => null),
+      ]);
+
+      if (brandingResult) {
+        schoolBranding = brandingResult;
+        // Palette injectée si résolue (et seulement si l'école en a une —
+        // null = pas de palette, le rendu Helm par défaut est conservé).
+        if (brandResult?.colors) {
+          schoolBranding = { ...schoolBranding, brandColors: brandResult.colors };
         }
-      } catch {
-        // API indisponible — le client tentera aussi via useSchoolBranding
       }
     }
   } catch {

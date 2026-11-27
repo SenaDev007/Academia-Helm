@@ -28,7 +28,8 @@ import FloatingEduParticles from '@/components/ui/FloatingEduParticles';
 import LogoCircle from '@/components/ui/LogoCircle';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { extractTenantSlug } from '@/lib/tenant/constants';
-import { resolveTenantColors } from '@/lib/tenant/use-tenant-colors';
+import { fetchPublicBrandColors, persistPortalSchoolBrand } from '@/lib/tenant/public-brand';
+import { HELM_DEFAULT, type TenantColors } from '@/lib/tenant/tenant-colors-core';
 import { type DepartmentData } from '@/data/benin-departments';
 // ⭐ Tenant de test Academia Helm — panneau d'identifiants de test (tous portails)
 import TestCredentialsPanel from '@/components/auth/TestCredentialsPanel';
@@ -80,10 +81,9 @@ const PORTAL_DEFINITIONS: Array<{
   },
 ];
 
-const NAVY = '#0B1E4D';
-const BLUE = '#1E4FA3';
-const GOLD = '#F5B700';
-const DARK = '#091f4a';
+// ⭐ 2026-11-27 — Palette DYNAMIQUE : résolée depuis la marque de l'école
+// (themeId > customColors > logoPalette — voir fetchPublicBrandColors), avec
+// la charte Helm en repli. NAVY/BLUE/GOLD/DARK sont définis DANS le composant.
 
 export default function TenantPortalSelection({
   schoolInfo,
@@ -97,18 +97,24 @@ export default function TenantPortalSelection({
   const [selectedDepartment, setSelectedDepartment] = useState<DepartmentData | null>(null);
   const [mapFilter, setMapFilter] = useState<'all' | 'public' | 'private'>('all');
   const [loading, setLoading] = useState(!schoolInfo);
+  // ⭐ 2026-11-27 — Palette de marque de l'école (logo/thème/CMS) : la page
+  // de sélection du portail s'aligne sur la palette du site institutionnel
+  // dont elle est la suite naturelle (demande promoteur).
+  const [brandColors, setBrandColors] = useState<TenantColors | null>(null);
 
   useEffect(() => {
     if (subdomain && schoolInfo) {
       setSlug(subdomain);
       setSchool(schoolInfo);
       setLoading(false);
+      fetchPublicBrandColors(subdomain).then(setBrandColors);
       return;
     }
     const s = extractTenantSlug(window.location.hostname);
     if (s) {
       setSlug(s);
       loadSchool(s);
+      fetchPublicBrandColors(s).then(setBrandColors);
     } else {
       setLoading(false);
     }
@@ -128,7 +134,12 @@ export default function TenantPortalSelection({
     }
   };
 
-  const colors = resolveTenantColors(null);
+  // Palette effective : celle de l'école si configurée, sinon charte Helm.
+  const colors: TenantColors = brandColors || HELM_DEFAULT;
+  const NAVY = colors.primary;
+  const BLUE = colors.secondary;
+  const GOLD = colors.accent;
+  const DARK = colors.dark;
   const schoolName = school?.name || 'Établissement';
   const schoolAcronym = school?.schoolAcronym || null;
   const schoolLogo = school?.logoUrl;
@@ -146,28 +157,23 @@ export default function TenantPortalSelection({
   ];
 
   const handlePortalClick = (type: PortalType) => {
-    // ── Persiste les infos école en sessionStorage avant redirection ──
-    // Permet à LoginPage (useSchoolBranding) de récupérer le nom + logo +
-    // slogan de l'école sans refetch, même sur le domaine principal
-    // (academiahelm.com/login?tenant=xxx) où il n'y a pas de sous-domaine.
+    // ── Persiste les infos école + PALETTE en sessionStorage avant redirection ──
+    // Permet à LoginPage (useSchoolBranding) et à l'écran de chargement de
+    // récupérer le nom + logo + slogan + COULEURS de l'école sans refetch,
+    // même sur le domaine principal (academiahelm.com/login?tenant=xxx)
+    // où il n'y a pas de sous-domaine.
     if (typeof window !== 'undefined' && school) {
-      try {
-        sessionStorage.setItem(
-          'academia_portal_school',
-          JSON.stringify({
-            name: school.name,
-            slug,
-            logoUrl: school.logoUrl,
-            city: school.city,
-            phone: school.phone,
-            address: school.address,
-            slogan: school.slogan,
-            schoolAcronym: school.schoolAcronym || null,
-          }),
-        );
-      } catch {
-        // sessionStorage peut être indisponible (mode privé) — non bloquant.
-      }
+      persistPortalSchoolBrand({
+        name: school.name,
+        slug,
+        logoUrl: school.logoUrl,
+        city: school.city,
+        phone: school.phone,
+        address: school.address,
+        slogan: school.slogan,
+        schoolAcronym: school.schoolAcronym || null,
+        brandColors,
+      });
     }
 
     if (type === 'PUBLIC') {
@@ -231,11 +237,11 @@ export default function TenantPortalSelection({
             <p className="text-sm md:text-base text-slate-500 max-w-xl mx-auto">
               Sélectionnez le portail correspondant à votre profil pour vous connecter à l'espace {displayName}.
             </p>
-            {/* Liseré or signature */}
+            {/* Liseré accent signature (couleur de l'école) */}
             <div className="flex items-center justify-center gap-3 mt-4" aria-hidden>
-              <span className="h-px w-12 bg-gradient-to-r from-transparent to-amber-400" />
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-              <span className="h-px w-12 bg-gradient-to-l from-transparent to-amber-400" />
+              <span className="h-px w-12" style={{ background: `linear-gradient(to right, transparent, ${GOLD})` }} />
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: GOLD }} />
+              <span className="h-px w-12" style={{ background: `linear-gradient(to left, transparent, ${GOLD})` }} />
             </div>
           </div>
 
@@ -341,8 +347,11 @@ export default function TenantPortalSelection({
                 </p>
               </div>
 
-              {/* Grille 4 portails — 1 colonne */}
-              <div className="flex flex-col gap-2.5">
+              {/* Grille 4 portails — 1 colonne (accent = couleur de l'école) */}
+              <div
+                className="flex flex-col gap-2.5"
+                style={{ '--portal-accent': GOLD } as React.CSSProperties}
+              >
                 {PORTAL_DEFINITIONS.map((portal, index) => {
                   const Icon = portal.Icon;
                   return (
@@ -384,7 +393,7 @@ export default function TenantPortalSelection({
                       </div>
 
                       <ArrowRight
-                        className="h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-amber-500 group-hover:translate-x-0.5 transition-transform"
+                        className="h-4 w-4 shrink-0 text-slate-300 transition-all group-hover:translate-x-0.5 group-hover:text-[color:var(--portal-accent)]"
                       />
                     </motion.button>
                   );
@@ -428,7 +437,7 @@ export default function TenantPortalSelection({
         </div>
       </main>
 
-      {/* ═══ FOOTER (CDC 3.10) ═══ */}
+      {/* ═══ FOOTER (CDC 3.10) — palette de l'école comme le header ═══ */}
       <TenantFooter
         schoolName={schoolName}
         schoolLogo={schoolLogo || undefined}
@@ -440,6 +449,7 @@ export default function TenantPortalSelection({
         socialLinks={undefined}
         navLinks={navLinks}
         tenantSlug={slug}
+        colors={colors}
       />
     </div>
     </QueryProvider>

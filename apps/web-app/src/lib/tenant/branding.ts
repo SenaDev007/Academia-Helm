@@ -31,6 +31,9 @@ export interface SchoolBrandingData {
   schoolType?: string | null;
   website?: string | null;
   email?: string | null;
+  /** ⭐ 2026-11-27 — palette de marque du logo (themeId > customColors >
+   * logoPalette) — résolue côté serveur via resolveAppBrandColors. */
+  brandColors?: import('@/lib/tenant/tenant-colors-core').TenantColors | null;
 }
 
 /**

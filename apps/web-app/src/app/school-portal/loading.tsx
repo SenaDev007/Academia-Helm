@@ -1,14 +1,16 @@
 /**
  * Loading page for /school-portal (tenant subdomains)
  *
- * ⭐ Task 25 : utilise le même AcademiaLoader que le site principal.
- * Avant, on utilisait TenantSchoolLoader (logo école + nom école) mais
- * l'utilisateur a demandé d'unifier avec le loading page Academia Helm
- * pour éviter la confusion de deux loading pages différents.
+ * ⭐ 2026-11-27 — Demande promoteur : l'écran de chargement du flux
+ * « site institutionnel → portail » doit utiliser la palette de couleurs
+ * du logo de l'école ET afficher le logo de l'école (et non plus le logo
+ * Academia Helm générique). TenantBrandLoader résout le branding via le
+ * sessionStorage (posé avant redirection — instantané) ou le sous-domaine.
+ * Sans école identifiée : rendu Helm par défaut (inchangé).
  */
 
-import AcademiaLoader from "@/components/ui/AcademiaLoader";
+import TenantBrandLoader from "@/components/ui/TenantBrandLoader";
 
 export default function SchoolPortalLoading() {
-  return <AcademiaLoader />;
+  return <TenantBrandLoader />;
 }

@@ -40,7 +40,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Loader2, MapPin, Phone, Mail, ChevronRight, ChevronLeft, Calendar,
-  Quote, FileText, Sparkles,
+  Quote, FileText, Sparkles, LogIn,
   Building2, GraduationCap, Users, Globe, ArrowRight, Star, Images,
   CheckCircle2, Award, BookOpen, Microscope, Palette, Trophy, Languages,
   Baby, School, Library, Clock, Send, Image as ImageIcon, MessageCircle,
@@ -583,6 +583,31 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   };
 
   const handlePortalClick = (type: PortalType) => {
+    // ⭐ 2026-11-27 — Persiste le branding (nom + logo + slogan + PALETTE)
+    //    avant redirection : la page /login et son écran de chargement
+    //    récupèrent l'identité de l'école INSTANTANÉMENT (zéro flash), même
+    //    sur le domaine principal (academiahelm.com/login?tenant=xxx).
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(
+          'academia_portal_school',
+          JSON.stringify({
+            name: schoolData?.name || '',
+            slug,
+            logoUrl: schoolData?.logoUrl || null,
+            city: schoolData?.city || null,
+            phone: schoolData?.phone || null,
+            address: schoolData?.address || null,
+            slogan: schoolData?.slogan || null,
+            schoolAcronym: schoolData?.schoolAcronym || null,
+            brandColors: colors,
+          }),
+        );
+      } catch {
+        // sessionStorage indisponible (mode privé) — non bloquant.
+      }
+    }
+
     if (type === 'PUBLIC') {
       window.location.href = `/public/pre-enrollment?school=${slug}`;
     } else {
@@ -1103,14 +1128,27 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                 <ChevronRight className="w-5 h-5 shrink-0" />
               </motion.button>
 
+              {/* ⭐ 2026-11-27 — « Portail » : VRAI BOUTON percutant au lieu
+                  d'un lien texte discret (demande promoteur : « ce n'est pas
+                  visible, ça ne frappe pas à l'œil »). Bouton plein blanc
+                  bordé accent, contraste maximal sur le hero coloré. */}
+              <motion.a
+                href="/school-portal/portal"
+                whileHover={{ scale: 1.05, boxShadow: `0px 10px 25px rgba(0,0,0,0.25)` }}
+                whileTap={{ scale: 0.97 }}
+                className="w-full sm:w-auto px-7 py-3.5 rounded-full font-bold text-base shadow-xl border-2 flex items-center justify-center gap-2.5 cursor-pointer focus:outline-none"
+                style={{
+                  background: 'rgba(255,255,255,0.97)',
+                  color: NAVY,
+                  borderColor: GOLD,
+                }}
+              >
+                <LogIn className="w-5 h-5 shrink-0" style={{ color: GOLD }} />
+                Accès aux portails
+                <ChevronRight className="w-5 h-5 shrink-0" style={{ color: GOLD }} />
+              </motion.a>
+
               <div className="flex items-center gap-2 text-sm text-blue-50/80 font-medium">
-                <a
-                  href="/school-portal/portal"
-                  className="hover:text-amber-300 underline transition-colors cursor-pointer"
-                >
-                  Portail
-                </a>
-                <span>·</span>
                 <a
                   href="#programmes"
                   className="hover:text-amber-300 underline transition-colors cursor-pointer"
@@ -2140,7 +2178,8 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         </div>
       </section>
 
-      {/* ═══ 3.10 FOOTER multi-colonnes (CDC 3.10) ═══ */}
+      {/* ═══ 3.10 FOOTER multi-colonnes (CDC 3.10) — ⭐ 2026-11-27 : palette
+          de l'école appliquée au footer comme au header (demande promoteur) ═══ */}
       <TenantFooter
         schoolName={schoolName}
         schoolLogo={schoolLogo || undefined}
@@ -2158,6 +2197,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         socialLinks={website?.socialLinks || undefined}
         navLinks={navLinks}
         tenantSlug={slug}
+        colors={colors}
       />
 
       {/* Chatbot IA (optionnel) */}

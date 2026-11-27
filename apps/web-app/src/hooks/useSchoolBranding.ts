@@ -17,6 +17,8 @@
 
 import { useState, useEffect } from 'react';
 import { extractTenantSlug } from '@/lib/tenant/constants';
+import { fetchPublicBrandColors, readPortalSchoolBrand } from '@/lib/tenant/public-brand';
+import type { TenantColors } from '@/lib/tenant/tenant-colors-core';
 
 export interface SchoolBrandingData {
   name: string;
@@ -31,24 +33,9 @@ export interface SchoolBrandingData {
   motto: string | null;
   /** Acronyme de l'école (ex: CSPEB) — affiché à la place du nom complet. */
   schoolAcronym?: string | null;
-}
-
-/** Clé sessionStorage utilisée par le portail de sélection d'école */
-const SESSION_STORAGE_KEY = 'academia_portal_school';
-
-/**
- * Tente de lire les données d'école depuis sessionStorage.
- * Posé par le portail de sélection (portal/page.tsx) avant redirection.
- */
-function readFromSessionStorage(): Partial<SchoolBrandingData> | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  /** ⭐ 2026-11-27 — palette de marque du logo (themeId > customColors >
+   * logoPalette). Null = aucune palette → rendu Helm par défaut. */
+  brandColors?: TenantColors | null;
 }
 
 /**
@@ -63,32 +50,49 @@ export function useSchoolBranding(serverBranding?: SchoolBrandingData | null): S
   const [resolved, setResolved] = useState(!!serverBranding);
 
   useEffect(() => {
-    // Si déjà résolu côté serveur, ne pas refetch
+    // Si déjà résolu côté serveur (palette incluse par le server component),
+    // ne pas refetch — sauf si le serveur n'avait PAS la palette (fail-open
+    // côté serveur ≠ école sans palette : on tente le BFF une fois).
     if (serverBranding) {
       setBranding(serverBranding);
       setResolved(true);
-      return;
+      if (serverBranding.brandColors !== undefined && serverBranding.brandColors !== null) {
+        return;
+      }
     }
 
     if (typeof window === 'undefined') return;
 
     // PRIORITÉ 1 : Vérifier le sessionStorage (école sélectionnée depuis le portail)
-    const sessionData = readFromSessionStorage();
+    // ⭐ 2026-11-27 — le payload inclut désormais la palette (brandColors)
+    //    persistée par le site institutionnel / la page portail.
+    const sessionData = readPortalSchoolBrand();
     if (sessionData && sessionData.name) {
-      setBranding({
+      const fromSession: SchoolBrandingData = {
         name: sessionData.name,
         slug: sessionData.slug || '',
         logoUrl: sessionData.logoUrl || null,
         city: sessionData.city || null,
         phone: sessionData.phone || null,
         address: sessionData.address || null,
-        primaryColor: sessionData.primaryColor || null,
-        secondaryColor: sessionData.secondaryColor || null,
+        primaryColor: null,
+        secondaryColor: null,
         slogan: sessionData.slogan || null,
-        motto: sessionData.motto || null,
+        motto: null,
         schoolAcronym: sessionData.schoolAcronym || null,
-      });
+        brandColors: sessionData.brandColors || null,
+      };
+      setBranding(fromSession);
       setResolved(true);
+      // Si la palette manque dans le cache, on la résout en arrière-plan
+      // (le logo/nom s'affichent déjà — la palette arrive dès que prête).
+      if (!fromSession.brandColors && fromSession.slug) {
+        fetchPublicBrandColors(fromSession.slug).then((colors) => {
+          if (colors) {
+            setBranding((prev) => (prev ? { ...prev, brandColors: colors } : prev));
+          }
+        });
+      }
       return;
     }
 
@@ -206,6 +210,16 @@ export function useSchoolBranding(serverBranding?: SchoolBrandingData | null): S
             slogan: resolvedSlogan,
             motto: resolvedMotto,
             schoolAcronym: data.schoolAcronym || null,
+            brandColors: serverBranding?.brandColors || null,
+          });
+
+          // ⭐ 2026-11-27 — Palette de marque (logo/thème/CMS) : résolue en
+          // parallèle du branding, injectée dès qu'elle arrive (le logo et
+          // le nom s'affichent immédiatement, les couleurs suivent).
+          fetchPublicBrandColors(slug).then((colors) => {
+            if (colors) {
+              setBranding((prev) => (prev ? { ...prev, brandColors: colors } : prev));
+            }
           });
         }
       } catch (error) {

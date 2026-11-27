@@ -148,10 +148,19 @@ export default function KPICards({ data }: KPICardsProps) {
                 {formatValue(kpi.value, kpi.prefix, kpi.suffix)}
               </p>
               {/* Separator line with shine animation (style Win Agro) */}
+              {/* ⭐ 2026-11-27 — couleurs pilotées par la palette de l'école
+                  (variables --chart-* injectées par AppBrandTheme) au lieu
+                  des hex Helm fixes — unification demandée par le promoteur. */}
               <div
                 className={`w-8 h-1 rounded-full mt-3 transition-all duration-300 group-hover:w-16 ${hasData ? '' : 'opacity-30'}`}
                 style={{
-                  background: idx === 0 ? '#1E4FA3' : idx === 1 ? '#16a34a' : idx === 2 ? '#F5B700' : '#dc2626',
+                  background: idx === 0
+                    ? 'var(--chart-1, #1E4FA3)'
+                    : idx === 1
+                      ? 'var(--chart-2, #16a34a)'
+                      : idx === 2
+                        ? 'var(--chart-3, #F5B700)'
+                        : 'var(--chart-4, #dc2626)',
                 }}
               />
             </div>

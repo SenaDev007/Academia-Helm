@@ -148,6 +148,64 @@ module.exports = {
           500: 'var(--ah-gold-500, #F2C94C)', // Badges premium, focus, points d'accent
           400: 'var(--ah-gold-400, #FFE08A)', // Hover très subtil (rare)
         },
+
+        /* ⭐ 2026-11-27 — UNIFICATION TOTALE DE LA PALETTE (demande promoteur :
+         * « ça ne s'applique pas partout… il faut que ça s'applique à tous les
+         * modules, à tous les onglets et sous-onglets, les boutons et autres…
+         * même les icônes, pour que tout soit unifié »).
+         *
+         * Les palettes violettes (indigo / violet / purple) étaient utilisées
+         * comme accents de module (examens, RH, paramètres…) et restaient
+         * fixes. Elles suivent désormais la couleur PRIMAIRE de l'école via
+         * les MÊMES variables --ah-blue-* que la palette blue : dans /app,
+         * chaque classe indigo/violet/purple prend automatiquement la teinte
+         * de l'école (hover, focus, gradients et icônes compris).
+         *
+         * HORS /app (login, site institutionnel…) et pour les écoles SANS
+         * palette : le fallback = les hex ORIGINAUX de Tailwind → rendu
+         * strictement inchangé (même stratégie fail-open que blue/gold).
+         *
+         * ⚠️ green / emerald / red / amber restent SÉMANTIQUES (succès /
+         * erreur / avertissement) — elles ne sont volontairement PAS mappées. */
+        indigo: {
+          950: 'var(--ah-blue-900, #1e1b4b)',
+          900: 'var(--ah-blue-900, #312e81)',
+          800: 'var(--ah-blue-800, #3730a3)',
+          700: 'var(--ah-blue-700, #4338ca)',
+          600: 'var(--ah-blue-600, #4f46e5)',
+          500: 'var(--ah-blue-500, #6366f1)',
+          400: 'var(--ah-blue-400, #818cf8)',
+          300: 'var(--ah-blue-300, #a5b4fc)',
+          200: 'var(--ah-blue-200, #c7d2fe)',
+          100: 'var(--ah-blue-100, #e0e7ff)',
+          50: 'var(--ah-blue-100, #eef2ff)',
+        },
+        violet: {
+          950: 'var(--ah-blue-900, #2e1065)',
+          900: 'var(--ah-blue-900, #4c1d95)',
+          800: 'var(--ah-blue-800, #5b21b6)',
+          700: 'var(--ah-blue-700, #6d28d9)',
+          600: 'var(--ah-blue-600, #7c3aed)',
+          500: 'var(--ah-blue-500, #8b5cf6)',
+          400: 'var(--ah-blue-400, #a78bfa)',
+          300: 'var(--ah-blue-300, #c4b5fd)',
+          200: 'var(--ah-blue-200, #ddd6fe)',
+          100: 'var(--ah-blue-100, #ede9fe)',
+          50: 'var(--ah-blue-100, #f5f3ff)',
+        },
+        purple: {
+          950: 'var(--ah-blue-900, #3b0764)',
+          900: 'var(--ah-blue-900, #581c87)',
+          800: 'var(--ah-blue-800, #6b21a8)',
+          700: 'var(--ah-blue-700, #7e22ce)',
+          600: 'var(--ah-blue-600, #9333ea)',
+          500: 'var(--ah-blue-500, #a855f7)',
+          400: 'var(--ah-blue-400, #c084fc)',
+          300: 'var(--ah-blue-300, #d8b4fe)',
+          200: 'var(--ah-blue-200, #e9d5ff)',
+          100: 'var(--ah-blue-100, #f3e8ff)',
+          50: 'var(--ah-blue-100, #faf5ff)',
+        },
         
         // NEUTRES — Structure & respiration (25% de l'UI)
         white: {

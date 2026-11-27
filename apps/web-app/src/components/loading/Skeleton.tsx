@@ -270,7 +270,10 @@ export function ModuleSkeleton({
         style={{ animation: 'academiaSlideUp 0.4s ease-out both' }}
       >
         <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-[#0b2f73] to-[#1d4fa5] flex items-center justify-center">
+          {/* ⭐ 2026-11-27 — dégradé piloté par la palette de l'école
+              (blue-800/blue-600 = var(--ah-blue-*), sans modificateur
+              d'opacité qui serait ignoré sur les couleurs var()). */}
+          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-800 to-blue-600 flex items-center justify-center">
             <div className="h-4 w-4 rounded bg-white/30" />
           </div>
           <div>

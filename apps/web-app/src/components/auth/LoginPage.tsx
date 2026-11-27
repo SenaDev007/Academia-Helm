@@ -89,11 +89,6 @@ type PortalType = 'platform' | 'school' | 'teacher' | 'parent' | 'public' | null
 /** Contexte d'accès détecté (domaine principal vs sous-domaine école) */
 type AccessContext = 'main-domain' | 'school-subdomain';
 
-/** ── Palette Academia Helm — Conforme charte ── */
-const NAVY = '#0b2f73';
-const BLUE = '#1d4fa5';
-const GOLD = '#f5b335';
-
 /** Types de candidats pour le portail Public — conforme au document */
 // Type de candidat = ID du schoolLevel (depuis backend) OU 'PROSPECT_PARENT' (cas spécial)
 // On ne hardcode plus MATERNELLE/PRIMARY/SECONDARY — les niveaux sont fetchés depuis
@@ -204,9 +199,11 @@ function isValidBeninPhone(phone: string): boolean {
   return /^(\+229|00229)?\d{8}$/.test(digits);
 }
 
-/** Évalue la force d'un mot de passe — retourne { score, label, color } */
-function getPasswordStrength(password: string): { score: number; label: string; color: string } {
-  if (!password) return { score: 0, label: '—', color: '#94a3b8' };
+/** Évalue la force d'un mot de passe — { score, label } ; la couleur est
+ *  résolue à l'usage (palette de l'école) car GOLD/BLUE vivent désormais
+ *  DANS le composant (palette dynamique par école — 2026-11-27). */
+function getPasswordStrength(password: string): { score: number; label: string } {
+  if (!password) return { score: 0, label: '—' };
   let score = 0;
   if (password.length >= 6) score++;
   if (password.length >= 8) score++;
@@ -216,10 +213,10 @@ function getPasswordStrength(password: string): { score: number; label: string; 
   if (/\d/.test(password)) score++;
   if (/[^A-Za-z0-9]/.test(password)) score++;
 
-  if (score <= 2) return { score: 1, label: 'Faible', color: '#ef4444' };
-  if (score <= 4) return { score: 2, label: 'Moyen', color: GOLD };
-  if (score <= 5) return { score: 3, label: 'Bon', color: BLUE };
-  return { score: 4, label: 'Fort', color: '#16a34a' };
+  if (score <= 2) return { score: 1, label: 'Faible' };
+  if (score <= 4) return { score: 2, label: 'Moyen' };
+  if (score <= 5) return { score: 3, label: 'Bon' };
+  return { score: 4, label: 'Fort' };
 }
 
 /**
@@ -268,6 +265,8 @@ interface SchoolBranding {
   secondaryColor: string | null;
   slogan: string | null;
   motto: string | null;
+  /** ⭐ 2026-11-27 — palette du logo de l'école (voir useSchoolBranding). */
+  brandColors?: import('@/lib/tenant/tenant-colors-core').TenantColors | null;
 }
 
 /**
@@ -366,6 +365,17 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   // Si le server component n'a pas pu résoudre le branding (API indisponible),
   // on tente de le récupérer côté client via useSchoolBranding.
   const clientBranding = useSchoolBranding(schoolBranding);
+
+  // ── Palette de la page — conforme à la charte de L'ÉCOLE ──
+  // ⭐ 2026-11-27 — Demande promoteur : venue depuis le site institutionnel,
+  // la page portail (login) doit suivre la palette du logo de l'école tenante.
+  // Résolution : server component → sessionStorage (posé par le site
+  // institutionnel) → BFF (?tenant= / sous-domaine). Fallback = charte
+  // Academia Helm (les écoles sans palette restent inchangées).
+  const brandPalette = clientBranding?.brandColors || schoolBranding?.brandColors || null;
+  const NAVY = brandPalette?.primary || '#0b2f73';
+  const BLUE = brandPalette?.secondary || '#1d4fa5';
+  const GOLD = brandPalette?.accent || '#f5b335';
 
   const portalParam = searchParams?.get('portal');
   let tenantSlug = searchParams?.get('tenant');
@@ -797,6 +807,17 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const passwordStrength = getPasswordStrength(
     portalType === 'teacher' ? teacherCredentials.password : schoolCredentials.password,
   );
+  // Couleur de force du mot de passe — sémantique (rouge/orange/bleu/vert)
+  // alignée sur la palette de l'école pour les niveaux intermédiaires.
+  const passwordStrengthColor = !passwordStrength.score
+    ? '#94a3b8'
+    : passwordStrength.score === 1
+      ? '#ef4444'
+      : passwordStrength.score === 2
+        ? GOLD
+        : passwordStrength.score === 3
+          ? BLUE
+          : '#16a34a';
 
   // ── Session expiry message ───────────────────────────────────────────
   const reasonParam = searchParams?.get('reason');
@@ -2513,14 +2534,14 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                                 className="h-1 flex-1 rounded-full transition-all duration-300"
                                 style={{
                                   backgroundColor: passwordStrength.score >= level
-                                    ? passwordStrength.color
+                                    ? passwordStrengthColor
                                     : '#e2e8f0',
                                 }}
                               />
                             ))}
                           </div>
                           <p className="mt-1 text-[10px] text-slate-500">
-                            Force : <span style={{ color: passwordStrength.color }}>{passwordStrength.label}</span>
+                            Force : <span style={{ color: passwordStrengthColor }}>{passwordStrength.label}</span>
                           </p>
                         </div>
                       )}
@@ -2623,14 +2644,14 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                                 className="h-1 flex-1 rounded-full transition-all duration-300"
                                 style={{
                                   backgroundColor: passwordStrength.score >= level
-                                    ? passwordStrength.color
+                                    ? passwordStrengthColor
                                     : '#e2e8f0',
                                 }}
                               />
                             ))}
                           </div>
                           <p className="mt-1 text-[10px] text-slate-500">
-                            Force : <span style={{ color: passwordStrength.color }}>{passwordStrength.label}</span>
+                            Force : <span style={{ color: passwordStrengthColor }}>{passwordStrength.label}</span>
                           </p>
                         </div>
                       )}

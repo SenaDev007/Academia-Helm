@@ -35,6 +35,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import LogoCircle from '@/components/ui/LogoCircle';
+import { HELM_DEFAULT, type TenantColors } from '@/lib/tenant/tenant-colors-core';
+import { persistPortalSchoolBrand } from '@/lib/tenant/public-brand';
 
 interface FooterProps {
   schoolName: string;
@@ -54,6 +56,10 @@ interface FooterProps {
   navLinks?: Array<{ label: string; href: string }>;
   /** Tenant slug — used to build portal links (/login?portal=...&tenant=slug). */
   tenantSlug?: string | null;
+  /** ⭐ 2026-11-27 — Palette de marque de l'école (logo/thème/CMS) : le
+   *  footer suit désormais la même palette dynamique que le header
+   * (demande promoteur — « le footer n'est pas pris en compte »). */
+  colors?: TenantColors | null;
 }
 
 const SOCIAL_ICONS: Record<string, any> = {
@@ -104,7 +110,12 @@ export default function TenantFooter({
   socialLinks,
   navLinks = [],
   tenantSlug,
+  colors,
 }: FooterProps) {
+  // ⭐ 2026-11-27 — Palette effective : celle de l'ÉCOLE (comme le header),
+  // charte Helm en repli. Fond = dégradé primary → dark, accents = accent.
+  const c: TenantColors = colors || HELM_DEFAULT;
+  const ACCENT = c.accent;
   const displayName = schoolAcronym || schoolName;
   const aboutText = footerAboutText || schoolSlogan || '';
   const email = contactEmail || schoolEmail || '';
@@ -127,6 +138,24 @@ export default function TenantFooter({
     return `/login?${params.toString()}`;
   };
 
+  // ⭐ 2026-11-27 — Persistance du branding (logo + palette) avant de suivre
+  // un lien portail : la page /login et son écran de chargement s'affichent
+  // INSTANTANÉMENT aux couleurs de l'école (même sur le domaine principal).
+  const persistBrandBeforePortal = () => {
+    if (!tenantSlug) return;
+    persistPortalSchoolBrand({
+      name: schoolName,
+      slug: tenantSlug,
+      logoUrl: schoolLogo || null,
+      city: schoolCity || null,
+      phone: schoolPhone || null,
+      address: schoolAddress || null,
+      slogan: schoolSlogan || null,
+      schoolAcronym: schoolAcronym || null,
+      brandColors: colors || null,
+    });
+  };
+
   const legalLinks = [
     { label: 'Mentions légales', href: '/legal/mentions', Icon: FileText },
     { label: 'Politique de confidentialité', href: '/legal/confidentialite', Icon: Shield },
@@ -134,7 +163,21 @@ export default function TenantFooter({
   ];
 
   return (
-    <footer className="bg-[#091f4a] text-slate-400 mt-16 w-full">
+    <footer className="mt-16 w-full" style={{ background: `linear-gradient(180deg, ${c.dark} 0%, ${c.primary} 190%)` }}>
+      {/* Règles hover dynamiques — la couleur d'accent vient de la palette de
+          l'école : impossible en Tailwind statique, d'où ce bloc scoped. */}
+      <style>{`
+        .tf-hover-accent:hover { color: ${ACCENT}; }
+        .tf-hover-accent-border:hover { border-color: ${ACCENT}55; }
+        .tf-hover-portal:hover { background-color: ${ACCENT}1f; border-color: ${ACCENT}55; }
+        .tf-hover-portal .tf-portal-arrow { color: ${ACCENT}; }
+      `}</style>
+      {/* Liseré accent haut de footer (rappel de la navbar) */}
+      <div
+        className="h-[3px] w-full"
+        style={{ background: `linear-gradient(90deg, transparent, ${ACCENT}, transparent)` }}
+        aria-hidden
+      />
       <div className="mx-auto max-w-7xl px-4 pt-14 pb-6 sm:px-6 lg:px-8 lg:pt-20">
         <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-4">
           {/* ═══ Colonne 1 : Logo, nom, baseline, réseaux sociaux ═══ */}
@@ -144,7 +187,7 @@ export default function TenantFooter({
               <div>
                 <h3 className="text-white font-bold text-base">{displayName}</h3>
                 {schoolAcronym && schoolName !== schoolAcronym && (
-                  <p className="text-[10px] text-amber-300/60">{schoolName}</p>
+                  <p className="text-[10px]" style={{ color: `${ACCENT}99` }}>{schoolName}</p>
                 )}
               </div>
             </div>
@@ -163,7 +206,7 @@ export default function TenantFooter({
                     href={`mailto:${email}`}
                     className="flex items-center gap-2 text-slate-400/70 hover:text-white transition-colors"
                   >
-                    <Mail className="h-3.5 w-3.5 text-amber-400/80 shrink-0" />
+                    <Mail className="h-3.5 w-3.5 shrink-0" style={{ color: `${ACCENT}cc` }} />
                     <span className="truncate">{email}</span>
                   </a>
                 </li>
@@ -174,14 +217,14 @@ export default function TenantFooter({
                     href={`tel:${phone}`}
                     className="flex items-center gap-2 text-slate-400/70 hover:text-white transition-colors"
                   >
-                    <Phone className="h-3.5 w-3.5 text-amber-400/80 shrink-0" />
+                    <Phone className="h-3.5 w-3.5 shrink-0" style={{ color: `${ACCENT}cc` }} />
                     <span>{phone}</span>
                   </a>
                 </li>
               )}
               {address && (
                 <li className="flex items-start gap-2 text-slate-400/70">
-                  <MapPin className="h-3.5 w-3.5 text-amber-400/80 shrink-0 mt-0.5" />
+                  <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5" style={{ color: `${ACCENT}cc` }} />
                   <address className="not-italic">
                     {address}
                     {city ? `, ${city}` : ''}
@@ -200,11 +243,14 @@ export default function TenantFooter({
                         href={url as string}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="block w-9 h-9 rounded-lg bg-white/5 hover:bg-amber-400/15 flex items-center justify-center transition-colors"
+                        className="block w-9 h-9 rounded-lg flex items-center justify-center transition-colors"
+                        style={{ background: 'rgba(255,255,255,0.05)' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = `${ACCENT}26`; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
                         title={platform}
                       >
                         <span className="sr-only">{platform}</span>
-                        <Icon className="h-4 w-4 text-amber-400/80" />
+                        <Icon className="h-4 w-4" style={{ color: `${ACCENT}cc` }} />
                       </a>
                     </li>
                   );
@@ -223,7 +269,7 @@ export default function TenantFooter({
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="text-slate-400/70 hover:text-amber-400 transition-colors"
+                    className="tf-hover-accent text-slate-400/70 transition-colors"
                   >
                     {link.label}
                   </Link>
@@ -242,16 +288,21 @@ export default function TenantFooter({
                 <li key={type}>
                   <Link
                     href={buildPortalUrl(type)}
-                    className="group flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-amber-400/30 transition-all"
+                    onClick={persistBrandBeforePortal}
+                    className="tf-hover-portal group flex items-center gap-3 px-3 py-2.5 rounded-lg border border-white/10 transition-all"
+                    style={{ background: 'rgba(255,255,255,0.05)' }}
                   >
-                    <div className="w-8 h-8 rounded-md bg-amber-400/15 flex items-center justify-center shrink-0">
-                      <Icon className="h-4 w-4 text-amber-400" />
+                    <div
+                      className="w-8 h-8 rounded-md flex items-center justify-center shrink-0"
+                      style={{ background: `${ACCENT}26` }}
+                    >
+                      <Icon className="h-4 w-4" style={{ color: ACCENT }} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-white">{label}</p>
                       <p className="text-[10px] text-slate-400/70 truncate">{description}</p>
                     </div>
-                    <ArrowRight className="h-3.5 w-3.5 text-slate-500 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all" />
+                    <ArrowRight className="tf-portal-arrow h-3.5 w-3.5 text-slate-500 group-hover:translate-x-0.5 transition-all" />
                   </Link>
                 </li>
               ))}
@@ -270,7 +321,7 @@ export default function TenantFooter({
                     href={href}
                     className="flex items-center gap-2 text-slate-400/70 hover:text-white transition-colors"
                   >
-                    <Icon className="h-3.5 w-3.5 text-amber-400/60 shrink-0" />
+                    <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: `${ACCENT}99` }} />
                     {label}
                   </Link>
                 </li>
@@ -288,13 +339,13 @@ export default function TenantFooter({
             </p>
             <p className="text-xs flex items-center gap-1.5 text-slate-500">
               Propulsé par{' '}
-              <span className="font-bold text-amber-400">Academia Helm</span>
+              <span className="font-bold" style={{ color: ACCENT }}>Academia Helm</span>
               <span className="text-slate-600">—</span>
               <a
                 href="https://yehiortech.com"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="hover:text-amber-400 transition-colors"
+                className="tf-hover-accent transition-colors"
               >
                 YEHI OR Tech
               </a>

@@ -24,6 +24,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   Max,
   Min,
   MaxLength,
@@ -277,6 +278,19 @@ export class StartGoogleOauthDto {
   @IsOptional()
   @IsIn(LEVEL_CATEGORIES)
   levelCategory?: EmailLevelCategory181;
+
+  /**
+   * ⭐ 2026-11-27 — Origine EXACTE du front d'où le directeur a lancé la
+   * connexion (ex: https://ecole.academiahelm.com). Les sessions étant
+   * HOST-ONLY par sous-domaine, le callback DOIT ramener l'utilisateur sur
+   * CETTE origine — sinon il atterrit sur le domaine principal sans session
+   * et est éjecté vers /login (bug remonté par le promoteur).
+   * Posée par la route BFF web-app (nextUrl.origin), jamais saisie à la main.
+   */
+  @IsOptional()
+  @Matches(/^https?:\/\/[a-zA-Z0-9.\-:]+$/, { message: 'frontendOrigin doit être une URL http(s) valide' })
+  @MaxLength(200)
+  frontendOrigin?: string;
 }
 
 export class UpdateDailyCapDto {

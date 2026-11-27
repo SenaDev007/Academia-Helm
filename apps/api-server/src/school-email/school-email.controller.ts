@@ -326,6 +326,10 @@ export class SchoolEmailController {
         replyTo: dto?.replyTo,
         // ⭐ 2026-11-26 — connexion Google du NIVEAU visé (double identité).
         levelCategory: dto?.levelCategory,
+        // ⭐ 2026-11-27 — origine du front appelant : le callback ramènera le
+        // directeur sur SON sous-domaine (sessions host-only) au lieu du
+        // domaine principal qui le déconnectait vers /login (bug promoteur).
+        frontendOrigin: dto?.frontendOrigin,
       },
       apiOriginFromRequest(req),
     );
@@ -345,9 +349,13 @@ export class SchoolEmailController {
     @Request() req: any,
     @Res() res: Response,
   ): Promise<void> {
-    const base = this.googleOauth.frontendSettingsUrl();
     try {
       const result = await this.googleOauth.handleCallback(query);
+      // ⭐ 2026-11-27 — retour sur L'ORIGINE D'OÙ LE FLUX EST PARTI (ex:
+      // https://ecole.academiahelm.com) : les sessions étant host-only par
+      // sous-domaine, l'ancien retour vers le domaine nu (FRONTEND_URL)
+      // déconnectait le directeur → page /login (bug promoteur).
+      const base = this.googleOauth.frontendSettingsUrl(result.frontendOrigin);
       this.logger.log(
         `Callback Google OAuth2 OK (tenant ${result.tenantId}, compte ${result.googleEmail})`,
       );
@@ -363,6 +371,9 @@ export class SchoolEmailController {
     } catch (err: any) {
       const motif = encodeURIComponent(String(err?.message || 'Erreur inconnue').slice(0, 300));
       this.logger.warn(`Callback Google OAuth2 échoué : ${err?.message}`);
+      // En cas d'échec, tenter aussi l'origine du state si disponible (le
+      // handleCallback a échoué avant de la retourner — on reste sur le défaut).
+      const base = this.googleOauth.frontendSettingsUrl();
       return res.redirect(302, `${base}&google=erreur&motif=${motif}`);
     }
   }

@@ -243,7 +243,7 @@ export default function OrionPedagogyVigilance() {
             </p>
           </div>
           <div className="flex-shrink-0 flex items-center gap-4">
-            <div className="w-32 h-32 rounded-full bg-indigo-900/50 flex items-center justify-center border border-white/10 relative">
+            <div className="w-32 h-32 rounded-full bg-indigo-900 flex items-center justify-center border border-white/10 relative">
               <Activity className="w-12 h-12 text-indigo-400 animate-pulse" />
               <svg className="absolute inset-0 w-full h-full -rotate-90">
                 <circle cx="64" cy="64" r="60" fill="transparent" stroke="currentColor" strokeWidth="4" className="text-white/5" />

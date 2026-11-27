@@ -759,6 +759,15 @@ body {
   animation: academiaDotBounce 0.8s ease-in-out infinite;
 }
 
+/* TenantBrandLoader — barre indéterminée (couleurs de l'école en inline) */
+.academia-loader-bar {
+  animation: academiaLoaderSlide 1.4s ease-in-out infinite;
+}
+@keyframes academiaLoaderSlide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(360%); }
+}
+
 /* Hide scrollbar for auto-scroll job list — keeps programmatic scrollTop working */
 .hide-scrollbar::-webkit-scrollbar {
   display: none;

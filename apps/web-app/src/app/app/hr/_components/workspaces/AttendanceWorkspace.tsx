@@ -345,7 +345,7 @@ export function AttendanceWorkspace() {
                 </div>
 
                 <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-100 flex items-center gap-3">
-                  <div className="p-2.5 rounded-lg bg-indigo-500/10 text-indigo-600">
+                  <div className="p-2.5 rounded-lg bg-indigo-100 text-indigo-600">
                     <CheckCircle2 className="h-5 w-5" />
                   </div>
                   <div>

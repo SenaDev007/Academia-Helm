@@ -139,7 +139,9 @@ export default function FinanceModulePage() {
           : [],
         actions: (
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-900/20 hover:bg-emerald-700 transition-all">
+            {/* ⭐ 2026-11-27 — bouton principal à la couleur de l'école
+                (bg-blue-600 = var(--ah-blue-600), palette dynamique). */}
+            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-900/20 hover:bg-blue-700 transition-all">
               <Plus className="w-4 h-4" /> Nouveau Paiement
             </button>
             <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold hover:bg-slate-50 transition-all">

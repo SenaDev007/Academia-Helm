@@ -437,7 +437,7 @@ export function SchoolEmailTab() {
               <LevelIcon className="h-5 w-5 shrink-0" />
               <div className="flex-1 min-w-[220px]">
                 <div className="font-semibold">
-                  <span className={isSecondary ? "text-[#1A2BA6]" : "text-emerald-700"}>{meta.label}</span>
+                  <span className={isSecondary ? "text-blue-700" : "text-emerald-700"}>{meta.label}</span>
                   {" — "}
                   {st.label}
                 </div>
@@ -652,19 +652,37 @@ export function SchoolEmailTab() {
       {/* ═══ 2. Choix du mode de connexion — Google actif / SMTP grisé ══ */}
       <div className="rounded-lg border border-gray-200 bg-white p-4">
         <div className="font-medium text-gray-800 mb-3">Mode de connexion</div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* ⭐ 2026-11-27 — items-start : chaque carte prend sa hauteur NATURELLE.
+            Auparavant la grille étirait la carte Google à la hauteur de la
+            carte SMTP (plus haute à cause de ses champs d'aperçu) → texte
+            petit au milieu d'un grand vide (retour promoteur). */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
           {/* Google OAuth2 — seule voie active */}
-          <div className="rounded-lg border-2 border-blue-500 bg-blue-50/50 p-4">
+          <div className="rounded-lg border-2 border-blue-500 bg-blue-50/50 p-4 h-full flex flex-col">
             <div className="flex items-center gap-2 font-semibold text-gray-900">
               <Chrome className="h-4 w-4 text-blue-600" /> Google (OAuth2)
               <span className="ml-auto text-[10px] uppercase tracking-wide bg-green-100 text-green-700 rounded-full px-2 py-0.5">
                 Actif
               </span>
             </div>
-            <p className="text-xs text-gray-600 mt-1">
+            <p className="text-sm text-gray-700 mt-1.5 leading-relaxed">
               Connexion en un clic, sans mot de passe — l&apos;école autorise son compte Gmail et Academia Helm
               envoie en son nom (portée « envoyer des e-mails » uniquement).
             </p>
+            <ul className="mt-3 space-y-1.5 text-xs text-gray-600">
+              <li className="flex items-center gap-2">
+                <ShieldCheck className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                Autorisation révocable à tout moment (bouton « Déconnecter »)
+              </li>
+              <li className="flex items-center gap-2">
+                <CheckCircle2 className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                Fonctionne dans tous les environnements (envoi via l&apos;API Gmail sécurisée)
+              </li>
+              <li className="flex items-center gap-2">
+                <RefreshCw className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                Jeton renouvelé automatiquement par la plateforme
+              </li>
+            </ul>
           </div>
 
           {/* SMTP — grisé, non disponible pour le moment */}
@@ -675,7 +693,7 @@ export function SchoolEmailTab() {
                 <Ban className="h-3 w-3" /> Non disponible pour le moment
               </span>
             </div>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">
               La connexion SMTP est momentanément indisponible sur la plateforme. Utilisez la connexion
               Google ci-dessus — sécurisée et fiable dans tous les environnements.
             </p>

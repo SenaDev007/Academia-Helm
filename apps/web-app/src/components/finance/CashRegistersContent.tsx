@@ -1019,7 +1019,7 @@ export default function CashRegistersContent() {
                   {/* Second halo (décalé) */}
                   {mainRegister?.isOpen && (
                     <motion.div
-                      className="absolute inset-0 rounded-3xl bg-indigo-400/20"
+                      className="absolute inset-0 rounded-3xl bg-indigo-100"
                       animate={{
                         scale: [1, 1.5, 1],
                         opacity: [0.3, 0, 0.3],

@@ -60,10 +60,10 @@ const SUB_MODULES = [
 
 const COLOR_MAP: Record<string, string> = {
   blue: 'bg-blue-500/10 text-blue-700 border-blue-200',
-  indigo: 'bg-indigo-500/10 text-indigo-700 border-indigo-200',
+  indigo: 'bg-indigo-100 text-indigo-700 border-indigo-200',
   slate: 'bg-slate-500/10 text-slate-700 border-slate-200',
   emerald: 'bg-emerald-500/10 text-emerald-700 border-emerald-200',
-  violet: 'bg-violet-500/10 text-violet-700 border-violet-200',
+  violet: 'bg-violet-100 text-violet-700 border-violet-200',
   amber: 'bg-amber-500/10 text-amber-700 border-amber-200',
 };
 

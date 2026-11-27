@@ -733,4 +733,27 @@ Message de bienvenue par défaut: ${website?.aiWelcomeMessage || 'Bonjour ! Comm
     });
     return { success: true };
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  RÉINITIALISATION COMPLÈTE (auth + rôles direction)
+  //
+  //  ⭐ 2026-11-27 — Demande promoteur : pouvoir repartir d'une base vierge
+  //  dans le module Site Institutionnel (utilisé pour réinitialiser
+  //  l'école CSPEB). Supprime POUR LE TENANT COURANT uniquement :
+  //  sections par niveau, actualités, agenda, galerie, témoignages, FAQ,
+  //  messages reçus, tout le paramétrage CMS (tenant_websites) et le thème
+  //  choisi. Les autres écoles ne sont pas touchées.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
+  @Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'SCHOOL_ADMIN', 'SCHOOL_OWNER', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER')
+  @Post('reset')
+  async resetWebsiteData(
+    @GetTenant() tenant: any,
+    @TenantId() tenantIdFallback: string,
+  ) {
+    const tid = resolveTid(tenant, tenantIdFallback);
+    this.logger.log(`Réinitialisation du site institutionnel demandée pour le tenant ${tid}`);
+    return this.websiteService.resetWebsiteData(tid);
+  }
 }

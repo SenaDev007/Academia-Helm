@@ -693,4 +693,73 @@ export class TenantWebsiteService {
       // 5. Supprimer les tirets en début/fin
       .replace(/^-+|-+$/g, '');
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  RÉINITIALISATION COMPLÈTE
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * ⭐ 2026-11-27 — Supprime TOUT le paramétrage du site institutionnel du
+   * tenant : collections (sections par niveau, actualités, agenda, galerie,
+   * témoignages, FAQ, messages reçus), ligne CMS (tenant_websites) et thème
+   * choisi (table tenant_theme_settings). Le site public repart sur les
+   * valeurs par défaut Helm — comme une école qui n'a encore rien paramétré.
+   *
+   * Isolation multi-tenant : tout est scoped par tenantId, les autres écoles
+   * ne sont jamais touchées.
+   */
+  async resetWebsiteData(tenantId: string) {
+    const deleted = {
+      levelSections: 0,
+      news: 0,
+      events: 0,
+      gallery: 0,
+      testimonials: 0,
+      faq: 0,
+      contactMessages: 0,
+      websiteConfig: 0,
+      theme: 0,
+    };
+
+    // 1. Collections liées au site (l'ordre respecte les FK éventuelles)
+    deleted.levelSections = await this.prisma.tenantWebsiteLevelSection.deleteMany({ where: { tenantId } });
+    deleted.news = await this.prisma.tenantNewsArticle.deleteMany({ where: { tenantId } });
+    deleted.events = await this.prisma.tenantEvent.deleteMany({ where: { tenantId } });
+    deleted.gallery = await this.prisma.tenantGalleryItem.deleteMany({ where: { tenantId } });
+    deleted.testimonials = await this.prisma.tenantTestimonial.deleteMany({ where: { tenantId } });
+    deleted.faq = await this.prisma.tenantFaqItem.deleteMany({ where: { tenantId } });
+    deleted.contactMessages = await this.prisma.tenantContactMessage.deleteMany({ where: { tenantId } });
+
+    // 2. Paramétrage principal (hero, mots, couleurs custom, SEO, footer…)
+    deleted.websiteConfig = await this.prisma.tenantWebsite.deleteMany({ where: { tenantId } });
+
+    // 3. Thème choisi (table SQL brute gérée par TenantThemeService)
+    try {
+      const res = await this.prisma.$executeRawUnsafe(
+        `DELETE FROM "tenant_theme_settings" WHERE "tenant_id" = $1`,
+        tenantId,
+      );
+      deleted.theme = res;
+    } catch (err: any) {
+      // La table peut ne pas exister (avant tout usage de l'onglet Thèmes) —
+      // ce n'est pas bloquant, on log simplement.
+      this.logger.warn(`resetWebsiteData: table tenant_theme_settings ignorée (${err?.message})`);
+    }
+
+    const total =
+      deleted.levelSections + deleted.news + deleted.events + deleted.gallery +
+      deleted.testimonials + deleted.faq + deleted.contactMessages +
+      deleted.websiteConfig + deleted.theme;
+
+    this.logger.log(
+      `Site institutionnel réinitialisé pour le tenant ${tenantId} : ${total} ligne(s) supprimée(s)`,
+    );
+
+    return {
+      success: true,
+      deleted,
+      total,
+      message: 'Site institutionnel réinitialisé — le site public affiche désormais les valeurs par défaut.',
+    };
+  }
 }

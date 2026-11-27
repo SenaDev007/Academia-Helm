@@ -37,6 +37,10 @@ export const tenantWebsiteService = {
   getConfig: () => twFetch<any>(''),
   updateConfig: (data: any) => twFetch<any>('', { method: 'PUT', body: data }),
 
+  // ⭐ 2026-11-27 — Réinitialisation complète du module institutionnel
+  // (collections + paramétrage CMS + thème) pour le tenant courant.
+  resetAll: () => twFetch<{ success: boolean; deleted: Record<string, number>; total: number; message: string }>('reset', { method: 'POST', body: {} }),
+
   // News
   getNews: () => twFetch<any[]>('news'),
   createNews: (data: any) => twFetch<any>('news', { method: 'POST', body: data }),

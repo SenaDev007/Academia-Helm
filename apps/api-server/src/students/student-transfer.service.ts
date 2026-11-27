@@ -28,6 +28,7 @@ import { EmailService } from '../communication/services/email.service';
 import { SmsService } from '../communication/services/sms.service';
 import { WhatsAppService } from '../communication/services/whatsapp.service';
 import { ParentUserProvisioningService } from './services/parent-user-provisioning.service';
+import { MatriculeService } from './services/matricule.service';
 
 @Injectable()
 export class StudentTransferService {
@@ -39,6 +40,7 @@ export class StudentTransferService {
     private readonly smsService: SmsService,
     private readonly whatsappService: WhatsAppService,
     private readonly parentProvisioningService: ParentUserProvisioningService,
+    private readonly matriculeService: MatriculeService,
   ) {}
 
   /**
@@ -132,9 +134,13 @@ export class StudentTransferService {
 
   /**
    * ⭐ Récupère les transferts sortants (depuis cette école vers d'autres).
+   *
+   * ⭐ 2026-11-27 — Enrichit chaque enregistrement avec les libellés du
+   * niveau/classe demandés (requestedLevelName / requestedClassName) et
+   * les deux matricules locaux (source/destination) pour l'affichage.
    */
   async getOutgoingTransfers(tenantId: string) {
-    return this.prisma.studentTransferRequest.findMany({
+    const rows = await this.prisma.studentTransferRequest.findMany({
       where: { sourceSchoolId: tenantId },
       include: {
         student: {
@@ -148,13 +154,16 @@ export class StudentTransferService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    return this.enrichTransferRows(rows);
   }
 
   /**
    * ⭐ Récupère les transferts entrants (depuis d'autres écoles vers celle-ci).
+   *
+   * ⭐ 2026-11-27 — Même enrichissement que getOutgoingTransfers.
    */
   async getIncomingTransfers(tenantId: string) {
-    return this.prisma.studentTransferRequest.findMany({
+    const rows = await this.prisma.studentTransferRequest.findMany({
       where: { targetSchoolId: tenantId },
       include: {
         student: {
@@ -168,6 +177,37 @@ export class StudentTransferService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    return this.enrichTransferRows(rows);
+  }
+
+  /**
+   * ⭐ 2026-11-27 — Enrichit les lignes de transfert avec les libellés du
+   * niveau et de la classe demandés (lookups groupés — pas de relations
+   * nommées sur StudentTransferRequest pour ces champs).
+   */
+  private async enrichTransferRows(rows: any[]) {
+    if (!rows || rows.length === 0) return rows;
+
+    const levelIds = [...new Set(rows.map(r => r.requestedLevelId).filter(Boolean))];
+    const classIds = [...new Set(rows.map(r => r.requestedClassId).filter(Boolean))];
+
+    const [levels, classes] = await Promise.all([
+      levelIds.length > 0
+        ? this.prisma.schoolLevel.findMany({ where: { id: { in: levelIds } }, select: { id: true, name: true, label: true, code: true } })
+        : Promise.resolve([]),
+      classIds.length > 0
+        ? this.prisma.academicClass.findMany({ where: { id: { in: classIds } }, select: { id: true, name: true, code: true } })
+        : Promise.resolve([]),
+    ]);
+
+    const levelMap = new Map(levels.map(l => [l.id, l.label || l.name || l.code]));
+    const classMap = new Map(classes.map(c => [c.id, c.name || c.code]));
+
+    return rows.map(r => ({
+      ...r,
+      requestedLevelName: r.requestedLevelId ? (levelMap.get(r.requestedLevelId) || null) : null,
+      requestedClassName: r.requestedClassId ? (classMap.get(r.requestedClassId) || null) : null,
+    }));
   }
 
   /**
@@ -403,8 +443,26 @@ export class StudentTransferService {
   /**
    * ⭐ Exécute le transfert final (côté école destination).
    * Copie le dossier complet de l'élève vers l'école destination.
+   *
+   * ⭐ 2026-11-27 — Finalisation professionnelle du flux (demande promoteur) :
+   *   - Résolution de l'ANNÉE ACADÉMIQUE de la destination (l'année de la
+   *     source appartient à un autre tenant — l'ancien fallback était erroné)
+   *   - GÉNÉRATION AUTOMATIQUE du matricule LOCAL de l'école destination
+   *     (<CODE>-E-<YY>-<XXX>, même règle que l'admission) — le matricule
+   *     GLOBAL Academia Helm est conservé
+   *   - Intégration dans la classe OFFICIELLE demandée (academicClassId) ;
+   *     la classe PHYSIQUE (section CI-A, CP-B…) est soit fournie par la
+   *     direction (physicalClassId), soit auto-affectée si une seule section
+   *     correspond (même règle que l'inscription), soit laissée vide pour
+   *     affectation ultérieure via l'onglet Affectations & Mouvements
+   *   - Copie des DOCUMENTS du dossier élève
    */
-  async executeTransfer(transferId: string, userId?: string, tenantId?: string) {
+  async executeTransfer(
+    transferId: string,
+    userId?: string,
+    tenantId?: string,
+    options?: { physicalClassId?: string | null },
+  ) {
     const request = await this.prisma.studentTransferRequest.findUnique({
       where: { id: transferId },
       include: {
@@ -432,12 +490,107 @@ export class StudentTransferService {
 
     const sourceStudent = request.student;
 
-    // ⭐ 1. Créer le nouvel élève dans l'école destination avec dossier complet
+    // ⭐ 1. Résoudre l'année académique de la DESTINATION (jamais celle de la source)
+    let destinationYearId = request.destinationAcademicYearId;
+    if (!destinationYearId) {
+      const destActiveYear = await this.prisma.academicYear.findFirst({
+        where: { tenantId: request.targetSchoolId, isActive: true },
+        orderBy: { startDate: 'desc' },
+      }) || await this.prisma.academicYear.findFirst({
+        where: { tenantId: request.targetSchoolId, isClosed: false },
+        orderBy: { startDate: 'desc' },
+      });
+      if (!destActiveYear) {
+        throw new BadRequestException("Aucune année académique active trouvée dans l'école destination — veuillez en créer une avant de finaliser le transfert");
+      }
+      destinationYearId = destActiveYear.id;
+      // Persister pour les exécutions suivantes / la traçabilité
+      await this.prisma.studentTransferRequest.update({
+        where: { id: transferId },
+        data: { destinationAcademicYearId: destinationYearId },
+      });
+    }
+
+    // ⭐ 1bis. Résoudre le NIVEAU SCOLAIRE dans le référentiel de la DESTINATION
+    //    (Student/StudentEnrollment/StudentAcademicRecord.schoolLevelId référencent
+    //    SchoolLevel, qui est PAR TENANT — le niveau de l'école source ne peut
+    //    pas être réutilisé tel quel)
+    let destSchoolLevelId: string | null = request.requestedLevelId || null;
+    if (destSchoolLevelId) {
+      // Sécurité : le niveau demandé doit appartenir au référentiel de la destination
+      const levelOk = await this.prisma.schoolLevel.findFirst({
+        where: { id: destSchoolLevelId, tenantId: request.targetSchoolId },
+        select: { id: true },
+      });
+      if (!levelOk) destSchoolLevelId = null;
+    }
+    if (!destSchoolLevelId) {
+      // Fallback : matcher le CODE du niveau de l'école source dans le
+      // référentiel de la destination (ex: "CP" → CP de l'école d'accueil)
+      const sourceLevel = sourceStudent.schoolLevelId
+        ? await this.prisma.schoolLevel.findUnique({
+            where: { id: sourceStudent.schoolLevelId },
+            select: { code: true },
+          })
+        : null;
+      if (sourceLevel?.code) {
+        const matched = await this.prisma.schoolLevel.findFirst({
+          where: { tenantId: request.targetSchoolId, code: sourceLevel.code },
+          select: { id: true },
+        });
+        if (matched) destSchoolLevelId = matched.id;
+      }
+    }
+    if (!destSchoolLevelId) {
+      // Dernier recours : premier niveau actif de la destination
+      const anyLevel = await this.prisma.schoolLevel.findFirst({
+        where: { tenantId: request.targetSchoolId, isActive: true },
+        orderBy: { order: 'asc' },
+        select: { id: true },
+      });
+      if (anyLevel) destSchoolLevelId = anyLevel.id;
+    }
+
+    // ⭐ 2. Résoudre la classe physique (section) :
+    //    a. fournie par la direction (physicalClassId — choix explicite)
+    //    b. sinon auto-affectée si une seule section correspond à la classe
+    //       officielle demandée (même règle que l'inscription)
+    //    c. sinon null → affectation ultérieure via Affectations & Mouvements
+    let resolvedPhysicalClassId = options?.physicalClassId || null;
+    if (!resolvedPhysicalClassId && request.requestedClassId) {
+      const physicalSections = await this.prisma.class.findMany({
+        where: {
+          tenantId: request.targetSchoolId,
+          academicYearId: destinationYearId,
+          officialClassId: request.requestedClassId,
+        },
+        select: { id: true, name: true },
+      });
+      if (physicalSections.length === 1) {
+        resolvedPhysicalClassId = physicalSections[0].id;
+      }
+    }
+
+    // ⭐ 3. Générer le matricule LOCAL de l'école destination (même règle que
+    //    l'admission : <CODE>-E-<YY>-<XXX> via la séquence du tenant d'accueil)
+    const schoolCode = await this.matriculeService.getSchoolCode(request.targetSchoolId);
+    const enrollmentYear = await this.matriculeService.getEnrollmentYearFromAcademicYear(destinationYearId);
+    const localMatricule = await this.prisma.$transaction(async (tx) => {
+      return this.matriculeService.generateInTransaction(
+        tx,
+        request.targetSchoolId,
+        schoolCode,
+        enrollmentYear,
+      );
+    });
+
+    // ⭐ 4. Créer le nouvel élève dans l'école destination avec dossier complet
     const newStudent = await this.prisma.student.create({
       data: {
         tenantId: request.targetSchoolId,
-        academicYearId: request.destinationAcademicYearId || request.academicYearId,
-        schoolLevelId: request.requestedLevelId || sourceStudent.schoolLevelId,
+        academicYearId: destinationYearId,
+        schoolLevelId: destSchoolLevelId || sourceStudent.schoolLevelId,
+        currentAcademicYearId: destinationYearId,
         firstName: sourceStudent.firstName,
         lastName: sourceStudent.lastName,
         dateOfBirth: sourceStudent.dateOfBirth,
@@ -452,11 +605,14 @@ export class StudentTransferService {
         status: 'ACTIVE',
         isActive: true,
         globalStudentId: sourceStudent.globalStudentId, // ⭐ Conservation de l'ID global
-        // Le matricule local sera attribué séparément (règle propre à chaque école)
+        // ⭐ 2026-11-27 — Matricule LOCAL de l'école d'accueil généré automatiquement
+        matricule: localMatricule,
+        studentCode: localMatricule,
+        enrollmentYear,
       },
     });
 
-    // ⭐ 2. Copier les responsables légaux
+    // ⭐ 5. Copier les responsables légaux
     if (sourceStudent.studentGuardians && sourceStudent.studentGuardians.length > 0) {
       for (const sg of sourceStudent.studentGuardians) {
         // Créer ou réutiliser le guardian
@@ -497,14 +653,44 @@ export class StudentTransferService {
       }
     }
 
-    // ⭐ 3. Créer une inscription dans l'école destination
+    // ⭐ 6. Copier les documents du dossier élève (2026-11-27 — le dossier
+    //    transféré doit être COMPLET : actes, bulletins, certificats…)
+    if (sourceStudent.studentDocuments && sourceStudent.studentDocuments.length > 0) {
+      for (const doc of sourceStudent.studentDocuments) {
+        try {
+          await this.prisma.studentDocument.create({
+            data: {
+              tenantId: request.targetSchoolId,
+              academicYearId: destinationYearId,
+              schoolLevelId: destSchoolLevelId || sourceStudent.schoolLevelId,
+              studentId: newStudent.id,
+              documentType: doc.documentType,
+              fileName: doc.fileName,
+              filePath: doc.filePath,
+              fileSize: doc.fileSize,
+              mimeType: doc.mimeType,
+              uploadedBy: doc.uploadedBy,
+            },
+          });
+        } catch (docErr: any) {
+          // Non bloquant — le document reste disponible côté école source
+          this.logger.warn(`Transfert : document ${doc.id} non copié (non bloquant): ${docErr?.message}`);
+        }
+      }
+    }
+
+    // ⭐ 7. Créer une inscription dans l'école destination
+    //    - academicClassId = classe OFFICIELLE demandée pendant l'initiation
+    //    - classId = section PHYSIQUE (choix direction, auto si unique, sinon
+    //      à affecter plus tard via l'onglet Affectations & Mouvements)
     await this.prisma.studentEnrollment.create({
       data: {
         tenantId: request.targetSchoolId,
         studentId: newStudent.id,
-        academicYearId: request.destinationAcademicYearId || request.academicYearId,
-        schoolLevelId: request.requestedLevelId || sourceStudent.schoolLevelId,
-        classId: request.requestedClassId || null,
+        academicYearId: destinationYearId,
+        schoolLevelId: destSchoolLevelId || sourceStudent.schoolLevelId,
+        classId: resolvedPhysicalClassId,
+        academicClassId: request.requestedClassId || null,
         enrollmentType: 'TRANSFER',
         enrollmentDate: new Date(),
         status: 'ACTIVE',
@@ -512,50 +698,51 @@ export class StudentTransferService {
       },
     });
 
-    // ⭐ 4. Créer un enregistrement académique initial
+    // ⭐ 8. Créer un enregistrement académique initial
     await this.prisma.studentAcademicRecord.upsert({
       where: {
         studentId_academicYearId: {
           studentId: newStudent.id,
-          academicYearId: request.destinationAcademicYearId || request.academicYearId,
+          academicYearId: destinationYearId,
         },
       },
       update: {},
       create: {
         tenantId: request.targetSchoolId,
         studentId: newStudent.id,
-        academicYearId: request.destinationAcademicYearId || request.academicYearId,
-        schoolLevelId: request.requestedLevelId || sourceStudent.schoolLevelId,
-        classId: request.requestedClassId || null,
+        academicYearId: destinationYearId,
+        schoolLevelId: destSchoolLevelId || sourceStudent.schoolLevelId,
+        classId: resolvedPhysicalClassId,
         enrollmentStatus: 'ACTIVE',
       },
     });
 
-    // ⭐ 5. Marquer le transfert comme complété
+    // ⭐ 9. Marquer le transfert comme complété (avec les deux matricules locaux)
     const res = await this.prisma.studentTransferRequest.update({
       where: { id: transferId },
       data: {
         status: 'COMPLETED',
         executedAt: new Date(),
         completedAt: new Date(),
-        destinationLocalMatricule: newStudent.studentCode || null,
+        destinationLocalMatricule: localMatricule,
+        sourceLocalMatricule: sourceStudent.matricule || sourceStudent.studentCode || null,
       },
     });
 
-    await this.logStatusChange(transferId, 'COMPLETED', userId || 'SYSTEM', 'Transfert exécuté. Dossier migré vers l\'école destination.');
+    await this.logStatusChange(transferId, 'COMPLETED', userId || 'SYSTEM', `Transfert exécuté. Dossier migré vers l'école destination (matricule local : ${localMatricule}).`);
 
-    // ⭐ 6. Notifier l'école source que le transfert est complet
+    // ⭐ 10. Notifier l'école source que le transfert est complet
     await this.notifySchool(
       request.sourceSchoolId,
       'Transfert complété',
-      `Le transfert de ${sourceStudent.firstName} ${sourceStudent.lastName} vers ${request.targetSchool.name} est maintenant complet. L'élève est inscrit dans son nouvel établissement.`,
+      `Le transfert de ${sourceStudent.firstName} ${sourceStudent.lastName} vers ${request.targetSchool.name} est maintenant complet. L'élève est inscrit dans son nouvel établissement avec le matricule local ${localMatricule}.`,
       { transferId, type: 'TRANSFER_COMPLETED' }
     );
 
-    // ⭐ 7. Notifier les parents
+    // ⭐ 11. Notifier les parents
     await this.notifyParents(sourceStudent.id, transferId, 'COMPLETED');
 
-    this.logger.log(`🎉 Transfert complété : ${sourceStudent.firstName} ${sourceStudent.lastName} → ${request.targetSchool.name} (ID: ${transferId})`);
+    this.logger.log(`🎉 Transfert complété : ${sourceStudent.firstName} ${sourceStudent.lastName} → ${request.targetSchool.name} (ID: ${transferId}, matricule local: ${localMatricule})`);
     return res;
   }
 
@@ -665,6 +852,51 @@ export class StudentTransferService {
       take: 50,
       orderBy: { name: 'asc' },
     });
+  }
+
+  /**
+   * ⭐ 2026-11-27 — Catalogue d'accueil d'une école destination (pour le
+   * wizard d'initiation) : niveaux actifs + classes OFFICIELLES de l'année
+   * active de l'école destination.
+   *
+   * Permet à l'école source de définir, PENDANT l'initiation, le niveau et
+   * la classe souhaités dans l'école d'accueil (même classe ou classe
+   * supérieure) — les niveaux/classes de la destination sont spécifiques à
+   * chaque école (AcademicYear et AcademicClass sont par tenant).
+   */
+  async getDestinationSchoolCatalog(schoolId: string) {
+    const school = await this.prisma.tenant.findFirst({
+      where: { id: schoolId, type: 'SCHOOL', status: 'active' },
+      select: { id: true, name: true, slug: true },
+    });
+    if (!school) throw new NotFoundException('École destination non trouvée');
+
+    // Année active (ou la plus récente non clôturée) de l'école destination
+    const activeYear = await this.prisma.academicYear.findFirst({
+      where: { tenantId: schoolId, isActive: true },
+      orderBy: { startDate: 'desc' },
+    }) || await this.prisma.academicYear.findFirst({
+      where: { tenantId: schoolId, isClosed: false },
+      orderBy: { startDate: 'desc' },
+    });
+
+    if (!activeYear) {
+      return { school, academicYear: null, levels: [], classes: [] };
+    }
+
+    const levels = await this.prisma.schoolLevel.findMany({
+      where: { tenantId: schoolId, isActive: true },
+      select: { id: true, code: true, name: true, label: true, order: true },
+      orderBy: { order: 'asc' },
+    });
+
+    const classes = await this.prisma.academicClass.findMany({
+      where: { tenantId: schoolId, academicYearId: activeYear.id, isActive: true },
+      select: { id: true, name: true, code: true, levelId: true, capacity: true },
+      orderBy: { name: 'asc' },
+    });
+
+    return { school, academicYear: { id: activeYear.id, name: activeYear.name }, levels, classes };
   }
 
   // ═══════════════════════════════════════════════════════════════════════

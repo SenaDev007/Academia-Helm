@@ -919,6 +919,16 @@ class StudentsService {
   }
 
   /**
+   * ⭐ 2026-11-27 — Catalogue d'accueil d'une école destination : niveaux
+   * actifs + classes officielles de l'année active de l'école ciblée.
+   * Utilisé par le wizard d'initiation pour choisir le niveau/classe
+   * souhaités (même classe ou classe supérieure).
+   */
+  async getDestinationSchoolClasses(schoolId: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/transfers/destination-classes/${encodeURIComponent(schoolId)}`);
+  }
+
+  /**
    * ⭐ Approuve un transfert entrant (côté école destination).
    */
   async approveTransfer(transferId: string): Promise<any> {
@@ -958,10 +968,15 @@ class StudentsService {
 
   /**
    * ⭐ Exécute un transfert (finalisation côté école destination).
+   * ⭐ 2026-11-27 — physicalClassId optionnel : classe PHYSIQUE choisie par
+   * la direction au moment de finaliser (comme le flux d'inscription).
+   * Si absent : auto-affectation si section unique, sinon affectation
+   * ultérieure via l'onglet Affectations & Mouvements.
    */
-  async executeTransfer(transferId: string): Promise<any> {
+  async executeTransfer(transferId: string, physicalClassId?: string | null): Promise<any> {
     return apiFetch(`${BASE_URL}/transfers/${encodeURIComponent(transferId)}/execute`, {
       method: "POST",
+      body: { physicalClassId: physicalClassId || null },
     });
   }
 

@@ -54,6 +54,18 @@ export class StudentTransferController {
     return this.transferService.searchSchools(q);
   }
 
+  /**
+   * ⭐ 2026-11-27 — Catalogue d'accueil d'une école destination (wizard
+   * d'initiation) : niveaux actifs + classes OFFICIELLES de l'année active
+   * de l'école ciblée. Permet de choisir le niveau et la classe souhaités
+   * (même classe ou classe supérieure) PENDANT l'initiation du transfert.
+   */
+  @Get('destination-classes/:schoolId')
+  @Roles(...MANAGEMENT_ROLES)
+  async getDestinationClasses(@Param('schoolId') schoolId: string) {
+    return this.transferService.getDestinationSchoolCatalog(schoolId);
+  }
+
   @Post(':id/approve')
   @Roles(...MANAGEMENT_ROLES)
   async approve(@Param('id') id: string, @Req() req: any) {
@@ -82,8 +94,14 @@ export class StudentTransferController {
 
   @Post(':id/execute')
   @Roles(...MANAGEMENT_ROLES)
-  async execute(@Param('id') id: string, @Req() req: any) {
-    return this.transferService.executeTransfer(id, req.user?.userId, req.user.tenantId);
+  async execute(@Param('id') id: string, @Req() req: any, @Body() body?: { physicalClassId?: string | null }) {
+    // ⭐ 2026-11-27 — physicalClassId optionnel : classe PHYSIQUE choisie par
+    // la direction de la destination au moment de finaliser (comme le flux
+    // d'inscription). Si absent : auto-affectation si section unique, sinon
+    // affectation ultérieure via l'onglet Affectations & Mouvements.
+    return this.transferService.executeTransfer(id, req.user?.userId, req.user.tenantId, {
+      physicalClassId: body?.physicalClassId || null,
+    });
   }
 
   @Get(':id/dossier')

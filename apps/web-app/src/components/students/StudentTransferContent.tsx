@@ -70,6 +70,13 @@ interface TransferRecord {
   executedAt?: string | null;
   decisionDate?: string | null;
   academicYearId: string;
+  // ⭐ 2026-11-27 — Classe souhaitée (choisie pendant l'initiation) + matricules
+  requestedLevelId?: string | null;
+  requestedClassId?: string | null;
+  requestedLevelName?: string | null;
+  requestedClassName?: string | null;
+  destinationLocalMatricule?: string | null;
+  sourceLocalMatricule?: string | null;
 }
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
@@ -104,6 +111,42 @@ export default function StudentTransferContent() {
   const [dossierTransfer, setDossierTransfer] = useState<TransferRecord | null>(null);
   const [dossierData, setDossierData] = useState<any>(null);
   const [isLoadingDossier, setIsLoadingDossier] = useState(false);
+
+  // ⭐ 2026-11-27 — Finalisation côté destination : choix de la classe
+  //    PHYSIQUE (section), comme le processus d'inscription.
+  const [physicalClassId, setPhysicalClassId] = useState('');
+  const [myClasses, setMyClasses] = useState<any[]>([]);
+  const [isLoadingClasses, setIsLoadingClasses] = useState(false);
+
+  // Charger les classes physiques de MON école quand la modale « Inscrire » s'ouvre
+  useEffect(() => {
+    if (actionType !== 'execute' || !actionTransfer) return;
+    let cancelled = false;
+    setIsLoadingClasses(true);
+    setPhysicalClassId('');
+    fetch('/api/all-classes', { credentials: 'include', cache: 'no-store' })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        if (cancelled) return;
+        const list = Array.isArray(data) ? data : [];
+        setMyClasses(list);
+        // ⭐ Pré-sélection : si une seule section correspond à la classe
+        //    officielle demandée, la pré-remplir (même règle que l'inscription)
+        const sections = list.filter((c: any) => actionTransfer.requestedClassId && c.officialClassId === actionTransfer.requestedClassId);
+        if (sections.length === 1) setPhysicalClassId(sections[0].id);
+      })
+      .catch(() => { if (!cancelled) setMyClasses([]); })
+      .finally(() => { if (!cancelled) setIsLoadingClasses(false); });
+    return () => { cancelled = true; };
+  }, [actionType, actionTransfer]);
+
+  // Sections physiques proposées : celles de la classe officielle demandée en
+  // priorité ; l'option « toutes les classes » reste accessible via un select complet
+  const sectionOptions = useMemo(() => {
+    if (!actionTransfer?.requestedClassId) return myClasses;
+    const matching = myClasses.filter((c: any) => c.officialClassId === actionTransfer.requestedClassId);
+    return matching.length > 0 ? matching : myClasses;
+  }, [myClasses, actionTransfer?.requestedClassId]);
 
   // ─── Chargement des données ───
   const loadData = useCallback(async () => {
@@ -182,8 +225,14 @@ export default function StudentTransferContent() {
         await studentsService.confirmTransferExit(actionTransfer.id);
         toast({ title: '✅ Sortie confirmée', description: 'L\'élève est officiellement sorti de votre établissement.', variant: 'success' });
       } else if (actionType === 'execute') {
-        await studentsService.executeTransfer(actionTransfer.id);
-        toast({ title: '✅ Transfert exécuté', description: 'L\'élève est maintenant inscrit dans votre établissement.', variant: 'success' });
+        await studentsService.executeTransfer(actionTransfer.id, physicalClassId || null);
+        toast({
+          title: '✅ Élève inscrit',
+          description: physicalClassId
+            ? 'L\'élève est inscrit dans votre établissement et affecté à la classe choisie. Un matricule local vient d\'être généré automatiquement.'
+            : 'L\'élève est inscrit dans votre établissement (matricule local généré). S\'il n\'a pas été affecté automatiquement à une classe physique, retrouvez-le dans l\'onglet « Affectations & Mouvements ».',
+          variant: 'success',
+        });
       }
       setActionTransfer(null);
       setActionType(null);
@@ -253,6 +302,23 @@ export default function StudentTransferContent() {
                   </span>
                 </>
               )}
+              {(t.requestedLevelName || t.requestedClassName) && (
+                <>
+                  <span className="text-slate-200">•</span>
+                  <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">
+                    {isIncoming ? 'Accueil souhaité : ' : 'Souhaité : '}
+                    {t.requestedLevelName || '—'}{t.requestedClassName ? ` / ${t.requestedClassName}` : ''}
+                  </span>
+                </>
+              )}
+              {t.status === 'COMPLETED' && t.destinationLocalMatricule && (
+                <>
+                  <span className="text-slate-200">•</span>
+                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">
+                    Nouveau mat : {t.destinationLocalMatricule}
+                  </span>
+                </>
+              )}
               <span className="text-slate-200">•</span>
               <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">
                 {isIncoming ? `De : ${otherSchoolName}` : `Vers : ${otherSchoolName}`}
@@ -300,6 +366,12 @@ export default function StudentTransferContent() {
             )}
 
             {isIncoming && t.status === 'ACCEPTED_BY_DESTINATION' && (
+              <span className="px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                Attente confirmation origine
+              </span>
+            )}
+
+            {isIncoming && t.status === 'APPROVED_BY_SOURCE' && (
               <button
                 onClick={() => { setActionTransfer(t); setActionType('execute'); }}
                 className="px-3 py-1.5 bg-blue-900 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-blue-800 transition"
@@ -308,13 +380,19 @@ export default function StudentTransferContent() {
               </button>
             )}
 
-            {!isIncoming && (t.status === 'ACCEPTED_BY_DESTINATION' || t.status === 'APPROVED_BY_SOURCE') && !t.executedAt && (
+            {!isIncoming && t.status === 'ACCEPTED_BY_DESTINATION' && !t.executedAt && (
               <button
                 onClick={() => { setActionTransfer(t); setActionType('confirm-exit'); }}
                 className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-amber-700 transition"
               >
                 Confirmer sortie
               </button>
+            )}
+
+            {!isIncoming && t.status === 'APPROVED_BY_SOURCE' && !t.executedAt && (
+              <span className="px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                Attente inscription destination
+              </span>
             )}
           </div>
         </div>
@@ -530,14 +608,69 @@ export default function StudentTransferContent() {
               {actionType === 'confirm-exit' && (
                 <p className="text-xs text-slate-600">
                   Cette action confirme officiellement la sortie de l'élève de votre établissement.
-                  Le dossier sera transféré définitivement vers l'école destination.
+                  Le dossier sera transféré définitivement vers l'école destination. L'élève sera marqué
+                  comme « transféré » et archivé dans votre établissement — il ne sera plus compté
+                  parmi vos effectifs actifs.
                 </p>
               )}
               {actionType === 'execute' && (
-                <p className="text-xs text-slate-600">
-                  Cette action finalise le transfert en inscrivant l'élève dans votre établissement.
-                  Un nouveau matricule local sera attribué.
-                </p>
+                <div className="space-y-3">
+                  {/* Niveau/classe souhaités (définis pendant l'initiation) */}
+                  {(actionTransfer.requestedLevelName || actionTransfer.requestedClassName) && (
+                    <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                      <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider mb-1">Accueil souhaité (défini par l'école d'origine)</p>
+                      <p className="text-sm font-semibold text-slate-800">
+                        {actionTransfer.requestedLevelName || '—'}
+                        {actionTransfer.requestedClassName ? ` — classe ${actionTransfer.requestedClassName}` : ''}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* ⭐ Classe physique — même étape que le processus d'inscription */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                      Classe physique (section) — votre établissement
+                    </label>
+                    {isLoadingClasses ? (
+                      <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
+                        <Loader2 className="w-4 h-4 animate-spin" /> Chargement de vos classes…
+                      </div>
+                    ) : sectionOptions.length === 0 ? (
+                      <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                        Aucune classe physique configurée dans votre établissement. L'inscription se fera sans
+                        classe — l'élève sera affecté plus tard via « Affectations & Mouvements ».
+                      </p>
+                    ) : (
+                      <select
+                        value={physicalClassId}
+                        onChange={(e) => setPhysicalClassId(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">— Passer cette étape (affecter plus tard) —</option>
+                        {sectionOptions.map((c: any) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}{c.schoolLevel?.name ? ` (${c.schoolLevel.name})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                      Si vous passez cette étape : le système affecte automatiquement la classe physique si une seule
+                      section correspond à la classe officielle demandée ; sinon l'élève restera à affecter dans
+                      l'onglet « Affectations & Mouvements », exactement comme le processus d'inscription.
+                    </p>
+                  </div>
+
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-xs text-emerald-800">
+                    <p className="font-bold">À la confirmation :</p>
+                    <ul className="mt-1 space-y-0.5 list-disc list-inside">
+                      <li>L'élève est intégré à votre base de données avec son dossier complet</li>
+                      <li>Un <strong>matricule local</strong> de votre établissement est généré automatiquement</li>
+                      <li>Son <strong>matricule global Academia Helm</strong> est conservé</li>
+                      <li>L'école d'origine est notifiée ; l'élève y est archivé comme « transféré »</li>
+                    </ul>
+                  </div>
+                </div>
               )}
             </div>
             <div className="px-6 py-4 bg-slate-50 flex justify-end gap-2">

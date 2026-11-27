@@ -29,7 +29,7 @@ import {
   //    defined » au rendu de /app/cms — le crash était masqué par le bug du
   //    feature flag CMS qui rendait le bouton « Site Institutionnel » invisible,
   //    donc la page inatteignable).
-  Users, Award, Clock,
+  Users, Award, Clock, Sparkles, ListCollapse, ListTree,
 } from 'lucide-react';
 import { toast } from '@/components/ui/toast';
 import { tenantWebsiteService } from '@/services/tenant-website.service';
@@ -49,34 +49,89 @@ type SubTab =
   | 'partners' | 'navigation' | 'hours'
   | 'contact' | 'social' | 'seo' | 'footer' | 'settings';
 
-const TABS: { id: SubTab; label: string; icon: any }[] = [
-  { id: 'general', label: 'Coordonnées', icon: Settings },
-  { id: 'colors', label: 'Couleurs', icon: Palette },
-  { id: 'themes', label: 'Thèmes', icon: Palette },
-  { id: 'components', label: 'Composants', icon: LayoutTemplate },
-  { id: 'hero', label: 'Bannière', icon: LayoutTemplate },
-  { id: 'figures', label: 'Chiffres clés', icon: BarChart3 },
-  { id: 'promoter', label: 'Mot du Promoteur', icon: MessageSquare },
-  { id: 'director', label: 'Mot du Directeur', icon: MessageSquare },
-  { id: 'presentation', label: 'Présentation', icon: Presentation },
-  { id: 'programs', label: 'Programmes', icon: BookOpen },
-  { id: 'faculty', label: 'Corps enseignant', icon: Users },
-  { id: 'admissions', label: 'Admissions', icon: UserPlus },
-  { id: 'schoolLife', label: 'Vie scolaire', icon: BookOpen },
-  { id: 'news', label: 'Actualités', icon: FileText },
-  { id: 'agenda', label: 'Agenda', icon: Calendar },
-  { id: 'gallery', label: 'Galerie', icon: Images },
-  { id: 'testimonials', label: 'Témoignages', icon: Star },
-  { id: 'faq', label: 'FAQ', icon: HelpCircle },
-  { id: 'partners', label: 'Partenaires', icon: Award },
-  { id: 'navigation', label: 'Navigation', icon: ArrowRight },
-  { id: 'hours', label: 'Horaires', icon: Clock },
-  { id: 'contact', label: 'Messages reçus', icon: Mail },
-  { id: 'social', label: 'Réseaux sociaux', icon: Share2 },
-  { id: 'seo', label: 'Visibilité Google', icon: Search },
-  { id: 'footer', label: 'Bas de page', icon: PanelBottom },
-  { id: 'settings', label: 'Paramètres', icon: Settings },
+/** ⭐ 2026-11-27 — Refonte navigation demandée par le promoteur : fini les
+ *  26 onglets alignés « à perte de vue ». Le module n'a plus que 4 onglets :
+ *  CONTENU (unique, sectionné de haut en bas comme la page publique) +
+ *  Couleurs + Thèmes + Composants. */
+type TopTab = 'content' | 'colors' | 'themes' | 'components';
+
+const TOP_TABS: { id: TopTab; label: string; icon: any; hint: string }[] = [
+  { id: 'content', label: 'Contenu du site', icon: FileText, hint: 'Toutes les sections, hiérarchisées du haut vers le bas de la page publique' },
+  { id: 'colors', label: 'Couleurs', icon: Palette, hint: 'Palette personnalisée de l’école' },
+  { id: 'themes', label: 'Thèmes', icon: Sparkles, hint: '40 designs professionnels' },
+  { id: 'components', label: 'Composants', icon: LayoutTemplate, hint: 'Navbar, bannière, pied de page…' },
 ];
+
+interface ContentSectionDef {
+  id: SubTab;
+  label: string;
+  description: string;
+  icon: any;
+}
+
+/** Sections du site, ordonnées DU HAUT VERS LE BAS de la page publique,
+ *  regroupées en chapitres hiérarchiques (même ordre que le rendu public
+ *  InstitutionalWebsite.tsx : navigation → bannière → chiffres → mots →
+ *  présentation → programmes → corps enseignant → admissions → vie scolaire
+ *  → actualités → agenda → galerie → témoignages → FAQ → partenaires →
+ *  pied de page). */
+const CONTENT_GROUPS: { label: string; sections: ContentSectionDef[] }[] = [
+  {
+    label: 'En-tête & identité',
+    sections: [
+      { id: 'general', label: 'Identité & coordonnées', description: 'Contacts, adresse, localisation — affichés dans tout le site', icon: Settings },
+      { id: 'navigation', label: 'Menu de navigation', description: 'Liens de la barre de navigation publique', icon: ArrowRight },
+      { id: 'hours', label: 'Horaires d’ouverture', description: 'Horaires semaine & samedi affichés aux familles', icon: Clock },
+      { id: 'social', label: 'Réseaux sociaux', description: 'Facebook, WhatsApp, LinkedIn, X…', icon: Share2 },
+    ],
+  },
+  {
+    label: 'Page d’accueil',
+    sections: [
+      { id: 'hero', label: 'Bannière d’accueil', description: 'Premier écran : titre, sous-titre, image, bouton d’action', icon: LayoutTemplate },
+      { id: 'figures', label: 'Chiffres clés', description: 'Élèves, enseignants, années d’expérience…', icon: BarChart3 },
+      { id: 'promoter', label: 'Mot du Promoteur', description: 'Message, photo et identité du promoteur', icon: MessageSquare },
+      { id: 'director', label: 'Mot du Directeur', description: 'Message, photo et identité du directeur', icon: MessageSquare },
+      { id: 'presentation', label: 'Présentation de l’école', description: 'Texte de présentation, image et points forts', icon: Presentation },
+    ],
+  },
+  {
+    label: 'Vie académique',
+    sections: [
+      { id: 'programs', label: 'Programmes pédagogiques', description: 'Cycles et formations proposés par l’école', icon: BookOpen },
+      { id: 'faculty', label: 'Corps enseignant', description: 'Équipe pédagogique et ratio élèves/enseignant', icon: Users },
+      { id: 'admissions', label: 'Admissions', description: 'Étapes d’inscription et pièces à fournir', icon: UserPlus },
+      { id: 'schoolLife', label: 'Vie scolaire', description: 'Activités, environnement et vie quotidienne', icon: School },
+    ],
+  },
+  {
+    label: 'Vie de l’école',
+    sections: [
+      { id: 'news', label: 'Actualités', description: 'Articles publiés sur le site public', icon: FileText },
+      { id: 'agenda', label: 'Agenda & événements', description: 'Calendrier des événements à venir', icon: Calendar },
+      { id: 'gallery', label: 'Galerie photos', description: 'Photos de l’école et des activités', icon: Images },
+      { id: 'testimonials', label: 'Témoignages', description: 'Avis des parents et des élèves', icon: Star },
+      { id: 'faq', label: 'Foire aux questions', description: 'Questions/réponses destinées aux familles', icon: HelpCircle },
+      { id: 'partners', label: 'Partenaires', description: 'Logos des partenaires de l’école', icon: Award },
+    ],
+  },
+  {
+    label: 'Bas de page & référencement',
+    sections: [
+      { id: 'footer', label: 'Bas de page', description: 'Texte « à propos » et copyright du pied de page', icon: PanelBottom },
+      { id: 'seo', label: 'Visibilité Google', description: 'Titre, description et image de partage (SEO)', icon: Search },
+    ],
+  },
+  {
+    label: 'Suivi & administration',
+    sections: [
+      { id: 'contact', label: 'Messages reçus', description: 'Demandes envoyées via le formulaire de contact du site', icon: Mail },
+      { id: 'settings', label: 'Paramètres & visibilité', description: 'Activation du site public et assistant IA', icon: Settings },
+    ],
+  },
+];
+
+const CONTENT_SECTIONS: ContentSectionDef[] = CONTENT_GROUPS.flatMap((g) => g.sections);
 
 // ═══════════════════════════════════════════════════════════════════════
 //  SHARED LAYOUT COMPONENTS — Architecture Webflow
@@ -199,7 +254,7 @@ function AutoSaveBar({ saving, onSave, autoSaveStatus }: { saving: boolean; onSa
 // ═══════════════════════════════════════════════════════════════════════
 
 export function CmsWorkspace() {
-  const [activeTab, setActiveTab] = useState<SubTab>('hero');
+  const [activeTab, setActiveTab] = useState<TopTab>('content');
   const [config, setConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -237,11 +292,6 @@ export function CmsWorkspace() {
     }
   };
 
-  /** Handler qui déclenche à la fois l'auto-save et permet le save manuel */
-  const handleAutoSave = (data: any) => {
-    autoSave(data);
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -253,18 +303,22 @@ export function CmsWorkspace() {
 
   return (
     <div className="space-y-4 pb-12">
-      {/* Sub-tab navigation + auto-save badge */}
+      {/* ═══ Navigation principale — 4 onglets hiérarchisés ═══
+          (refonte 2026-11-27 : un seul onglet de CONTENU sectionné du haut
+          vers le bas de la page publique + Couleurs + Thèmes + Composants) */}
       <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
-        <div className="flex items-center gap-1.5 overflow-x-auto">
-          {TABS.map((tab) => {
+        <div className="flex items-center gap-2 overflow-x-auto">
+          {TOP_TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-                  isActive ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)} title={tab.hint}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-600 hover:bg-slate-100 border border-slate-200 bg-white'
                 }`}>
-                <Icon className="h-3.5 w-3.5" />
+                <Icon className="h-4 w-4" />
                 {tab.label}
               </button>
             );
@@ -274,32 +328,223 @@ export function CmsWorkspace() {
       </div>
 
       {/* Content */}
-      {activeTab === 'general' && <GeneralTab config={config} onSave={handleSave} saving={saving} />}
+      {activeTab === 'content' && <SiteContentTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'colors' && <ColorsTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'themes' && <ThemesTab />}
       {activeTab === 'components' && <ComponentsTab />}
-      {activeTab === 'hero' && <HeroTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'figures' && <FiguresTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'promoter' && <PromoterTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'director' && <DirectorTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'presentation' && <PresentationTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'programs' && <ProgramsTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'faculty' && <FacultyTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'admissions' && <AdmissionsTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'schoolLife' && <SchoolLifeTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'news' && <NewsTab />}
-      {activeTab === 'agenda' && <AgendaTab />}
-      {activeTab === 'gallery' && <GalleryTab />}
-      {activeTab === 'testimonials' && <TestimonialsTab />}
-      {activeTab === 'faq' && <FaqTab />}
-      {activeTab === 'partners' && <PartnersTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'navigation' && <NavigationTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'hours' && <HoursTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'contact' && <ContactTab />}
-      {activeTab === 'social' && <SocialTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'seo' && <SeoTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'footer' && <FooterTab config={config} onSave={handleSave} saving={saving} />}
-      {activeTab === 'settings' && <SettingsTab config={config} onSave={handleSave} saving={saving} />}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TAB: CONTENU — page unique hiérarchisée, sectionnée de haut en bas
+//  Sommaire sticky à gauche (chapitres + sections numérotées), sections
+//  empilées à droite en accordéons lazy-mountés (l'état des formulaires
+//  est conservé une fois la section ouverte).
+// ═══════════════════════════════════════════════════════════════════════
+
+/** Rend le composant d'édition d'une section (réutilise les anciens onglets tels quels) */
+function renderSectionEditor(id: SubTab, config: any, onSave: (d: any) => void, saving: boolean) {
+  switch (id) {
+    case 'general': return <GeneralTab config={config} onSave={onSave} saving={saving} />;
+    case 'navigation': return <NavigationTab config={config} onSave={onSave} saving={saving} />;
+    case 'hours': return <HoursTab config={config} onSave={onSave} saving={saving} />;
+    case 'social': return <SocialTab config={config} onSave={onSave} saving={saving} />;
+    case 'hero': return <HeroTab config={config} onSave={onSave} saving={saving} />;
+    case 'figures': return <FiguresTab config={config} onSave={onSave} saving={saving} />;
+    case 'promoter': return <PromoterTab config={config} onSave={onSave} saving={saving} />;
+    case 'director': return <DirectorTab config={config} onSave={onSave} saving={saving} />;
+    case 'presentation': return <PresentationTab config={config} onSave={onSave} saving={saving} />;
+    case 'programs': return <ProgramsTab config={config} onSave={onSave} saving={saving} />;
+    case 'faculty': return <FacultyTab config={config} onSave={onSave} saving={saving} />;
+    case 'admissions': return <AdmissionsTab config={config} onSave={onSave} saving={saving} />;
+    case 'schoolLife': return <SchoolLifeTab config={config} onSave={onSave} saving={saving} />;
+    case 'news': return <NewsTab />;
+    case 'agenda': return <AgendaTab />;
+    case 'gallery': return <GalleryTab />;
+    case 'testimonials': return <TestimonialsTab />;
+    case 'faq': return <FaqTab />;
+    case 'partners': return <PartnersTab config={config} onSave={onSave} saving={saving} />;
+    case 'footer': return <FooterTab config={config} onSave={onSave} saving={saving} />;
+    case 'seo': return <SeoTab config={config} onSave={onSave} saving={saving} />;
+    case 'contact': return <ContactTab />;
+    case 'settings': return <SettingsTab config={config} onSave={onSave} saving={saving} />;
+    default: return null;
+  }
+}
+
+function SiteContentTab({ config, onSave, saving }: { config: any; onSave: (d: any) => void; saving: boolean }) {
+  const [openSections, setOpenSections] = useState<Set<SubTab>>(() => new Set(['general']));
+  const [mounted, setMounted] = useState<Set<SubTab>>(() => new Set(['general']));
+  const [activeSection, setActiveSection] = useState<SubTab>('general');
+  const sectionRefs = useRef<Partial<Record<SubTab, HTMLDivElement | null>>>({});
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  /** Ouvre une section (lazy-mount au premier accès) et y défile en douceur */
+  const openSection = useCallback((id: SubTab, scroll = true) => {
+    setOpenSections((prev) => new Set(prev).add(id));
+    setMounted((prev) => new Set(prev).add(id));
+    setActiveSection(id);
+    if (scroll) {
+      requestAnimationFrame(() => {
+        sectionRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  }, []);
+
+  const toggleSection = useCallback((id: SubTab) => {
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setMounted((prev) => new Set(prev).add(id));
+  }, []);
+
+  const expandAll = useCallback(() => {
+    setOpenSections(new Set(CONTENT_SECTIONS.map((s) => s.id)));
+    setMounted(new Set(CONTENT_SECTIONS.map((s) => s.id)));
+  }, []);
+
+  const collapseAll = useCallback(() => {
+    setOpenSections(new Set());
+  }, []);
+
+  // Scroll-spy : la section visible au défilement devient la section active
+  useEffect(() => {
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const id = (entry.target as HTMLElement).dataset.section as SubTab | undefined;
+            if (id) setActiveSection(id);
+          }
+        }
+      },
+      { rootMargin: '-20% 0px -70% 0px' },
+    );
+    const observer = observerRef.current;
+    Object.values(sectionRefs.current).forEach((el) => el && observer.observe(el));
+    return () => observer.disconnect();
+  }, [mounted]);
+
+  const sectionIndex = (id: SubTab) => CONTENT_SECTIONS.findIndex((s) => s.id === id) + 1;
+  const openCount = openSections.size;
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[250px_1fr] gap-6">
+      {/* ── Sommaire hiérarchisé (sticky) — chapitres + sections numérotées ── */}
+      <nav className="hidden lg:block" aria-label="Sections du site">
+        <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pr-1 space-y-4">
+          <div className="flex items-center gap-2 px-2">
+            <ListTree className="w-3.5 h-3.5 text-slate-400" />
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Sommaire du site</p>
+          </div>
+          {CONTENT_GROUPS.map((group) => (
+            <div key={group.label}>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 mb-1">{group.label}</p>
+              <div className="space-y-0.5">
+                {group.sections.map((sec) => {
+                  const num = sectionIndex(sec.id);
+                  const isActive = activeSection === sec.id;
+                  const isOpen = openSections.has(sec.id);
+                  return (
+                    <button
+                      key={sec.id}
+                      onClick={() => openSection(sec.id)}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-xs transition-all ${
+                        isActive
+                          ? 'bg-blue-600 text-white font-semibold shadow-sm'
+                          : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                      title={sec.description}
+                    >
+                      <span className={`w-5 shrink-0 text-right tabular-nums text-[10px] ${isActive ? 'text-blue-100' : 'text-slate-400'}`}>{String(num).padStart(2, '0')}</span>
+                      <span className="truncate">{sec.label}</span>
+                      {isOpen && !isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="Section ouverte" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </nav>
+
+      {/* ── Sections empilées, de haut en bas de la page publique ── */}
+      <div className="space-y-4 min-w-0">
+        {/* Sommaire mobile (select) + contrôles d'ouverture globale */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+          <select
+            className={`${inputClass} lg:hidden flex-1`}
+            value={activeSection}
+            onChange={(e) => openSection(e.target.value as SubTab)}
+            aria-label="Aller à une section"
+          >
+            {CONTENT_GROUPS.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.sections.map((sec) => (
+                  <option key={sec.id} value={sec.id}>{String(sectionIndex(sec.id)).padStart(2, '0')}. {sec.label}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <p className="hidden lg:flex-1 text-xs text-slate-500 items-center gap-1.5">
+            <ListCollapse className="w-3.5 h-3.5 shrink-0" />
+            {CONTENT_SECTIONS.length} sections hiérarchisées, de l’en-tête au bas de page — {openCount} ouverte{openCount > 1 ? 's' : ''}. Modifications enregistrées automatiquement.
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={expandAll} className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition">Tout déplier</button>
+            <button onClick={collapseAll} className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition">Tout replier</button>
+          </div>
+        </div>
+
+        {CONTENT_GROUPS.map((group) => (
+          <div key={group.label} className="space-y-4">
+            {/* Titre de chapitre */}
+            <div className="flex items-center gap-3 pt-2">
+              <span className="h-px flex-1 bg-slate-200" />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{group.label}</span>
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
+            {group.sections.map((sec) => {
+              const num = sectionIndex(sec.id);
+              const isOpen = openSections.has(sec.id);
+              const Icon = sec.icon;
+              return (
+                <div
+                  key={sec.id}
+                  data-section={sec.id}
+                  ref={(el) => { sectionRefs.current[sec.id] = el; }}
+                  className="scroll-mt-24 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+                >
+                  <button
+                    onClick={() => toggleSection(sec.id)}
+                    className="flex items-center gap-3 w-full text-left p-4 hover:bg-slate-50 transition"
+                    aria-expanded={isOpen}
+                  >
+                    <span className={`flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold tabular-nums shrink-0 transition-colors ${
+                      isOpen ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700'
+                    }`}>{String(num).padStart(2, '0')}</span>
+                    <Icon className={`w-4 h-4 shrink-0 ${isOpen ? 'text-blue-600' : 'text-slate-400'}`} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-bold text-slate-800 truncate">{sec.label}</span>
+                      <span className="block text-xs text-slate-400 truncate">{sec.description}</span>
+                    </span>
+                    <span className={`text-slate-400 transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+                  </button>
+                  {isOpen && mounted.has(sec.id) && (
+                    <div className="border-t border-slate-100 p-4 pt-5">
+                      {renderSectionEditor(sec.id, config, onSave, saving)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1953,12 +2198,35 @@ function FooterTab({ config, onSave, saving }: any) {
   );
 }
 
-function SettingsTab({ config, onSave, saving }: any) {
+function SettingsTab({ config, onSave, saving, onReset }: any) {
   const [form, setForm] = useState({
     isActive: config?.isActive ?? true,
     aiEnabled: config?.aiEnabled ?? false,
     aiWelcomeMessage: config?.aiWelcomeMessage || '',
   });
+  const [resetting, setResetting] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  /** ⭐ 2026-11-27 — Réinitialisation complète : collections + paramétrage + thème */
+  const handleReset = async () => {
+    setResetting(true);
+    try {
+      const res = await tenantWebsiteService.resetAll();
+      toast({
+        variant: 'success',
+        title: 'Site institutionnel réinitialisé',
+        description: `${res?.total ?? 0} élément(s) supprimé(s) — le site public affiche les valeurs par défaut.`,
+      });
+      setConfirmReset(false);
+      // Recharger toute la page pour repartir d'une config vierge
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (err: any) {
+      toast({ variant: 'error', title: 'Erreur lors de la réinitialisation', description: err?.message });
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <ControlCard title="Paramètres du site" icon={Settings}>
@@ -1969,6 +2237,53 @@ function SettingsTab({ config, onSave, saving }: any) {
         {form.aiEnabled && <TextAreaField label="Message de bienvenue" value={form.aiWelcomeMessage} onChange={(v) => setForm({ ...form, aiWelcomeMessage: v })} rows={3} />}
       </ControlCard>
       <AutoSaveBar saving={saving} onSave={() => onSave(form)} />
+
+      {/* ⭐ 2026-11-27 — Zone de danger : réinitialisation complète du module */}
+      <div className="bg-white rounded-xl border-2 border-red-200 p-5 shadow-sm">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+            <AlertCircle className="w-5 h-5" />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-sm font-bold text-slate-800">Réinitialiser le site institutionnel</h4>
+            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+              Supprime <strong>tout le paramétrage</strong> de ce module : coordonnées, bannière, chiffres clés, mots,
+              présentation, programmes, admissions, actualités, agenda, galerie, témoignages, FAQ, partenaires,
+              couleurs, thème choisi et messages reçus. Le site public repart sur les valeurs par défaut.
+              <strong> Cette action est irréversible.</strong>
+            </p>
+            {!confirmReset ? (
+              <button
+                onClick={() => setConfirmReset(true)}
+                className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 transition"
+              >
+                <Trash2 className="w-4 h-4" /> Réinitialiser tout le paramétrage…
+              </button>
+            ) : (
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg space-y-2">
+                <p className="text-sm font-semibold text-red-800">Confirmer la suppression définitive ?</p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleReset}
+                    disabled={resetting}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 transition"
+                  >
+                    {resetting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    {resetting ? 'Suppression en cours…' : 'Oui, tout supprimer'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmReset(false)}
+                    disabled={resetting}
+                    className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

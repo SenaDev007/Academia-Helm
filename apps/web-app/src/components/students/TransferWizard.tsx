@@ -3,8 +3,17 @@
  * TRANSFER WIZARD — Assistant de création de transfert inter-écoles
  * ============================================================================
  *
- * 4 étapes : Sélection élève → École destination → Motif → Confirmation
- * Connecté au backend /api/students/transfers (createTransferRequest)
+ * ⭐ 2026-11-27 — 5 étapes (demande promoteur, finalisation du flux) :
+ *   1. Élève            (filtres niveau/classe de l'école SOURCE)
+ *   2. École destination (annuaire de l'écosystème Academia Helm)
+ *   3. Classe souhaitée  (NOUVEAU — catalogue de la DESTINATION : le niveau
+ *                        sélectionné FILTRE les classes officielles ; le
+ *                        système affiche le niveau actuel pour distinguer
+ *                        « même niveau » / « niveau supérieur »)
+ *   4. Motif
+ *   5. Confirmation      (récapitulatif complet du dossier de transfert)
+ *
+ * Connecté au backend /api/students/transfers (createTransferRequest).
  * Design cohérent avec les autres modales de l'application.
  * ============================================================================
  */
@@ -14,7 +23,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   X, Search, User, Building2, CheckCircle2, Loader2,
-  ChevronRight, ChevronLeft, Send, AlertCircle,
+  ChevronRight, ChevronLeft, Send, AlertCircle, GraduationCap,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { studentsService } from '@/services/students.service';
@@ -46,6 +55,21 @@ interface SchoolItem {
   schools?: Array<{ city?: string | null; address?: string | null }>;
 }
 
+interface DestinationCatalog {
+  school: { id: string; name: string; slug?: string };
+  academicYear: { id: string; name: string } | null;
+  levels: Array<{ id: string; code: string; name: string; label?: string }>;
+  classes: Array<{ id: string; name: string; code?: string; levelId: string; capacity?: number | null }>;
+}
+
+const STEPS = [
+  { n: 1, label: 'Élève' },
+  { n: 2, label: 'École' },
+  { n: 3, label: 'Classe souhaitée' },
+  { n: 4, label: 'Motif' },
+  { n: 5, label: 'Confirmation' },
+];
+
 export default function TransferWizard({ isOpen, onClose }: TransferWizardProps) {
   const { academicYear } = useModuleContext();
   const [step, setStep] = useState(1);
@@ -54,6 +78,12 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
   const [transferMotif, setTransferMotif] = useState('');
   const [transferMessage, setTransferMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ⭐ 2026-11-27 — Étape 3 : catalogue de l'école destination
+  const [destCatalog, setDestCatalog] = useState<DestinationCatalog | null>(null);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
+  const [requestedLevelId, setRequestedLevelId] = useState('');
+  const [requestedClassId, setRequestedClassId] = useState('');
 
   // Recherche élèves
   const [studentSearch, setStudentSearch] = useState('');
@@ -79,7 +109,6 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
   }, []);
 
   // ⭐ Charger les classes physiques depuis /api/all-classes (comme les autres onglets)
-  // ⭐ FIX 2026-09-09 : classes de l'année du CONTEXTE + rechargement au switch.
   useEffect(() => {
     fetch(`/api/all-classes${academicYear?.id ? `?academicYearId=${encodeURIComponent(academicYear.id)}` : ''}`, { credentials: 'include', cache: 'no-store' })
       .then(r => r.ok ? r.json() : [])
@@ -99,8 +128,6 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
       if (query) params.search = query;
 
       // ⭐ Récupérer le schoolLevelId (UUID de school_levels) pour filtrer côté backend.
-      // /api/school-levels retourne { id: education_levels UUID, schoolLevelId: school_levels UUID }
-      // Si schoolLevelId est null (classes non chargées), on utilise l'id directement.
       if (levelId) {
         const level = schoolLevels.find(l => l.id === levelId);
         const effectiveSchoolLevelId = level?.schoolLevelId || levelId;
@@ -116,11 +143,9 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
       // ⭐ Si le filtre backend n'a pas marché (schoolLevelId null),
       // filtrer côté client par le code du niveau
       if (levelId && list.length === 0) {
-        // Récupérer le code du niveau sélectionné
         const level = schoolLevels.find(l => l.id === levelId);
         const levelCode = level?.code?.toUpperCase() || '';
         if (levelCode) {
-          // Refaire la requête sans schoolLevelId et filtrer côté client
           const params2: Record<string, string> = {
             academicYearId: academicYear.id,
             limit: '200',
@@ -130,7 +155,6 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
           let list2 = Array.isArray(data2) ? data2 : (data2?.data || []);
           list2 = list2.filter((s: any) => {
             if (s.status !== 'ACTIVE' || s.isActive === false) return false;
-            // Filtrer par le code du schoolLevel
             const studentLevelCode = (s.schoolLevel?.code || '').toUpperCase();
             return studentLevelCode === levelCode;
           });
@@ -173,6 +197,28 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
     }
   }, []);
 
+  // ⭐ 2026-11-27 — Charger le catalogue (niveaux + classes officielles) de
+  //    l'école destination dès qu'elle est sélectionnée, pour l'étape 3.
+  useEffect(() => {
+    if (!isOpen || !selectedSchool?.id) return;
+    let cancelled = false;
+    setIsLoadingCatalog(true);
+    setDestCatalog(null);
+    setRequestedLevelId('');
+    setRequestedClassId('');
+    studentsService.getDestinationSchoolClasses(selectedSchool.id)
+      .then((cat: any) => {
+        if (!cancelled) setDestCatalog(cat || null);
+      })
+      .catch(() => {
+        if (!cancelled) setDestCatalog(null);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingCatalog(false);
+      });
+    return () => { cancelled = true; };
+  }, [isOpen, selectedSchool?.id]);
+
   useEffect(() => {
     if (isOpen && step === 1) {
       loadStudents(studentSearch, filterLevelId, filterClassId);
@@ -196,6 +242,9 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
     setSchoolSearch('');
     setFilterLevelId('');
     setFilterClassId('');
+    setDestCatalog(null);
+    setRequestedLevelId('');
+    setRequestedClassId('');
     onClose();
   };
 
@@ -210,6 +259,8 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
         academicYearId: academicYear.id,
         motif: transferMotif || undefined,
         message: transferMessage || undefined,
+        requestedLevelId: requestedLevelId || undefined,
+        requestedClassId: requestedClassId || undefined,
       });
       toast({
         title: '✅ Demande de transfert envoyée',
@@ -230,10 +281,33 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
 
   if (!isOpen) return null;
 
+  // ⭐ Étape 3 : le niveau est requis si le catalogue propose des niveaux ;
+  //    la classe est requise si le niveau choisi a des classes.
+  const destClassesForLevel = requestedLevelId
+    ? (destCatalog?.classes || []).filter(c => c.levelId === requestedLevelId)
+    : [];
+  const step3Valid = !destCatalog
+    ? false // catalogue non chargé → on ne peut pas valider l'étape
+    : (destCatalog.levels || []).length === 0
+      ? true // la destination n'a pas configuré de niveaux → étape optionnelle
+      : (!!requestedLevelId && (destClassesForLevel.length === 0 ? true : !!requestedClassId));
+
   const canNext = step === 1 ? !!selectedStudent
     : step === 2 ? !!selectedSchool
-    : step === 3 ? true
+    : step === 3 ? step3Valid
+    : step === 4 ? true
     : false;
+
+  // Comparaison niveau actuel ↔ niveau souhaité (même niveau / supérieur)
+  const currentLevelCode = (selectedStudent?.schoolLevel?.code || '').toUpperCase();
+  const requestedLevel = (destCatalog?.levels || []).find(l => l.id === requestedLevelId);
+  const sameLevel = !!(currentLevelCode && requestedLevel && requestedLevel.code.toUpperCase() === currentLevelCode);
+
+  // Classes filtrées par le niveau choisi à l'étape 3 (affichage)
+  const destLevelName = requestedLevel?.label || requestedLevel?.name || '';
+  const destClassName = requestedClassId
+    ? (destCatalog?.classes || []).find(c => c.id === requestedClassId)?.name
+    : '';
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={handleClose}>
@@ -242,7 +316,7 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
           <div>
             <h3 className="text-base font-bold text-slate-800">Initier un transfert inter-écoles</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Étape {step} sur 4</p>
+            <p className="text-xs text-slate-500 mt-0.5">Étape {step} sur 5</p>
           </div>
           <button onClick={handleClose} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition">
             <X className="w-5 h-5" />
@@ -250,26 +324,21 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
         </div>
 
         {/* Stepper */}
-        <div className="flex items-center gap-2 px-6 py-3 border-b border-slate-100 bg-white">
-          {[
-            { n: 1, label: 'Élève' },
-            { n: 2, label: 'École' },
-            { n: 3, label: 'Motif' },
-            { n: 4, label: 'Confirmation' },
-          ].map((s, i) => (
-            <div key={s.n} className="flex items-center gap-2 flex-1">
+        <div className="flex items-center gap-2 px-6 py-3 border-b border-slate-100 bg-white overflow-x-auto">
+          {STEPS.map((s, i) => (
+            <div key={s.n} className="flex items-center gap-2 flex-1 min-w-fit">
               <div className={cn(
-                'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition',
+                'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition shrink-0',
                 step === s.n ? 'border-blue-600 bg-blue-600 text-white'
                 : step > s.n ? 'border-emerald-500 bg-emerald-500 text-white'
                 : 'border-slate-200 text-slate-400'
               )}>
                 {step > s.n ? <CheckCircle2 className="w-4 h-4" /> : s.n}
               </div>
-              <span className={cn('text-xs font-semibold', step === s.n ? 'text-blue-700' : 'text-slate-400')}>
+              <span className={cn('text-xs font-semibold whitespace-nowrap', step === s.n ? 'text-blue-700' : 'text-slate-400')}>
                 {s.label}
               </span>
-              {i < 3 && <div className={cn('flex-1 h-0.5 rounded-full', step > s.n ? 'bg-emerald-400' : 'bg-slate-100')} />}
+              {i < STEPS.length - 1 && <div className={cn('flex-1 h-0.5 rounded-full min-w-2', step > s.n ? 'bg-emerald-400' : 'bg-slate-100')} />}
             </div>
           ))}
         </div>
@@ -279,7 +348,7 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
           {/* Étape 1 : Sélection élève */}
           {step === 1 && (
             <div className="space-y-3">
-              {/* ⭐ Filtres niveau + classe + recherche (comme dans AdmissionsContent) */}
+              {/* ⭐ Filtres niveau + classe + recherche (école SOURCE — pour trouver l'élève) */}
               <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr] gap-2">
                 <select
                   value={filterLevelId}
@@ -371,7 +440,7 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
                   type="text"
                   value={schoolSearch}
                   onChange={(e) => setSchoolSearch(e.target.value)}
-                  placeholder="Rechercher une école dans le réseau..."
+                  placeholder="Rechercher une école dans le réseau Academia Helm..."
                   className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -415,8 +484,108 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
             </div>
           )}
 
-          {/* Étape 3 : Motif et message */}
+          {/* ⭐ Étape 3 : Classe souhaitée dans l'école destination (NOUVEAU) */}
           {step === 3 && (
+            <div className="space-y-4">
+              {/* Contexte : niveau actuel de l'élève */}
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex items-center gap-3">
+                <GraduationCap className="w-5 h-5 text-slate-400 shrink-0" />
+                <div className="text-xs text-slate-600">
+                  <span className="font-semibold">{selectedStudent?.lastName} {selectedStudent?.firstName}</span>
+                  {' — niveau actuel : '}
+                  <span className="font-semibold text-slate-800">{selectedStudent?.schoolLevel?.name || 'non précisé'}</span>
+                  {selectedSchool && (
+                    <>{' → accueil souhaité à '}<span className="font-semibold text-slate-800">{selectedSchool.name}</span></>
+                  )}
+                </div>
+              </div>
+
+              {isLoadingCatalog ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-2">
+                  <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+                  <p className="text-xs text-slate-400">Chargement du catalogue de l'école destination…</p>
+                </div>
+              ) : !destCatalog ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-800">
+                    <p className="font-bold">Catalogue indisponible</p>
+                    <p className="mt-1">Impossible de récupérer les niveaux et classes de l'école destination. Vous pouvez continuer — l'école destination définira la classe à la validation.</p>
+                  </div>
+                </div>
+              ) : (destCatalog.levels || []).length === 0 ? (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                  <div className="text-xs text-blue-800">
+                    <p className="font-bold">Aucun niveau configuré</p>
+                    <p className="mt-1">{destCatalog.school?.name} n'a pas encore configuré ses niveaux scolaires. La classe sera définie lors de la validation du transfert par l'école d'accueil.</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Niveau souhaité */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                      Niveau souhaité dans l'école d'accueil <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={requestedLevelId}
+                      onChange={(e) => { setRequestedLevelId(e.target.value); setRequestedClassId(''); }}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">— Choisir un niveau —</option>
+                      {destCatalog.levels.map(l => (
+                        <option key={l.id} value={l.id}>
+                          {l.label || l.name || l.code}
+                          {currentLevelCode && l.code?.toUpperCase() === currentLevelCode ? ' (même niveau)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {requestedLevelId && (
+                      <p className={cn('mt-1.5 text-[11px] font-semibold', sameLevel ? 'text-emerald-600' : 'text-blue-600')}>
+                        {sameLevel
+                          ? '✓ Même niveau que dans l\'école d\'origine'
+                          : '↗ Niveau différent de l\'école d\'origine — vérifiez que cela correspond au parcours de l\'élève'}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Classe souhaitée — FILTRÉE par le niveau choisi */}
+                  {requestedLevelId && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                        Classe souhaitée {destClassesForLevel.length > 0 && <span className="text-red-500">*</span>}
+                      </label>
+                      {destClassesForLevel.length === 0 ? (
+                        <p className="text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                          Aucune classe officielle configurée pour ce niveau à {destCatalog.school?.name} — l'école d'accueil affectera une classe à la validation.
+                        </p>
+                      ) : (
+                        <select
+                          value={requestedClassId}
+                          onChange={(e) => setRequestedClassId(e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">— Choisir une classe —</option>
+                          {destClassesForLevel.map(c => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}{c.capacity ? ` (capacité ${c.capacity})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Classes officielles de {destCatalog.school?.name} — année {destCatalog.academicYear?.name || 'en cours'}. La classe physique (section) sera définie par l'école d'accueil à la validation.
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Étape 4 : Motif et message */}
+          {step === 4 && (
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Motif du transfert</label>
@@ -441,14 +610,14 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
             </div>
           )}
 
-          {/* Étape 4 : Confirmation */}
-          {step === 4 && (
+          {/* Étape 5 : Confirmation */}
+          {step === 5 && (
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
                 <div className="text-xs text-blue-800">
-                  <p className="font-bold">Récapitulatif du transfert</p>
-                  <p className="mt-1">Une fois validé, l'école destination recevra une notification et pourra accepter ou rejeter la demande.</p>
+                  <p className="font-bold">Récapitulatif du dossier de transfert</p>
+                  <p className="mt-1">Une fois validé, l'école destination recevra le dossier complet de l'élève et une notification. Elle pourra accepter ou rejeter la demande ; après confirmation de votre part (école d'origine), elle intégrera l'élève et lui générera un nouveau matricule local — le matricule global Academia Helm est conservé.</p>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
@@ -459,6 +628,9 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
                   {selectedStudent?.matricule && !selectedStudent.matricule.startsWith('AH-') && (
                     <p className="text-[10px] text-slate-400 font-mono">{selectedStudent.matricule}</p>
                   )}
+                  {selectedStudent?.schoolLevel?.name && (
+                    <p className="text-[10px] text-slate-400 mt-0.5">Niveau actuel : {selectedStudent.schoolLevel.name}</p>
+                  )}
                 </div>
                 <div className="bg-slate-50 rounded-lg p-3">
                   <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">École destination</p>
@@ -467,6 +639,19 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
                     <p className="text-[10px] text-slate-400">{selectedSchool.city}</p>
                   )}
                 </div>
+                {destLevelName && (
+                  <div className="bg-slate-50 rounded-lg p-3">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Niveau souhaité</p>
+                    <p className="font-semibold text-slate-800">{destLevelName}</p>
+                    {sameLevel && <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">Même niveau</p>}
+                  </div>
+                )}
+                {destClassName && (
+                  <div className="bg-slate-50 rounded-lg p-3">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Classe souhaitée</p>
+                    <p className="font-semibold text-slate-800">{destClassName}</p>
+                  </div>
+                )}
                 {transferMotif && (
                   <div className="bg-slate-50 rounded-lg p-3 col-span-2">
                     <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Motif</p>
@@ -487,7 +672,7 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
             <ChevronLeft className="w-4 h-4" />
             {step > 1 ? 'Précédent' : 'Annuler'}
           </button>
-          {step < 4 ? (
+          {step < 5 ? (
             <button
               onClick={() => canNext && setStep(step + 1)}
               disabled={!canNext}
@@ -503,7 +688,7 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
               className="inline-flex items-center gap-1.5 px-5 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg transition"
             >
               {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              {isSubmitting ? 'Envoi...' : 'Envoyer la demande'}
+              {isSubmitting ? 'Envoi...' : 'Confirmer le dossier de transfert'}
             </button>
           )}
         </div>

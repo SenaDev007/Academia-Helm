@@ -72,6 +72,7 @@ import { getMotionDuration } from '@/lib/motion/presets';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
 import { getAppBaseUrl } from '@/lib/utils/urls';
 import { isReservedSubdomain, extractTenantSlug } from '@/lib/tenant/constants';
+import { buildBrandContrast } from '@/lib/tenant/color-contrast';
 import { detectAccessContext, getAvailablePortals, getPortalForRole, canRoleUsePortal } from '@/lib/auth/role-portal-map';
 import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
 import { useSchoolBranding } from '@/hooks/useSchoolBranding';
@@ -376,6 +377,23 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const NAVY = brandPalette?.primary || '#0b2f73';
   const BLUE = brandPalette?.secondary || '#1d4fa5';
   const GOLD = brandPalette?.accent || '#f5b335';
+
+  // ── ⭐ 2026-11-27 — Contraste GARANTI (miroir de buildAppBrandCss /app) ──
+  // Fix « textes invisibles » : la palette du logo peut être claire (jaune,
+  // orange, pastel…). Les FONDS porteurs de texte blanc passent par les
+  // versions assombries (*_DEEP, luminance ≤ 0,40 → blanc toujours lisible),
+  // les textes posés sur fonds CLAIRS passent par les versions *_TEXT, et
+  // les textes secondaires sur marque (ex-text-blue-100/200) basculent
+  // blanc/encre selon la luminance réelle. La teinte école est conservée.
+  const CT = buildBrandContrast(NAVY, BLUE, GOLD);
+  const NAVY_DEEP = CT.primaryDeep;   // fond porteur de texte blanc
+  const BLUE_DEEP = CT.secondaryDeep; // second pôle du gradient
+  const NAVY_TEXT = CT.primaryText;   // texte/liens sur fond clair
+  const BLUE_TEXT = CT.secondaryText; // liens sur fond clair
+  const GOLD_TEXT = CT.accentText;    // accent sur fond clair
+  const ON_BRAND = CT.onBrand;        // texte sur fond de marque
+  const ON_BRAND_SOFT = CT.onBrandSoft;       // ≈ text-blue-100
+  const ON_BRAND_SOFTER = CT.onBrandSofter;   // ≈ text-blue-200/70
 
   const portalParam = searchParams?.get('portal');
   let tenantSlug = searchParams?.get('tenant');
@@ -814,9 +832,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     : passwordStrength.score === 1
       ? '#ef4444'
       : passwordStrength.score === 2
-        ? GOLD
+        ? GOLD_TEXT
         : passwordStrength.score === 3
-          ? BLUE
+          ? BLUE_TEXT
           : '#16a34a';
 
   // ── Session expiry message ───────────────────────────────────────────
@@ -2109,7 +2127,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           className="inline-flex items-center gap-2 rounded-full border bg-white/80 px-3 py-2 min-h-[44px] text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:text-slate-900"
           style={{ borderColor: `${NAVY}18` }}
         >
-          <Home className="h-4 w-4" style={{ color: NAVY }} />
+          <Home className="h-4 w-4" style={{ color: NAVY_TEXT }} />
           Accueil
         </Link>
         <Link
@@ -2154,7 +2172,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             <div className={portalType === 'public'
               ? 'md:w-1/4 p-6 sm:p-8 flex flex-col relative overflow-hidden'
               : 'flex-1 p-6 sm:p-8 flex flex-col relative overflow-hidden'}
-              style={{ background: `linear-gradient(155deg, ${NAVY} 0%, ${BLUE} 100%)` }}>
+              style={{ background: `linear-gradient(155deg, ${NAVY_DEEP} 0%, ${BLUE_DEEP} 100%)` }}>
               {/* ── Décor bleu : halos lumineux subtils (animate-float Win Agro) ── */}
               <div className="pointer-events-none absolute -top-16 -left-10 h-48 w-48 rounded-full opacity-25 blur-3xl animate-float" style={{ background: '#ffffff' }} aria-hidden />
               <div className="pointer-events-none absolute -bottom-20 -right-10 h-56 w-56 rounded-full opacity-15 blur-3xl animate-float" style={{ background: `${GOLD}`, animationDelay: '2s' }} aria-hidden />
@@ -2228,7 +2246,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             {/* Sous-titre : pour le portail public on n'affiche PAS portalDef.subtitle
                 (redondant avec le badge "Portail Public" en haut). On affiche seulement
                 le slogan de l'école si disponible, sinon rien. */}
-            <motion.p variants={heroItem} className="text-sm text-blue-100 max-w-xs">
+            <motion.p variants={heroItem} className="text-sm max-w-xs" style={{ color: ON_BRAND_SOFT }}>
               {portalType === 'public'
                 ? (clientBranding?.slogan || clientBranding?.motto || '')
                 : (portalDef?.subtitle || clientBranding?.slogan || BRAND.subtitle)}
@@ -2236,7 +2254,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
             {/* Slogan école (si différent du sous-titre et mode non-public) */}
             {portalType !== 'public' && clientBranding?.slogan && portalDef?.subtitle && clientBranding.slogan !== portalDef.subtitle && (
-              <motion.p variants={heroItem} className="mt-2 text-xs italic text-blue-200/80 max-w-xs">
+              <motion.p variants={heroItem} className="mt-2 text-xs italic max-w-xs" style={{ color: ON_BRAND_SOFTER }}>
                 « {clientBranding.slogan} »
               </motion.p>
             )}
@@ -2245,22 +2263,22 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 Adresse / Téléphone / Website alignés à gauche (plus lisible pour des coordonnées)
                 Le reste reste centré. */}
             {clientBranding && (clientBranding.address || clientBranding.phone || clientBranding.website) && (
-              <motion.div variants={heroItem} className="mt-4 text-left text-[11px] text-blue-100/90 space-y-1.5">
+              <motion.div variants={heroItem} className="mt-4 text-left text-[11px] space-y-1.5" style={{ color: ON_BRAND_SOFT }}>
                 {clientBranding.address && (
                   <div className="flex items-start gap-1.5">
-                    <MapPin className="h-3 w-3 mt-0.5 shrink-0 text-blue-200/70" />
+                    <MapPin className="h-3 w-3 mt-0.5 shrink-0" style={{ color: ON_BRAND_SOFTER }} />
                     <span>{clientBranding.address}{clientBranding.city ? `, ${clientBranding.city}` : ''}</span>
                   </div>
                 )}
                 {clientBranding.phone && (
                   <div className="flex items-start gap-1.5">
-                    <Phone className="h-3 w-3 mt-0.5 shrink-0 text-blue-200/70" />
+                    <Phone className="h-3 w-3 mt-0.5 shrink-0" style={{ color: ON_BRAND_SOFTER }} />
                     <span>{clientBranding.phone}</span>
                   </div>
                 )}
                 {clientBranding.website && (
                   <div className="flex items-start gap-1.5">
-                    <Globe className="h-3 w-3 mt-0.5 shrink-0 text-blue-200/70" />
+                    <Globe className="h-3 w-3 mt-0.5 shrink-0" style={{ color: ON_BRAND_SOFTER }} />
                     <span className="break-all">{clientBranding.website}</span>
                   </div>
                 )}
@@ -2289,7 +2307,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                   >
                     <opt.Icon className="h-4 w-4 sm:h-5 sm:w-5" style={{ color: '#ffffff' }} />
                     <span className="text-[11px] sm:text-xs font-bold text-white">{opt.label}</span>
-                    <span className="text-[9px] sm:text-[10px] text-blue-200">{opt.desc}</span>
+                    <span className="text-[9px] sm:text-[10px]" style={{ color: ON_BRAND_SOFT }}>{opt.desc}</span>
                   </button>
                 ))}
               </motion.div>
@@ -2301,7 +2319,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               Toujours affiché (même sans branding école, car c'est le footer plateforme)
               ════════════════════════════════════════════════════════════════════ */}
           <motion.div
-            className="pt-4 flex items-center justify-center gap-2 text-[10px] text-blue-200"
+            className="pt-4 flex items-center justify-center gap-2 text-[10px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.4 }}
@@ -2315,7 +2333,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               className="object-contain opacity-90"
               style={{ filter: 'brightness(1.1)' }}
             />
-            <span className="font-semibold" style={{ color: GOLD }}>{BRAND.name}</span>
+            <span className="font-semibold" style={{ color: CT.accentOnBrand }}>{BRAND.name}</span>
           </motion.div>
 
           {/* ── Error display ── */}
@@ -2356,8 +2374,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 className="mb-3"
               >
                 <div className="flex items-start gap-2 rounded-xl border bg-amber-50/95 p-3 shadow-sm" style={{ borderColor: `${GOLD}50` }}>
-                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" style={{ color: GOLD }} />
-                  <p className="text-sm" style={{ color: NAVY }}>{idleLogoutMessage}</p>
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" style={{ color: GOLD_TEXT }} />
+                  <p className="text-sm" style={{ color: NAVY_TEXT }}>{idleLogoutMessage}</p>
                 </div>
               </motion.div>
             ) : null}
@@ -2374,10 +2392,10 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 className="mb-3 rounded-xl border bg-amber-50/95 p-3"
                 style={{ borderColor: `${GOLD}50` }}
               >
-                <p className="mb-1 text-sm font-semibold" style={{ color: NAVY }}>
+                <p className="mb-1 text-sm font-semibold" style={{ color: NAVY_TEXT }}>
                   Code OTP (DEV)
                 </p>
-                <p className="text-center text-2xl font-bold tracking-widest" style={{ color: NAVY }}>
+                <p className="text-center text-2xl font-bold tracking-widest" style={{ color: NAVY_TEXT }}>
                   {parentOtpCode}
                 </p>
               </motion.div>
@@ -2550,7 +2568,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                         <Link
                           href={forgotPasswordHref}
                           className="text-xs font-medium transition-colors hover:underline min-h-[44px] inline-flex items-center"
-                          style={{ color: BLUE }}
+                          style={{ color: BLUE_TEXT }}
                         >
                           Mot de passe oublié ?
                         </Link>
@@ -2660,7 +2678,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                         <Link
                           href={forgotPasswordHref}
                           className="text-xs font-medium transition-colors hover:underline min-h-[44px] inline-flex items-center"
-                          style={{ color: BLUE }}
+                          style={{ color: BLUE_TEXT }}
                         >
                           Mot de passe oublié ?
                         </Link>
@@ -2831,7 +2849,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                               setParentCredentials((prev) => ({ ...prev, otp: '' }));
                             }}
                             className="mt-1 text-xs font-medium transition-colors hover:underline min-h-[44px] inline-flex items-center"
-                            style={{ color: BLUE }}
+                            style={{ color: BLUE_TEXT }}
                           >
                             Renvoyer le code
                           </button>
@@ -2866,7 +2884,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
                     {/* ── Option : Demander des infos ── */}
                     <div className="rounded-xl border-2 p-5 text-center" style={{ borderColor: `${NAVY}20`, background: '#f8fafc' }}>
-                      <h4 className="text-sm font-bold mb-1.5" style={{ color: NAVY }}>
+                      <h4 className="text-sm font-bold mb-1.5" style={{ color: NAVY_TEXT }}>
                         Vous souhaitez obtenir des informations ?
                       </h4>
                       <p className="text-xs text-slate-600 leading-relaxed mb-3">
@@ -2876,7 +2894,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                       <a
                         href={`mailto:?subject=Demande d'informations - ${typeof window !== 'undefined' ? window.location.hostname : ''}`}
                         className="inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90 min-h-[44px]"
-                        style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                        style={{ background: `linear-gradient(135deg, ${NAVY_DEEP}, ${BLUE_DEEP})` }}
                       >
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
@@ -2898,7 +2916,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                             className="flex items-center justify-center rounded-full text-[10px] font-bold transition-all"
                             style={{
                               width: 22, height: 22,
-                              background: preEnrollmentStep >= s ? NAVY : '#e2e8f0',
+                              background: preEnrollmentStep >= s ? NAVY_DEEP : '#e2e8f0',
                               color: preEnrollmentStep >= s ? '#fff' : '#94a3b8',
                             }}
                           >
@@ -2907,14 +2925,14 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                           {s < 3 && (
                             <div
                               className="h-0.5 w-6 transition-all"
-                              style={{ background: preEnrollmentStep > s ? NAVY : '#e2e8f0' }}
+                              style={{ background: preEnrollmentStep > s ? NAVY_DEEP : '#e2e8f0' }}
                             />
                           )}
                         </div>
                       ))}
                     </div>
                     <div className="text-center mb-3">
-                      <p className="text-xs font-bold" style={{ color: NAVY }}>
+                      <p className="text-xs font-bold" style={{ color: NAVY_TEXT }}>
                         {preEnrollmentStep === 1 ? 'Étape 1 sur 3 — Responsable légal' :
                          preEnrollmentStep === 2 ? 'Étape 2 sur 3 — Identité de l\'élève' :
                          'Étape 3 sur 3 — Documents & message'}
@@ -2964,12 +2982,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                                   }}
                                   className="flex flex-col items-center gap-1 rounded-xl border-2 p-3 min-h-[44px] text-center transition-all"
                                   style={{
-                                    borderColor: preEnrollment.candidateType === level.id ? GOLD : `${NAVY}18`,
+                                    borderColor: preEnrollment.candidateType === level.id ? GOLD_TEXT : `${NAVY}18`,
                                     background: preEnrollment.candidateType === level.id ? `${GOLD}12` : `${NAVY}04`,
                                   }}
                                 >
-                                  <Icon className="h-5 w-5" style={{ color: NAVY }} />
-                                  <span className="text-xs font-bold" style={{ color: NAVY }}>{level.name}</span>
+                                  <Icon className="h-5 w-5" style={{ color: NAVY_TEXT }} />
+                                  <span className="text-xs font-bold" style={{ color: NAVY_TEXT }}>{level.name}</span>
                                   <span className="text-[10px] text-slate-500">{desc}</span>
                                 </button>
                               );
@@ -2984,12 +3002,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                               }}
                               className="flex flex-col items-center gap-1 rounded-xl border-2 p-3 min-h-[44px] text-center transition-all"
                               style={{
-                                borderColor: preEnrollment.candidateType === 'PROSPECT_PARENT' ? GOLD : `${NAVY}18`,
+                                borderColor: preEnrollment.candidateType === 'PROSPECT_PARENT' ? GOLD_TEXT : `${NAVY}18`,
                                 background: preEnrollment.candidateType === 'PROSPECT_PARENT' ? `${GOLD}12` : `${NAVY}04`,
                               }}
                             >
-                              <Users className="h-5 w-5" style={{ color: NAVY }} />
-                              <span className="text-xs font-bold" style={{ color: NAVY }}>Juste info</span>
+                              <Users className="h-5 w-5" style={{ color: NAVY_TEXT }} />
+                              <span className="text-xs font-bold" style={{ color: NAVY_TEXT }}>Juste info</span>
                               <span className="text-[10px] text-slate-500">Parent prospect</span>
                             </button>
                           </>
@@ -3410,7 +3428,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                             type="button"
                             onClick={handlePreEnrollmentNext}
                             className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-md transition-all"
-                            style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                            style={{ background: `linear-gradient(135deg, ${NAVY_DEEP}, ${BLUE_DEEP})` }}
                           >
                             Suivant
                             <ArrowRight className="h-4 w-4" />
@@ -3461,7 +3479,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 transition={springSoft}
                 className="flex w-full items-center justify-center rounded-xl px-4 sm:px-6 py-3.5 font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px]"
                 style={{
-                  background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                  background: `linear-gradient(135deg, ${NAVY_DEEP}, ${BLUE_DEEP})`,
                 }}
               >
                 {isLoading ? (
@@ -3571,7 +3589,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                   <Link
                     href="/signup"
                     className="font-semibold transition-colors hover:underline inline-flex items-center min-h-[44px]"
-                    style={{ color: NAVY }}
+                    style={{ color: NAVY_TEXT }}
                   >
                     Créer mon école
                   </Link>
@@ -3625,15 +3643,15 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                   className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
                   style={{ background: `${GOLD}22` }}
                 >
-                  <KeyRound className="h-8 w-8" style={{ color: NAVY }} />
+                  <KeyRound className="h-8 w-8" style={{ color: NAVY_TEXT }} />
                 </div>
-                <h3 className="text-xl font-bold" style={{ color: NAVY }}>
+                <h3 className="text-xl font-bold" style={{ color: NAVY_TEXT }}>
                   Vérification 2 facteurs
                 </h3>
                 <p className="mt-2 text-sm text-slate-600">
                   Code à 6 chiffres envoyé par email à
                   <br />
-                  <span className="font-semibold" style={{ color: NAVY }}>
+                  <span className="font-semibold" style={{ color: NAVY_TEXT }}>
                     {schoolGoogleEmail}
                   </span>
                 </p>
@@ -3677,7 +3695,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
                 className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px] mb-3"
                 style={{
-                  background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                  background: `linear-gradient(135deg, ${NAVY_DEEP}, ${BLUE_DEEP})`,
                 }}
               >
                 {isLoading ? (
@@ -3798,7 +3816,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                   <Link
                     href={backToPortalHref}
                     className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg"
-                    style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                    style={{ background: `linear-gradient(135deg, ${NAVY_DEEP}, ${BLUE_DEEP})` }}
                   >
                     <ArrowLeft className="h-4 w-4" />
                     Retour aux portails
@@ -3854,7 +3872,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               <div className="mb-4 flex items-center gap-3">
                 <div
                   className="flex h-11 w-11 items-center justify-center rounded-xl"
-                  style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                  style={{ background: `linear-gradient(135deg, ${NAVY_DEEP}, ${BLUE_DEEP})` }}
                 >
                   <ShieldCheck className="h-6 w-6 text-white" />
                 </div>
@@ -3904,7 +3922,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                   onClick={submitTwoFactorCode}
                   disabled={twoFactorVerifying || twoFactorCode.replace(/\D/g, '').length !== 6}
                   className="flex-[2] inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50"
-                  style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                  style={{ background: `linear-gradient(135deg, ${NAVY_DEEP}, ${BLUE_DEEP})` }}
                 >
                   {twoFactorVerifying ? (
                     <>
